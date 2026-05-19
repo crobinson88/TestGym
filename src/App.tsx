@@ -8,9 +8,9 @@ import { SyncProvider } from "@/components/SyncProvider";
 import { Today } from "@/routes/Today";
 import { AddSet } from "@/routes/AddSet";
 import { History } from "@/routes/History";
-import { Dashboard } from "@/routes/Dashboard";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
+const Dashboard = lazy(() => import("@/routes/Dashboard"));
 
 function SignInRoute() {
   const { session, loading } = useAuth();
@@ -52,7 +52,14 @@ export function App() {
                   </Suspense>
                 }
               />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <Suspense fallback={<ChartFallback />}>
+                    <Dashboard />
+                  </Suspense>
+                }
+              />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

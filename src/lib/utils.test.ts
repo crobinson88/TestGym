@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  addDays,
   cn,
   formatVolume,
   formatWeight,
   relativeDay,
   roundToHalf,
   todayIsoDate,
+  weekStart,
 } from "./utils";
 
 describe("cn", () => {
@@ -58,5 +60,21 @@ describe("relativeDay", () => {
     expect(relativeDay("2026-05-18", "2026-05-19")).toBe("yesterday");
     expect(relativeDay("2026-05-17", "2026-05-19")).toBe("2d ago");
     expect(relativeDay("2026-05-12", "2026-05-19")).toBe("1w ago");
+  });
+});
+
+describe("addDays / weekStart", () => {
+  it("addDays moves the day forward and backward", () => {
+    expect(addDays("2026-05-19", 1)).toBe("2026-05-20");
+    expect(addDays("2026-05-19", -1)).toBe("2026-05-18");
+    expect(addDays("2026-05-31", 1)).toBe("2026-06-01");
+    expect(addDays("2026-01-01", -1)).toBe("2025-12-31");
+  });
+
+  it("weekStart returns the Monday of the week containing the date", () => {
+    expect(weekStart("2026-05-19")).toBe("2026-05-18");
+    expect(weekStart("2026-05-18")).toBe("2026-05-18");
+    expect(weekStart("2026-05-24")).toBe("2026-05-18");
+    expect(weekStart("2026-05-25")).toBe("2026-05-25");
   });
 });

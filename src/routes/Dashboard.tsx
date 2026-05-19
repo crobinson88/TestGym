@@ -1,8 +1,173 @@
-export function Dashboard() {
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { useDashboardStats, type WeekVolumePoint } from "@/lib/hooks";
+import { formatVolume, prettyDate } from "@/lib/utils";
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Back: "#22d3ee",
+  Chest: "#ef4444",
+  Legs: "#f59e0b",
+  Shoulder: "#a855f7",
+};
+const FALLBACK_COLOR = "#8a8a8a";
+
+export default function Dashboard() {
+  const stats = useDashboardStats();
+  if (!stats) return <div className="p-6 text-center text-muted">Loading...</div>;
+
+  const lastSessionDelta =
+    stats.lastSession && stats.maxSession
+      ? Math.round((stats.lastSession.volume / stats.maxSession.volume) * 100)
+      : null;
+
   return (
-    <div className="space-y-4 p-4">
-      <h2 className="text-xl font-semibold">Stats</h2>
-      <p className="text-muted">Phase 7 fills this in.</p>
+    <div className="space-y-6 p-4 pb-12">
+      <header>
+        <h1 className="text-2xl font-bold">Stats</h1>
+      </header>
+
+      <section className="grid grid-cols-3 gap-3">
+        <StatTile
+          label="Daily total"
+          value={formatVolume(stats.today.volume)}
+          sub={`${stats.today.sets} sets`}
+        />
+        <StatTile
+          label="Last session"
+          value={stats.lastSession ? formatVolume(stats.lastSession.volume) : "—"}
+          sub={stats.lastSession ? prettyDate(stats.lastSession.date) : "no history"}
+        />
+        <StatTile
+          label="Max session"
+          value={stats.maxSession ? formatVolume(stats.maxSession.volume) : "—"}
+          sub={
+            stats.maxSession && lastSessionDelta !== null
+              ? `last @ ${lastSessionDelta}%`
+              : "—"
+          }
+        />
+      </section>
+
+      <section className="rounded-2xl border border-line bg-surface p-4">
+        <div className="flex items-baseline justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-muted">This week</div>
+            <div className="mt-1 text-3xl font-bold tabular-nums">
+              {stats.thisWeek.days}
+              <span className="ml-1 text-base font-medium text-muted">
+                {stats.thisWeek.days === 1 ? "day" : "days"}
+              </span>
+            </div>
+          </div>
+          <div className="text-right text-sm text-muted">
+            <div className="font-semibold text-text">
+              {formatVolume(stats.thisWeek.volume)} lb
+            </div>
+            <div>volume</div>
+          </div>
+        </div>
+        <div className="mt-3 border-t border-line/70 pt-3 text-sm text-muted">
+          Last week: {stats.lastWeek.days}{" "}
+          {stats.lastWeek.days === 1 ? "day" : "days"} · {formatVolume(stats.lastWeek.volume)} lb
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
+          Weekly volume · last 8 weeks
+        </h2>
+        <div className="rounded-2xl border border-line bg-surface p-3">
+          <WeeklyChart data={stats.weekly} categories={stats.categories.map((c) => c.name)} />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">All-time</h2>
+        <div className="grid grid-cols-3 gap-3">
+          <StatTile label="Sets" value={stats.allTime.sets.toLocaleString()} />
+          <StatTile label="Volume" value={`${formatVolume(stats.allTime.volume)} lb`} />
+          <StatTile label="Days" value={stats.allTime.days.toString()} />
+        </div>
+      </section>
     </div>
+  );
+}
+
+function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-3">
+      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
+      {sub && <div className="text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+interface ChartDatum {
+  week_start: string;
+  total: number;
+  [category: string]: number | string;
+}
+
+function WeeklyChart({
+  data,
+  categories,
+}: {
+  data: WeekVolumePoint[];
+  categories: string[];
+}) {
+  const chartData: ChartDatum[] = data.map((d) => {
+    const out: ChartDatum = { week_start: d.week_start, total: d.total };
+    for (const c of categories) out[c] = d.byCategory[c] ?? 0;
+    return out;
+  });
+
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <CartesianGrid stroke="#2a2a2a" vertical={false} />
+        <XAxis
+          dataKey="week_start"
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          tickFormatter={(iso) => {
+            const [, m, d] = (iso as string).split("-");
+            return `${m}/${d}`;
+          }}
+        />
+        <YAxis
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          width={44}
+          tickFormatter={(v) => formatVolume(v as number)}
+        />
+        <Tooltip
+          contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
+          labelStyle={{ color: "#8a8a8a" }}
+          formatter={(value, name) => [formatVolume(value as number), name as string]}
+          labelFormatter={(label) => `Week of ${prettyDate(label as string)}`}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 12 }}
+          iconType="circle"
+          iconSize={8}
+        />
+        {categories.map((cat) => (
+          <Bar
+            key={cat}
+            dataKey={cat}
+            stackId="vol"
+            fill={CATEGORY_COLORS[cat] ?? FALLBACK_COLOR}
+            radius={[0, 0, 0, 0]}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
   );
 }

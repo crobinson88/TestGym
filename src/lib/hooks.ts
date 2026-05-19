@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import type { LocalSet } from "./db";
-import { todayIsoDate } from "./utils";
+import { addDays, todayIsoDate, weekStart } from "./utils";
 
 export function useCategories() {
   return useLiveQuery(async () => {
@@ -88,6 +88,127 @@ export interface ExerciseStats {
   lastSession: string;
   sessionCount: number;
   history: ExerciseHistoryPoint[];
+}
+
+export interface DayAgg {
+  volume: number;
+  sets: number;
+  byCategory: Record<string, number>;
+}
+
+export interface WeekVolumePoint {
+  week_start: string;
+  total: number;
+  byCategory: Record<string, number>;
+}
+
+export interface DashboardStats {
+  today: DayAgg;
+  lastSession: { date: string; volume: number; sets: number } | null;
+  maxSession: { date: string; volume: number } | null;
+  thisWeek: { days: number; volume: number };
+  lastWeek: { days: number; volume: number };
+  allTime: { sets: number; volume: number; days: number };
+  categories: { id: string; name: string }[];
+  weekly: WeekVolumePoint[];
+}
+
+export function useDashboardStats(): DashboardStats | undefined {
+  return useLiveQuery(async () => {
+    const [allSets, allCats] = await Promise.all([
+      db.sets.toArray(),
+      db.categories.toArray(),
+    ]);
+    const live = allSets.filter((s) => !s.deleted_at);
+    const cats = allCats
+      .filter((c) => !c.deleted_at)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    const catName = new Map(cats.map((c) => [c.id, c.name]));
+
+    type DayBucket = { volume: number; sets: number; byCategory: Record<string, number> };
+    const byDate = new Map<string, DayBucket>();
+    for (const s of live) {
+      const e = byDate.get(s.performed_at) ?? { volume: 0, sets: 0, byCategory: {} };
+      const v = s.weight * s.reps;
+      e.volume += v;
+      e.sets += 1;
+      const cn = catName.get(s.category_id) ?? "Other";
+      e.byCategory[cn] = (e.byCategory[cn] ?? 0) + v;
+      byDate.set(s.performed_at, e);
+    }
+
+    const today = todayIsoDate();
+    const todayAgg: DayAgg = byDate.get(today) ?? { volume: 0, sets: 0, byCategory: {} };
+
+    const trainingDates = Array.from(byDate.keys()).sort();
+    const beforeToday = trainingDates.filter((d) => d < today);
+    const lastDate = beforeToday[beforeToday.length - 1] ?? null;
+    const lastSession =
+      lastDate !== null
+        ? {
+            date: lastDate,
+            volume: byDate.get(lastDate)!.volume,
+            sets: byDate.get(lastDate)!.sets,
+          }
+        : null;
+
+    let maxSession: { date: string; volume: number } | null = null;
+    for (const [date, e] of byDate) {
+      if (!maxSession || e.volume > maxSession.volume) {
+        maxSession = { date, volume: e.volume };
+      }
+    }
+
+    function weekStats(start: string) {
+      const end = addDays(start, 7);
+      let volume = 0;
+      const days = new Set<string>();
+      for (const [date, e] of byDate) {
+        if (date >= start && date < end) {
+          volume += e.volume;
+          days.add(date);
+        }
+      }
+      return { days: days.size, volume };
+    }
+    const thisWeekStart = weekStart(today);
+    const thisWeek = weekStats(thisWeekStart);
+    const lastWeek = weekStats(addDays(thisWeekStart, -7));
+
+    const weekly: WeekVolumePoint[] = [];
+    for (let i = 7; i >= 0; i--) {
+      const ws = addDays(thisWeekStart, -i * 7);
+      const we = addDays(ws, 7);
+      const point: WeekVolumePoint = { week_start: ws, total: 0, byCategory: {} };
+      for (const cat of cats) point.byCategory[cat.name] = 0;
+      for (const [date, e] of byDate) {
+        if (date >= ws && date < we) {
+          for (const [cn, v] of Object.entries(e.byCategory)) {
+            point.byCategory[cn] = (point.byCategory[cn] ?? 0) + v;
+            point.total += v;
+          }
+        }
+      }
+      weekly.push(point);
+    }
+
+    const allTime = {
+      sets: live.length,
+      volume: live.reduce((sum, s) => sum + s.weight * s.reps, 0),
+      days: byDate.size,
+    };
+
+    return {
+      today: todayAgg,
+      lastSession,
+      maxSession,
+      thisWeek,
+      lastWeek,
+      allTime,
+      categories: cats.map((c) => ({ id: c.id, name: c.name })),
+      weekly,
+    };
+  }, []);
 }
 
 export function useExerciseStats(exerciseId?: string): ExerciseStats | null | undefined {

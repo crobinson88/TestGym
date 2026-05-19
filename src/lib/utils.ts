@@ -51,3 +51,19 @@ export function relativeDay(iso: string, today = todayIsoDate()): string {
   if (days >= 7 && days < 30) return `${Math.floor(days / 7)}w ago`;
   return prettyDate(iso);
 }
+
+export function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function weekStart(iso: string): string {
+  const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dow = date.getUTCDay();
+  const offset = dow === 0 ? 6 : dow - 1;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
