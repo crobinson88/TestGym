@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { SignIn } from "@/components/SignIn";
@@ -9,6 +10,8 @@ import { AddSet } from "@/routes/AddSet";
 import { History } from "@/routes/History";
 import { Dashboard } from "@/routes/Dashboard";
 
+const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
+
 function SignInRoute() {
   const { session, loading } = useAuth();
   const location = useLocation();
@@ -18,6 +21,10 @@ function SignInRoute() {
     return <Navigate to={from} replace />;
   }
   return <SignIn />;
+}
+
+function ChartFallback() {
+  return <div className="p-6 text-center text-muted">Loading charts...</div>;
 }
 
 export function App() {
@@ -37,6 +44,14 @@ export function App() {
               <Route index element={<Today />} />
               <Route path="/add" element={<AddSet />} />
               <Route path="/history" element={<History />} />
+              <Route
+                path="/history/:id"
+                element={
+                  <Suspense fallback={<ChartFallback />}>
+                    <ExerciseDetail />
+                  </Suspense>
+                }
+              />
               <Route path="/dashboard" element={<Dashboard />} />
             </Route>
           </Route>

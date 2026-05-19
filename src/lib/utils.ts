@@ -20,3 +20,34 @@ export function formatWeight(n: number): string {
 export function roundToHalf(n: number): number {
   return Math.round(n * 2) / 2;
 }
+
+export function formatVolume(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}K`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+
+const PRETTY_DATE = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
+
+export function prettyDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
+  return PRETTY_DATE.format(new Date(y, m - 1, d));
+}
+
+export function relativeDay(iso: string, today = todayIsoDate()): string {
+  if (iso === today) return "today";
+  const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
+  const [ty, tm, td] = today.split("-").map((p) => parseInt(p, 10));
+  const a = Date.UTC(y, m - 1, d);
+  const b = Date.UTC(ty, tm - 1, td);
+  const days = Math.round((b - a) / 86_400_000);
+  if (days === 1) return "yesterday";
+  if (days > 0 && days < 7) return `${days}d ago`;
+  if (days >= 7 && days < 30) return `${Math.floor(days / 7)}w ago`;
+  return prettyDate(iso);
+}

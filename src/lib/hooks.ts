@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
+import type { LocalSet } from "./db";
 import { todayIsoDate } from "./utils";
 
 export function useCategories() {
@@ -25,6 +26,13 @@ export function useExercises(categoryId?: string) {
   }, [categoryId]);
 }
 
+export function useExercise(id?: string) {
+  return useLiveQuery(async () => {
+    if (!id) return undefined;
+    return db.exercises.get(id);
+  }, [id]);
+}
+
 export function useLastSet(exerciseId?: string) {
   return useLiveQuery(async () => {
     if (!exerciseId) return undefined;
@@ -46,5 +54,97 @@ export function useTodaySetsForExercise(exerciseId?: string) {
       .sort((a, b) =>
         a.updated_at > b.updated_at ? 1 : a.updated_at < b.updated_at ? -1 : 0,
       );
+  }, [exerciseId]);
+}
+
+export function useTodaySets() {
+  return useLiveQuery(async () => {
+    const today = todayIsoDate();
+    const rows = await db.sets.where("performed_at").equals(today).toArray();
+    return rows
+      .filter((s) => !s.deleted_at)
+      .sort((a, b) =>
+        a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : 0,
+      );
+  }, []);
+}
+
+export interface ExerciseHistoryPoint {
+  date: string;
+  max_weight: number;
+  max_reps: number;
+  volume: number;
+  sets: number;
+}
+
+export interface ExerciseStats {
+  totalSets: number;
+  totalVolume: number;
+  prWeight: number;
+  prWeightDate: string;
+  prReps: number;
+  prRepsWeight: number;
+  prRepsDate: string;
+  lastSession: string;
+  sessionCount: number;
+  history: ExerciseHistoryPoint[];
+}
+
+export function useExerciseStats(exerciseId?: string): ExerciseStats | null | undefined {
+  return useLiveQuery(async () => {
+    if (!exerciseId) return undefined;
+    const rows = await db.sets.where("exercise_id").equals(exerciseId).toArray();
+    const live = rows.filter((s) => !s.deleted_at);
+    if (live.length === 0) return null;
+
+    const byDate = new Map<string, LocalSet[]>();
+    for (const s of live) {
+      const arr = byDate.get(s.performed_at) ?? [];
+      arr.push(s);
+      byDate.set(s.performed_at, arr);
+    }
+
+    const history: ExerciseHistoryPoint[] = Array.from(byDate.entries())
+      .map(([date, sets]) => ({
+        date,
+        max_weight: Math.max(...sets.map((s) => s.weight)),
+        max_reps: Math.max(...sets.map((s) => s.reps)),
+        volume: sets.reduce((sum, s) => sum + s.weight * s.reps, 0),
+        sets: sets.length,
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    let prWeight = 0;
+    let prWeightDate = "";
+    let prReps = 0;
+    let prRepsWeight = 0;
+    let prRepsDate = "";
+    for (const s of live) {
+      if (s.weight > prWeight) {
+        prWeight = s.weight;
+        prWeightDate = s.performed_at;
+      }
+      if (s.reps > prReps || (s.reps === prReps && s.weight > prRepsWeight)) {
+        prReps = s.reps;
+        prRepsWeight = s.weight;
+        prRepsDate = s.performed_at;
+      }
+    }
+
+    const totalVolume = live.reduce((sum, s) => sum + s.weight * s.reps, 0);
+    const lastSession = history[history.length - 1].date;
+
+    return {
+      totalSets: live.length,
+      totalVolume,
+      prWeight,
+      prWeightDate,
+      prReps,
+      prRepsWeight,
+      prRepsDate,
+      lastSession,
+      sessionCount: history.length,
+      history,
+    };
   }, [exerciseId]);
 }

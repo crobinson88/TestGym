@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { cn, formatWeight, roundToHalf, todayIsoDate } from "./utils";
+import {
+  cn,
+  formatVolume,
+  formatWeight,
+  relativeDay,
+  roundToHalf,
+  todayIsoDate,
+} from "./utils";
 
 describe("cn", () => {
   it("merges class names and resolves tailwind conflicts", () => {
@@ -33,5 +40,23 @@ describe("roundToHalf", () => {
     expect(roundToHalf(225.3)).toBe(225.5);
     expect(roundToHalf(225.1)).toBe(225);
     expect(roundToHalf(0)).toBe(0);
+  });
+});
+
+describe("formatVolume", () => {
+  it("formats by magnitude", () => {
+    expect(formatVolume(450)).toBe("450");
+    expect(formatVolume(1_250)).toBe("1.3K");
+    expect(formatVolume(12_500)).toBe("13K");
+    expect(formatVolume(1_247_882)).toBe("1.25M");
+  });
+});
+
+describe("relativeDay", () => {
+  it("labels today/yesterday/days/weeks", () => {
+    expect(relativeDay("2026-05-19", "2026-05-19")).toBe("today");
+    expect(relativeDay("2026-05-18", "2026-05-19")).toBe("yesterday");
+    expect(relativeDay("2026-05-17", "2026-05-19")).toBe("2d ago");
+    expect(relativeDay("2026-05-12", "2026-05-19")).toBe("1w ago");
   });
 });
