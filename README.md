@@ -19,6 +19,15 @@ npm run test                     # unit tests (vitest)
 npm run test:integration         # real Supabase round-trip; gated on SUPABASE_TEST_ENV
 ```
 
+## Supabase auth redirect URLs
+
+Magic-link emails redirect to the URL the link was generated from. For the link to land back in the app instead of Supabase's default page, add the URLs to **Supabase dashboard → Authentication → URL Configuration → Redirect URLs**:
+
+- `http://localhost:5173`
+- `https://<your-vercel-domain>`
+
+Site URL can be either; redirect URLs is the allow-list.
+
 ## Deploy (Vercel)
 
 `vercel.json` is configured. First time:

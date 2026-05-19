@@ -1,10 +1,41 @@
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { SignIn } from "@/components/SignIn";
+import { RequireAuth } from "@/components/RequireAuth";
+import { AppLayout } from "@/components/AppLayout";
+import { Today } from "@/routes/Today";
+import { AddSet } from "@/routes/AddSet";
+import { History } from "@/routes/History";
+import { Dashboard } from "@/routes/Dashboard";
+
+function SignInRoute() {
+  const { session, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (session) {
+    const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? "/";
+    return <Navigate to={from} replace />;
+  }
+  return <SignIn />;
+}
+
 export function App() {
   return (
-    <div className="flex min-h-full items-center justify-center p-6">
-      <div className="max-w-sm text-center">
-        <h1 className="text-3xl font-semibold">Gym Tracker</h1>
-        <p className="mt-2 text-muted">Phase 2 scaffold. Phase 3 wires auth.</p>
-      </div>
-    </div>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/signin" element={<SignInRoute />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<AppLayout />}>
+              <Route index element={<Today />} />
+              <Route path="/add" element={<AddSet />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+            </Route>
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
