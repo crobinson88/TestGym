@@ -1,13 +1,16 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Minus, Plus } from "lucide-react";
+import { ChevronLeft, Check, Minus, Plus, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { RestTimer } from "@/components/RestTimer";
 import { syncEngine } from "@/lib/sync";
 import {
   useCategories,
   useExercises,
   useLastSet,
   useTodaySetsForExercise,
+  useExerciseStats,
 } from "@/lib/hooks";
 import { cn, formatWeight } from "@/lib/utils";
 import {
@@ -15,14 +18,18 @@ import {
   initialAddSetState,
   type AddSetState,
 } from "./addSetReducer";
+import { detectPr, type FlashKind } from "./prDetection";
 
 const WEIGHT_STEPS = [-10, -5, -2.5, 2.5, 5, 10];
 const REP_STEPS = [-5, -1, 1, 5];
 
+type Flash = FlashKind;
+
 export function AddSet() {
   const [state, dispatch] = useReducer(addSetReducer, initialAddSetState);
   const navigate = useNavigate();
-  const [savedFlash, setSavedFlash] = useState(false);
+  const [flash, setFlash] = useState<Flash | null>(null);
+  const [restStartedAt, setRestStartedAt] = useState<number | null>(null);
 
   function goBack() {
     if (state.stage === "category") {
@@ -59,22 +66,43 @@ export function AddSet() {
           <AmountStep
             state={state}
             dispatch={dispatch}
-            onSaved={() => {
-              setSavedFlash(true);
+            restStartedAt={restStartedAt}
+            onClearRest={() => setRestStartedAt(null)}
+            onSaved={(result) => {
+              setFlash(result);
               dispatch({ type: "savedKeepExercise" });
-              setTimeout(() => setSavedFlash(false), 1500);
+              setRestStartedAt(Date.now());
+              setTimeout(() => setFlash(null), result.kind === "saved" ? 1500 : 2500);
             }}
           />
         )}
-        {savedFlash && (
-          <div
-            role="status"
-            className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-success px-4 py-2 text-sm font-medium text-bg shadow-lg"
-          >
-            Saved ✓
-          </div>
-        )}
+        {flash && <FlashToast flash={flash} />}
       </div>
+    </div>
+  );
+}
+
+function FlashToast({ flash }: { flash: Flash }) {
+  if (flash.kind === "saved") {
+    return (
+      <div
+        role="status"
+        className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-success px-4 py-2 text-sm font-medium text-bg shadow-lg"
+      >
+        Saved ✓
+      </div>
+    );
+  }
+  return (
+    <div
+      role="status"
+      className="pointer-events-none absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-warn px-4 py-2 text-sm font-bold text-bg shadow-lg"
+    >
+      <Trophy className="h-4 w-4" />
+      {flash.kind === "pr-weight" && `New weight PR · ${formatWeight(flash.weight)}`}
+      {flash.kind === "pr-reps" && `New reps PR · ${flash.reps}`}
+      {flash.kind === "pr-both" &&
+        `New PR · ${formatWeight(flash.weight)} × ${flash.reps}`}
     </div>
   );
 }
@@ -110,19 +138,100 @@ function Breadcrumb({ state }: { state: AddSetState }) {
 
 function CategoryStep({ onPick }: { onPick: (id: string) => void }) {
   const categories = useCategories();
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!categories) return <Loading />;
-  if (categories.length === 0) return <Empty>No categories yet.</Empty>;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (categories!.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      setError("A category with that name already exists.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const max = categories!.reduce((m, c) => Math.max(m, c.sort_order), 0);
+      const created = await syncEngine.mutations.addCategory({
+        name: trimmed,
+        sort_order: max + 1,
+      });
+      setName("");
+      setAdding(false);
+      onPick(created.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {categories.map((c) => (
-        <button
-          key={c.id}
-          onClick={() => onPick(c.id)}
-          className="flex h-32 items-center justify-center rounded-2xl border border-line bg-surface text-2xl font-semibold transition active:scale-[0.98] hover:bg-surface2"
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        {categories.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className="flex h-32 items-center justify-center rounded-2xl border border-line bg-surface text-2xl font-semibold transition active:scale-[0.98] hover:bg-surface2"
+          >
+            {c.name}
+          </button>
+        ))}
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex h-32 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line text-muted transition active:scale-[0.98] hover:border-accent hover:text-accent"
+          >
+            <Plus className="h-7 w-7" />
+            <span className="text-sm">New category</span>
+          </button>
+        )}
+      </div>
+      {adding && (
+        <form
+          onSubmit={submit}
+          className="space-y-3 rounded-2xl border border-line bg-surface p-4"
         >
-          {c.name}
-        </button>
-      ))}
+          <label className="block space-y-2">
+            <span className="text-sm text-muted">Category name</span>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              placeholder="e.g. Cardio"
+              disabled={busy}
+              maxLength={32}
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" size="md" disabled={busy || !name.trim()}>
+              {busy ? "Adding..." : "Add category"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={() => {
+                setAdding(false);
+                setName("");
+                setError(null);
+              }}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -135,16 +244,99 @@ function ExerciseStep({
   onPick: (id: string) => void;
 }) {
   const exercises = useExercises(categoryId);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!exercises) return <Loading />;
-  if (exercises.length === 0) return <Empty>No exercises in this category.</Empty>;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (exercises!.some((ex) => ex.name.toLowerCase() === trimmed.toLowerCase())) {
+      setError("That exercise already exists in this category.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await syncEngine.mutations.addExercise({
+        name: trimmed,
+        category_id: categoryId,
+      });
+      setName("");
+      setAdding(false);
+      onPick(created.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <ul className="space-y-2">
-      {exercises.map((e) => (
-        <li key={e.id}>
-          <ExerciseTile id={e.id} name={e.name} onPick={() => onPick(e.id)} />
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3">
+      {exercises.length === 0 && !adding && (
+        <Empty>No exercises in this category yet.</Empty>
+      )}
+      <ul className="space-y-2">
+        {exercises.map((e) => (
+          <li key={e.id}>
+            <ExerciseTile id={e.id} name={e.name} onPick={() => onPick(e.id)} />
+          </li>
+        ))}
+      </ul>
+      {!adding && (
+        <button
+          onClick={() => setAdding(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line py-4 text-muted transition active:scale-[0.99] hover:border-accent hover:text-accent"
+        >
+          <Plus className="h-5 w-5" />
+          <span className="text-base">Add new exercise</span>
+        </button>
+      )}
+      {adding && (
+        <form
+          onSubmit={submit}
+          className="space-y-3 rounded-2xl border border-line bg-surface p-4"
+        >
+          <label className="block space-y-2">
+            <span className="text-sm text-muted">Exercise name</span>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              placeholder="e.g. Cable Row"
+              disabled={busy}
+              maxLength={64}
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" size="md" disabled={busy || !name.trim()}>
+              {busy ? "Adding..." : "Add exercise"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={() => {
+                setAdding(false);
+                setName("");
+                setError(null);
+              }}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -159,7 +351,11 @@ function ExerciseTile({
 }) {
   const last = useLastSet(id);
   const subline =
-    last === undefined ? "" : last === null ? "no history" : `last: ${formatWeight(last.weight)} × ${last.reps}`;
+    last === undefined
+      ? ""
+      : last === null
+        ? "no history"
+        : `last: ${formatWeight(last.weight)} × ${last.reps}`;
   return (
     <button
       onClick={onPick}
@@ -174,13 +370,21 @@ function ExerciseTile({
 function AmountStep({
   state,
   dispatch,
+  restStartedAt,
+  onClearRest,
   onSaved,
 }: {
   state: AddSetState;
-  dispatch: React.Dispatch<{ type: "adjustWeight" | "adjustReps"; delta: number } | { type: "setDefaults"; weight: number; reps: number }>;
-  onSaved: () => void;
+  dispatch: React.Dispatch<
+    | { type: "adjustWeight" | "adjustReps"; delta: number }
+    | { type: "setDefaults"; weight: number; reps: number }
+  >;
+  restStartedAt: number | null;
+  onClearRest: () => void;
+  onSaved: (flash: Flash) => void;
 }) {
   const last = useLastSet(state.exerciseId);
+  const stats = useExerciseStats(state.exerciseId);
   const today = useTodaySetsForExercise(state.exerciseId);
   const [saving, setSaving] = useState(false);
 
@@ -195,14 +399,17 @@ function AmountStep({
     if (!state.exerciseId || !state.categoryId) return;
     if (state.weight <= 0 || state.reps <= 0) return;
     setSaving(true);
+    const newWeight = state.weight;
+    const newReps = state.reps;
+    const flash = detectPr(stats ?? null, newWeight, newReps);
     try {
       await syncEngine.mutations.addSet({
         exercise_id: state.exerciseId,
         category_id: state.categoryId,
-        weight: state.weight,
-        reps: state.reps,
+        weight: newWeight,
+        reps: newReps,
       });
-      onSaved();
+      onSaved(flash);
     } finally {
       setSaving(false);
     }
@@ -212,6 +419,8 @@ function AmountStep({
 
   return (
     <div className="flex h-full flex-col">
+      <RestTimer startedAt={restStartedAt} onClear={onClearRest} />
+
       {last && (
         <div className="mb-4 text-center text-sm text-muted">
           last: {formatWeight(last.weight)} × {last.reps} on {last.performed_at}
@@ -232,9 +441,7 @@ function AmountStep({
 
       {today && today.length > 0 && (
         <div className="mt-6">
-          <div className="mb-2 text-xs uppercase tracking-wide text-muted">
-            Today
-          </div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-muted">Today</div>
           <ul className="space-y-1 text-sm">
             {today.map((s, i) => (
               <li
@@ -258,7 +465,9 @@ function AmountStep({
           className="w-full"
           disabled={disabled || saving}
         >
-          {saving ? "Saving..." : (
+          {saving ? (
+            "Saving..."
+          ) : (
             <>
               <Check className="mr-2 h-5 w-5" />
               Save set

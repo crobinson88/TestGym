@@ -60,6 +60,14 @@ Set env vars in the Vercel dashboard (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_K
 
 The site is unlisted (`robots.txt: Disallow: /`, no sitemap). The magic-link auth gate is the real defense.
 
+## Install on iPhone
+
+1. Open the Vercel URL in **Safari** (not Chrome — iOS only supports PWA install from Safari)
+2. Tap the Share button → **Add to Home Screen**
+3. The app icon appears on the home screen; tap to open in full-screen, no Safari chrome
+
+Sign in once via magic link; session persists indefinitely.
+
 ## Icons
 
 The PWA icons (`public/icon-{192,512,512-maskable}.png`, `apple-touch-icon.png`, `favicon-32.png`) are generated from `public/icon.svg`.
