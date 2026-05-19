@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "db:check": "tsx scripts/check-db.ts",
+    "icons": "node scripts/generate-icons.mjs",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:watch": "vitest --exclude '**/*.integration.test.ts'",
     "test:integration": "SUPABASE_TEST_ENV=1 vitest run src/lib/sync/sync.integration.test.ts",
@@ -28,6 +29,7 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.1",
     "@types/node": "^22.7.4",

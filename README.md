@@ -60,6 +60,26 @@ Set env vars in the Vercel dashboard (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_K
 
 The site is unlisted (`robots.txt: Disallow: /`, no sitemap). The magic-link auth gate is the real defense.
 
+## Icons
+
+The PWA icons (`public/icon-{192,512,512-maskable}.png`, `apple-touch-icon.png`, `favicon-32.png`) are generated from `public/icon.svg`.
+
+```bash
+npm run icons    # regenerate after editing icon.svg
+```
+
+Uses `@resvg/resvg-js` (a Rust/WASM SVG renderer). Commit the regenerated PNGs.
+
+## Export to CSV
+
+The Stats tab has an "Export all sets to CSV" button. The file is `gym-export-YYYY-MM-DD.csv` with one row per live (non-deleted) set:
+
+```
+id,exercise,category,weight,reps,weight_unit,performed_at,target_weight,target_reps,notes,volume,created_at,updated_at
+```
+
+Open it in Excel/Numbers; commas inside fields are quoted per RFC 4180.
+
 ## Backup
 
 ```bash

@@ -7,8 +7,13 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: ["robots.txt", "apple-touch-icon.png"],
+      registerType: "prompt",
+      includeAssets: [
+        "robots.txt",
+        "icon.svg",
+        "apple-touch-icon.png",
+        "favicon-32.png",
+      ],
       manifest: {
         name: "Gym Tracker",
         short_name: "Gym",

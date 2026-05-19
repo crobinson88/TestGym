@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -8,6 +9,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { downloadSetsCsv } from "@/lib/csv";
 import { useDashboardStats, type WeekVolumePoint } from "@/lib/hooks";
 import { formatVolume, prettyDate } from "@/lib/utils";
 
@@ -21,7 +25,17 @@ const FALLBACK_COLOR = "#8a8a8a";
 
 export default function Dashboard() {
   const stats = useDashboardStats();
+  const [exporting, setExporting] = useState(false);
   if (!stats) return <div className="p-6 text-center text-muted">Loading...</div>;
+
+  async function onExport() {
+    setExporting(true);
+    try {
+      await downloadSetsCsv();
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const lastSessionDelta =
     stats.lastSession && stats.maxSession
@@ -96,6 +110,19 @@ export default function Dashboard() {
           <StatTile label="Volume" value={`${formatVolume(stats.allTime.volume)} lb`} />
           <StatTile label="Days" value={stats.allTime.days.toString()} />
         </div>
+      </section>
+
+      <section>
+        <Button
+          variant="secondary"
+          size="lg"
+          className="w-full"
+          onClick={onExport}
+          disabled={exporting}
+        >
+          <Download className="mr-2 h-5 w-5" />
+          {exporting ? "Building CSV..." : "Export all sets to CSV"}
+        </Button>
       </section>
     </div>
   );
