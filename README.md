@@ -16,7 +16,27 @@ npm run build                    # tsc + vite build → dist/
 npm run preview                  # serve dist/ locally
 
 npm run test                     # unit tests (vitest)
-npm run test:integration         # real Supabase round-trip; gated on SUPABASE_TEST_ENV
+npm run test:integration         # real Supabase round-trip; see below
+```
+
+## Integration tests
+
+`npm run test:integration` exercises the real Supabase + Postgres triggers + Realtime against `rgslyxzeyjiypzilpxpf`. They:
+
+- require `SUPABASE_TEST_ENV=1` (set by the script) AND `SUPABASE_SERVICE_ROLE_KEY` (you supply, in `.env.local`)
+- skip cleanly if `SUPABASE_SERVICE_ROLE_KEY` isn't set
+- tag every row they create with a unique `__test__<uuid>__` marker in `notes` and delete those rows in `afterAll`
+
+To run them, add a temporary line to `.env.local`:
+
+```
+SUPABASE_SERVICE_ROLE_KEY=...   # from Supabase dashboard → API → service_role key
+```
+
+Then load env and run:
+
+```bash
+set -a && source .env.local && set +a && npm run test:integration
 ```
 
 ## Supabase auth redirect URLs

@@ -10,7 +10,7 @@
     "db:check": "tsx scripts/check-db.ts",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:watch": "vitest --exclude '**/*.integration.test.ts'",
-    "test:integration": "SUPABASE_TEST_ENV=1 vitest run **/*.integration.test.ts",
+    "test:integration": "SUPABASE_TEST_ENV=1 vitest run src/lib/sync/sync.integration.test.ts",
     "lint": "tsc -b --noEmit"
   },
   "dependencies": {

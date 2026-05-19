@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { SignIn } from "@/components/SignIn";
 import { RequireAuth } from "@/components/RequireAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { SyncProvider } from "@/components/SyncProvider";
 import { Today } from "@/routes/Today";
 import { AddSet } from "@/routes/AddSet";
 import { History } from "@/routes/History";
@@ -26,7 +27,13 @@ export function App() {
         <Routes>
           <Route path="/signin" element={<SignInRoute />} />
           <Route element={<RequireAuth />}>
-            <Route element={<AppLayout />}>
+            <Route
+              element={
+                <SyncProvider>
+                  <AppLayout />
+                </SyncProvider>
+              }
+            >
               <Route index element={<Today />} />
               <Route path="/add" element={<AddSet />} />
               <Route path="/history" element={<History />} />

@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type {
   CategoryRow,
+  ConflictRow,
   ExerciseRow,
   SetRow,
 } from "./database.types";
@@ -31,14 +32,16 @@ export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
   categories!: Table<LocalCategory, string>;
+  conflicts!: Table<ConflictRow, string>;
   meta!: Table<MetaRow, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
     this.version(1).stores({
       sets: "id, exercise_id, category_id, performed_at, updated_at, sync_status, deleted_at",
-      exercises: "id, category_id, name, updated_at, is_archived, deleted_at",
-      categories: "id, name, sort_order, updated_at, deleted_at",
+      exercises: "id, category_id, name, updated_at, sync_status, is_archived, deleted_at",
+      categories: "id, name, sort_order, updated_at, sync_status, deleted_at",
+      conflicts: "id, table_name, row_id, created_at",
       meta: "key",
     });
   }
