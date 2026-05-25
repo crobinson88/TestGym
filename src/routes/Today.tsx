@@ -6,6 +6,8 @@ import { syncEngine } from "@/lib/sync";
 import { useExercises, useCategories, useTodaySets } from "@/lib/hooks";
 import { cn, formatVolume, formatWeight, prettyDate, todayIsoDate } from "@/lib/utils";
 
+const VOLUME_FMT = new Intl.NumberFormat();
+
 export function Today() {
   const sets = useTodaySets();
   const exercises = useExercises();
@@ -46,7 +48,7 @@ export function Today() {
         <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
           <div className="text-xs uppercase tracking-wide text-muted">Daily volume</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-4xl font-bold tabular-nums">{formatVolume(totalVolume)}</span>
+            <span className="text-4xl font-bold tabular-nums">{VOLUME_FMT.format(Math.round(totalVolume))}</span>
             <span className="text-sm text-muted">lb · {sets.length} sets</span>
           </div>
         </div>
