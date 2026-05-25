@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Minus, Plus, Trophy } from "lucide-react";
+import { ChevronLeft, Check, Minus, Plus, Trash2, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RestTimer } from "@/components/RestTimer";
@@ -444,15 +444,13 @@ function AmountStep({
           <div className="mb-2 text-xs uppercase tracking-wide text-muted">Today</div>
           <ul className="space-y-1 text-sm">
             {today.map((s, i) => (
-              <li
+              <TodaySetRow
                 key={s.id}
-                className="flex items-center justify-between rounded-lg bg-surface px-3 py-2"
-              >
-                <span className="text-muted">Set {i + 1}</span>
-                <span className="font-medium">
-                  {formatWeight(s.weight)} × {s.reps}
-                </span>
-              </li>
+                setId={s.id}
+                index={i + 1}
+                weight={s.weight}
+                reps={s.reps}
+              />
             ))}
           </ul>
         </div>
@@ -476,6 +474,59 @@ function AmountStep({
         </Button>
       </div>
     </div>
+  );
+}
+
+function TodaySetRow({
+  setId,
+  index,
+  weight,
+  reps,
+}: {
+  setId: string;
+  index: number;
+  weight: number;
+  reps: number;
+}) {
+  const [confirm, setConfirm] = useState(false);
+
+  async function doDelete() {
+    await syncEngine.mutations.deleteSet(setId);
+  }
+
+  return (
+    <li className="flex items-center justify-between rounded-lg bg-surface px-3 py-2">
+      <span className="text-muted">Set {index}</span>
+      <div className="flex items-center gap-3">
+        <span className="font-medium">
+          {formatWeight(weight)} × {reps}
+        </span>
+        {confirm ? (
+          <div className="flex gap-1">
+            <button
+              onClick={doDelete}
+              className="h-8 rounded-md bg-danger px-2 text-xs font-medium text-bg"
+            >
+              Delete
+            </button>
+            <button
+              onClick={() => setConfirm(false)}
+              className="h-8 rounded-md bg-surface2 px-2 text-xs text-text"
+            >
+              Keep
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirm(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface2"
+            aria-label={`Delete set ${index}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
 
