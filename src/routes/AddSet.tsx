@@ -427,13 +427,30 @@ function AmountStep({
         </div>
       )}
 
-      <Display label="Weight (lbs)" value={formatWeight(state.weight)} />
+      <Display
+        label="Weight (lbs)"
+        value={formatWeight(state.weight)}
+        subline={
+          stats && stats.prWeight > 0
+            ? `max: ${formatWeight(stats.prWeight)} × ${stats.prWeightReps} on ${stats.prWeightDate}`
+            : undefined
+        }
+      />
       <StepRow
         steps={WEIGHT_STEPS}
         onTap={(delta) => dispatch({ type: "adjustWeight", delta })}
       />
 
-      <Display label="Reps" value={String(state.reps)} className="mt-6" />
+      <Display
+        label="Reps"
+        value={String(state.reps)}
+        subline={
+          stats && stats.prReps > 0
+            ? `max: ${stats.prReps} × ${formatWeight(stats.prRepsWeight)} on ${stats.prRepsDate}`
+            : undefined
+        }
+        className="mt-6"
+      />
       <StepRow
         steps={REP_STEPS}
         onTap={(delta) => dispatch({ type: "adjustReps", delta })}
@@ -533,16 +550,19 @@ function TodaySetRow({
 function Display({
   label,
   value,
+  subline,
   className,
 }: {
   label: string;
   value: string;
+  subline?: string;
   className?: string;
 }) {
   return (
     <div className={cn("text-center", className)}>
       <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-1 text-6xl font-bold tabular-nums">{value}</div>
+      {subline && <div className="mt-1 text-xs text-muted">{subline}</div>}
     </div>
   );
 }
