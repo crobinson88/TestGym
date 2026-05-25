@@ -1,6 +1,12 @@
 import { v4 as uuid } from "uuid";
 import { GymDB } from "../db";
-import type { CategoryRow, ExerciseRow, SetRow } from "../database.types";
+import type {
+  CardioSessionRow,
+  CategoryRow,
+  ExerciseRow,
+  MetActivityRow,
+  SetRow,
+} from "../database.types";
 
 export async function newTestDb(): Promise<GymDB> {
   const db = new GymDB(`gym-test-${uuid()}`);
@@ -53,6 +59,44 @@ export function makeSet(
     target_reps: null,
     notes: null,
     volume: 1000,
+    client_id: null,
+    user_id: null,
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+    ...over,
+  };
+}
+
+export function makeMetActivity(over: Partial<MetActivityRow> = {}): MetActivityRow {
+  const ts = new Date().toISOString();
+  return {
+    id: uuid(),
+    name: "Running, 6 mph",
+    met_value: 9.8,
+    kind: "cardio",
+    is_archived: false,
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+    ...over,
+  };
+}
+
+export function makeCardioSession(
+  activity_id: string,
+  over: Partial<CardioSessionRow> = {},
+): CardioSessionRow {
+  const ts = new Date().toISOString();
+  return {
+    id: uuid(),
+    activity_id,
+    performed_at: "2026-05-19",
+    minutes: 30,
+    distance: null,
+    notes: null,
+    met_value_snapshot: 9.8,
+    met_minutes: 294,
     client_id: null,
     user_id: null,
     created_at: ts,
