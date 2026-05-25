@@ -81,6 +81,7 @@ export interface ExerciseStats {
   totalSets: number;
   totalVolume: number;
   prWeight: number;
+  prWeightReps: number;
   prWeightDate: string;
   prReps: number;
   prRepsWeight: number;
@@ -236,13 +237,15 @@ export function useExerciseStats(exerciseId?: string): ExerciseStats | null | un
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
     let prWeight = 0;
+    let prWeightReps = 0;
     let prWeightDate = "";
     let prReps = 0;
     let prRepsWeight = 0;
     let prRepsDate = "";
     for (const s of live) {
-      if (s.weight > prWeight) {
+      if (s.weight > prWeight || (s.weight === prWeight && s.reps > prWeightReps)) {
         prWeight = s.weight;
+        prWeightReps = s.reps;
         prWeightDate = s.performed_at;
       }
       if (s.reps > prReps || (s.reps === prReps && s.weight > prRepsWeight)) {
@@ -259,6 +262,7 @@ export function useExerciseStats(exerciseId?: string): ExerciseStats | null | un
       totalSets: live.length,
       totalVolume,
       prWeight,
+      prWeightReps,
       prWeightDate,
       prReps,
       prRepsWeight,
