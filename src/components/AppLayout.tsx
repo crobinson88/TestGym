@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   BarChart3,
+  Clock,
   Dumbbell,
   Heart,
   History,
@@ -24,6 +25,7 @@ const tabs: readonly Tab[] = [
   { to: "/", label: "Today", icon: ListChecks, end: true },
   { to: "/history", label: "History", icon: History },
   { to: "/dashboard", label: "Stats", icon: BarChart3 },
+  { to: "/time", label: "Time", icon: Clock },
 ];
 
 export function AppLayout() {
@@ -101,7 +103,7 @@ export function AppLayout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 backdrop-blur">
-        <div className="mx-auto grid max-w-md grid-cols-3 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto grid max-w-md grid-cols-4 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {tabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

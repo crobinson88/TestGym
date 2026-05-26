@@ -9,6 +9,7 @@ import { Today } from "@/routes/Today";
 import { AddSet } from "@/routes/AddSet";
 import { AddCardio } from "@/routes/AddCardio";
 import { History } from "@/routes/History";
+import { TimeTracking } from "@/routes/TimeTracking";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
 const Dashboard = lazy(() => import("@/routes/Dashboard"));
@@ -46,6 +47,7 @@ export function App() {
               <Route path="/add" element={<AddSet />} />
               <Route path="/add-cardio" element={<AddCardio />} />
               <Route path="/history" element={<History />} />
+              <Route path="/time" element={<TimeTracking />} />
               <Route
                 path="/history/:id"
                 element={

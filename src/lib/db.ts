@@ -40,6 +40,25 @@ export interface MetaRow {
   updated_at: string;
 }
 
+export interface TimeTaskRow {
+  id: string;
+  name: string;
+  color: string;
+  is_work: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface TimeAllocationRow {
+  id: string;
+  date: string;
+  slot: number;
+  task_id: string;
+  updated_at: string;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -48,6 +67,8 @@ export class GymDB extends Dexie {
   cardio_sessions!: Table<LocalCardioSession, string>;
   conflicts!: Table<ConflictRow, string>;
   meta!: Table<MetaRow, string>;
+  timeTasks!: Table<TimeTaskRow, string>;
+  timeAllocations!: Table<TimeAllocationRow, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -66,6 +87,17 @@ export class GymDB extends Dexie {
       cardio_sessions: "id, activity_id, performed_at, updated_at, sync_status, deleted_at",
       conflicts: "id, table_name, row_id, created_at",
       meta: "key",
+    });
+    this.version(3).stores({
+      sets: "id, exercise_id, category_id, performed_at, updated_at, sync_status, deleted_at",
+      exercises: "id, category_id, name, updated_at, sync_status, is_archived, deleted_at",
+      categories: "id, name, sort_order, updated_at, sync_status, deleted_at",
+      met_activities: "id, name, kind, updated_at, sync_status, is_archived, deleted_at",
+      cardio_sessions: "id, activity_id, performed_at, updated_at, sync_status, deleted_at",
+      conflicts: "id, table_name, row_id, created_at",
+      meta: "key",
+      timeTasks: "id, name, sort_order, is_work, updated_at, deleted_at",
+      timeAllocations: "id, date, task_id, [date+slot], updated_at",
     });
   }
 }
