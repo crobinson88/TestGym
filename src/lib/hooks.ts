@@ -1,6 +1,8 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import type { LocalSet } from "./db";
+import type { MetActivityKind } from "./database.types";
+import { liftingMetMinutes } from "./met";
 import { addDays, todayIsoDate, weekStart } from "./utils";
 
 export function useCategories() {
@@ -69,6 +71,71 @@ export function useTodaySets() {
   }, []);
 }
 
+export function useMetActivities(kind?: MetActivityKind) {
+  return useLiveQuery(async () => {
+    const all = await db.met_activities.toArray();
+    return all
+      .filter(
+        (a) => !a.deleted_at && !a.is_archived && (kind ? a.kind === kind : true),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [kind]);
+}
+
+export function useTodayCardioSessions() {
+  return useLiveQuery(async () => {
+    const today = todayIsoDate();
+    const rows = await db.cardio_sessions
+      .where("performed_at")
+      .equals(today)
+      .toArray();
+    return rows
+      .filter((s) => !s.deleted_at)
+      .sort((a, b) =>
+        a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : 0,
+      );
+  }, []);
+}
+
+export interface TodayScore {
+  setsCount: number;
+  liftingVolume: number;
+  liftingMetMinutes: number;
+  cardioMinutes: number;
+  cardioMetMinutes: number;
+  total: number;
+}
+
+export function useTodayScore(): TodayScore | undefined {
+  return useLiveQuery(async () => {
+    const today = todayIsoDate();
+    const [sets, cardio] = await Promise.all([
+      db.sets.where("performed_at").equals(today).toArray(),
+      db.cardio_sessions.where("performed_at").equals(today).toArray(),
+    ]);
+    const liveSets = sets.filter((s) => !s.deleted_at);
+    const liveCardio = cardio.filter((c) => !c.deleted_at);
+
+    const setsCount = liveSets.length;
+    const liftingVolume = liveSets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+    const lifting = liftingMetMinutes(setsCount);
+    const cardioMinutes = liveCardio.reduce((sum, c) => sum + c.minutes, 0);
+    const cardioMetMin = liveCardio.reduce(
+      (sum, c) => sum + (c.met_minutes ?? c.met_value_snapshot * c.minutes),
+      0,
+    );
+
+    return {
+      setsCount,
+      liftingVolume,
+      liftingMetMinutes: lifting,
+      cardioMinutes,
+      cardioMetMinutes: cardioMetMin,
+      total: lifting + cardioMetMin,
+    };
+  }, []);
+}
+
 export interface ExerciseHistoryPoint {
   date: string;
   max_weight: number;
@@ -81,6 +148,7 @@ export interface ExerciseStats {
   totalSets: number;
   totalVolume: number;
   prWeight: number;
+  prWeightReps: number;
   prWeightDate: string;
   prReps: number;
   prRepsWeight: number;
@@ -236,13 +304,15 @@ export function useExerciseStats(exerciseId?: string): ExerciseStats | null | un
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
     let prWeight = 0;
+    let prWeightReps = 0;
     let prWeightDate = "";
     let prReps = 0;
     let prRepsWeight = 0;
     let prRepsDate = "";
     for (const s of live) {
-      if (s.weight > prWeight) {
+      if (s.weight > prWeight || (s.weight === prWeight && s.reps > prWeightReps)) {
         prWeight = s.weight;
+        prWeightReps = s.reps;
         prWeightDate = s.performed_at;
       }
       if (s.reps > prReps || (s.reps === prReps && s.weight > prRepsWeight)) {
@@ -259,6 +329,7 @@ export function useExerciseStats(exerciseId?: string): ExerciseStats | null | un
       totalSets: live.length,
       totalVolume,
       prWeight,
+      prWeightReps,
       prWeightDate,
       prReps,
       prRepsWeight,

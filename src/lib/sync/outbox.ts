@@ -1,36 +1,57 @@
-import type { GymDB, LocalSet, LocalExercise, LocalCategory } from "../db";
+import type {
+  GymDB,
+  LocalCardioSession,
+  LocalCategory,
+  LocalExercise,
+  LocalMetActivity,
+  LocalSet,
+} from "../db";
 import type { Client, DrainResult, Logger, SyncTable } from "./types";
 import { SYNC_TABLES } from "./types";
+
+type PendingRow =
+  | LocalSet
+  | LocalExercise
+  | LocalCategory
+  | LocalMetActivity
+  | LocalCardioSession;
 
 const STRIP_KEYS = [
   "sync_status",
   "sync_attempts",
   "sync_last_error",
   "volume",
+  "met_minutes",
   "created_at",
   "user_id",
 ] as const;
 
-function toPayload(row: LocalSet | LocalExercise | LocalCategory): Record<string, unknown> {
+function toPayload(row: PendingRow): Record<string, unknown> {
   const copy = { ...row } as Record<string, unknown>;
   for (const k of STRIP_KEYS) delete copy[k];
   return copy;
 }
 
-async function loadPending(db: GymDB, table: SyncTable, limit: number) {
+async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<PendingRow[]> {
   if (table === "sets") {
     return db.sets.where("sync_status").equals("pending").limit(limit).toArray();
   }
   if (table === "exercises") {
     return db.exercises.where("sync_status").equals("pending").limit(limit).toArray();
   }
-  return db.categories.where("sync_status").equals("pending").limit(limit).toArray();
+  if (table === "categories") {
+    return db.categories.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "met_activities") {
+    return db.met_activities.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  return db.cardio_sessions.where("sync_status").equals("pending").limit(limit).toArray();
 }
 
 async function markSynced(
   db: GymDB,
   table: SyncTable,
-  rows: ReadonlyArray<LocalSet | LocalExercise | LocalCategory>,
+  rows: ReadonlyArray<PendingRow>,
 ) {
   const ids = rows.map((r) => r.id);
   await db.table(table).where("id").anyOf(ids).modify({
@@ -43,13 +64,19 @@ async function markSynced(
 async function markError(
   db: GymDB,
   table: SyncTable,
-  row: LocalSet | LocalExercise | LocalCategory,
+  row: PendingRow,
   message: string,
 ) {
   if (table === "sets") {
     await db.sets.update(row.id, {
       sync_status: "error",
       sync_attempts: (row as LocalSet).sync_attempts + 1,
+      sync_last_error: message,
+    });
+  } else if (table === "cardio_sessions") {
+    await db.cardio_sessions.update(row.id, {
+      sync_status: "error",
+      sync_attempts: (row as LocalCardioSession).sync_attempts + 1,
       sync_last_error: message,
     });
   } else {
@@ -76,7 +103,7 @@ export function createOutbox({ client, db, log, batchSize = 200 }: OutboxDeps) {
     while (true) {
       const batch = await loadPending(db, table, batchSize);
       if (batch.length === 0) break;
-      const payload = (batch as Array<LocalSet | LocalExercise | LocalCategory>).map(toPayload);
+      const payload = batch.map(toPayload);
       const { error } = await (client.from(table) as ReturnType<Client["from"]>).upsert(
         payload as never,
         { onConflict: "id" },

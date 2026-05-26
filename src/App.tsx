@@ -7,6 +7,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { SyncProvider } from "@/components/SyncProvider";
 import { Today } from "@/routes/Today";
 import { AddSet } from "@/routes/AddSet";
+import { AddCardio } from "@/routes/AddCardio";
 import { History } from "@/routes/History";
 import { TimeTracking } from "@/routes/TimeTracking";
 
@@ -44,6 +45,7 @@ export function App() {
             >
               <Route index element={<Today />} />
               <Route path="/add" element={<AddSet />} />
+              <Route path="/add-cardio" element={<AddCardio />} />
               <Route path="/history" element={<History />} />
               <Route path="/time" element={<TimeTracking />} />
               <Route

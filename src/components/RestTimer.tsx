@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
-const DEFAULT_REST_SECONDS = 90;
+const DEFAULT_REST_SECONDS = 30;
 
 interface RestTimerProps {
   startedAt: number | null;

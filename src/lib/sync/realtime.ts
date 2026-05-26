@@ -1,14 +1,16 @@
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import type { GymDB } from "../db";
 import type {
+  CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  MetActivityRow,
   SetRow,
 } from "../database.types";
 import type { Client, Logger, SyncTable } from "./types";
 import { SYNC_TABLES } from "./types";
 
-type AnyRow = SetRow | ExerciseRow | CategoryRow;
+type AnyRow = SetRow | ExerciseRow | CategoryRow | MetActivityRow | CardioSessionRow;
 
 export interface MergeResult {
   applied: boolean;
