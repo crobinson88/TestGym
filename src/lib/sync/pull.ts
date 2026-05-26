@@ -1,7 +1,9 @@
 import type { GymDB } from "../db";
 import type {
+  CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  MetActivityRow,
   SetRow,
 } from "../database.types";
 import type { Client, Logger, PullResult, SyncTable } from "./types";
@@ -66,6 +68,43 @@ async function mergeCategories(db: GymDB, rows: CategoryRow[]) {
   });
 }
 
+async function mergeMetActivities(db: GymDB, rows: MetActivityRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.met_activities, async () => {
+    for (const remote of rows) {
+      const local = await db.met_activities.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.met_activities.put({
+          ...remote,
+          met_value: Number(remote.met_value),
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
+async function mergeCardioSessions(db: GymDB, rows: CardioSessionRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.cardio_sessions, async () => {
+    for (const remote of rows) {
+      const local = await db.cardio_sessions.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.cardio_sessions.put({
+          ...remote,
+          minutes: Number(remote.minutes),
+          met_value_snapshot: Number(remote.met_value_snapshot),
+          met_minutes: remote.met_minutes === null ? null : Number(remote.met_minutes),
+          distance: remote.distance === null ? null : Number(remote.distance),
+          sync_status: "synced",
+          sync_attempts: 0,
+          sync_last_error: null,
+        });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -76,6 +115,8 @@ const META_KEYS: Record<SyncTable, string> = {
   sets: "last_pull_sets",
   exercises: "last_pull_exercises",
   categories: "last_pull_categories",
+  met_activities: "last_pull_met_activities",
+  cardio_sessions: "last_pull_cardio_sessions",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -89,7 +130,13 @@ export function createPull({ client, db, log }: PullDeps) {
   }
 
   async function pull(): Promise<PullResult> {
-    const fetched = { sets: 0, exercises: 0, categories: 0 } as PullResult["fetched"];
+    const fetched = {
+      sets: 0,
+      exercises: 0,
+      categories: 0,
+      met_activities: 0,
+      cardio_sessions: 0,
+    } as PullResult["fetched"];
 
     for (const table of SYNC_TABLES) {
       const since = await readMark(table);
@@ -105,11 +152,21 @@ export function createPull({ client, db, log }: PullDeps) {
           await mergeExercises(db, rows);
           fetched.exercises = rows.length;
           if (rows.length > 0) await writeMark("exercises", rows[rows.length - 1].updated_at);
-        } else {
+        } else if (table === "categories") {
           const rows = await fetchSince<CategoryRow>(client, "categories", since);
           await mergeCategories(db, rows);
           fetched.categories = rows.length;
           if (rows.length > 0) await writeMark("categories", rows[rows.length - 1].updated_at);
+        } else if (table === "met_activities") {
+          const rows = await fetchSince<MetActivityRow>(client, "met_activities", since);
+          await mergeMetActivities(db, rows);
+          fetched.met_activities = rows.length;
+          if (rows.length > 0) await writeMark("met_activities", rows[rows.length - 1].updated_at);
+        } else {
+          const rows = await fetchSince<CardioSessionRow>(client, "cardio_sessions", since);
+          await mergeCardioSessions(db, rows);
+          fetched.cardio_sessions = rows.length;
+          if (rows.length > 0) await writeMark("cardio_sessions", rows[rows.length - 1].updated_at);
         }
       } catch (err) {
         log?.(`pull: ${table} failed`, (err as Error).message);

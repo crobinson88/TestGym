@@ -13,5 +13,10 @@ export const syncEngine = createSyncEngine({
 export { createSyncEngine } from "./engine";
 export { mergeRemote } from "./realtime";
 export type { SyncEngine } from "./engine";
-export type { AddSetInput, AddExerciseInput, AddCategoryInput } from "./mutations";
+export type {
+  AddCardioSessionInput,
+  AddCategoryInput,
+  AddExerciseInput,
+  AddSetInput,
+} from "./mutations";
 export type { SyncStatusEvent } from "./types";

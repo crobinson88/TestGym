@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { GymDB } from "../db";
 import { createMutations } from "./mutations";
-import { makeCategory, makeExercise, newTestDb } from "./test-helpers";
+import {
+  makeCategory,
+  makeExercise,
+  makeMetActivity,
+  newTestDb,
+} from "./test-helpers";
 
 let db: GymDB;
 
@@ -57,6 +62,46 @@ describe("mutations.addSet", () => {
     await m.deleteSet(set.id);
 
     const after = await db.sets.get(set.id);
+    expect(after?.deleted_at).not.toBeNull();
+    expect(after?.sync_status).toBe("pending");
+  });
+
+  it("addCardioSession snapshots met_value and computes met_minutes", async () => {
+    db = await newTestDb();
+    const act = makeMetActivity({ met_value: 9.8 });
+    await db.met_activities.put({ ...act, sync_status: "synced" });
+
+    const m = createMutations({ db });
+    const session = await m.addCardioSession({
+      activity_id: act.id,
+      minutes: 30,
+    });
+
+    expect(session.sync_status).toBe("pending");
+    expect(session.met_value_snapshot).toBe(9.8);
+    expect(session.met_minutes).toBeCloseTo(9.8 * 30);
+    expect(session.client_id).toBe(session.id);
+    expect(session.performed_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("addCardioSession throws when activity_id is unknown", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    await expect(
+      m.addCardioSession({ activity_id: "nope", minutes: 30 }),
+    ).rejects.toThrow(/unknown activity_id/);
+  });
+
+  it("deleteCardioSession soft-deletes and re-pends", async () => {
+    db = await newTestDb();
+    const act = makeMetActivity();
+    await db.met_activities.put({ ...act, sync_status: "synced" });
+
+    const m = createMutations({ db });
+    const session = await m.addCardioSession({ activity_id: act.id, minutes: 20 });
+    await m.deleteCardioSession(session.id);
+
+    const after = await db.cardio_sessions.get(session.id);
     expect(after?.deleted_at).not.toBeNull();
     expect(after?.sync_status).toBe("pending");
   });

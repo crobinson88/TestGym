@@ -1,5 +1,15 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { LogOut, ListChecks, BarChart3, Plus, History } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import {
+  BarChart3,
+  Dumbbell,
+  Heart,
+  History,
+  ListChecks,
+  LogOut,
+  Plus,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 
@@ -19,6 +29,26 @@ const tabs: readonly Tab[] = [
 export function AppLayout() {
   const { session, signOut } = useAuth();
   const email = session?.user?.email ?? "";
+  const [logOpen, setLogOpen] = useState(false);
+  const navigate = useNavigate();
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!logOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (!popoverRef.current) return;
+      if (!popoverRef.current.contains(e.target as Node)) {
+        setLogOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [logOpen]);
+
+  function go(to: string) {
+    setLogOpen(false);
+    navigate(to);
+  }
 
   return (
     <div className="flex min-h-full flex-col">
@@ -41,13 +71,34 @@ export function AppLayout() {
         <Outlet />
       </main>
 
-      <NavLink
-        to="/add"
-        className="fixed bottom-24 right-4 flex h-16 w-16 items-center justify-center rounded-full bg-accent text-bg shadow-lg shadow-accent/30"
-        aria-label="Add set"
-      >
-        <Plus className="h-7 w-7" />
-      </NavLink>
+      <div ref={popoverRef} className="fixed bottom-24 right-4 z-20 flex flex-col items-end gap-3">
+        {logOpen && (
+          <>
+            <button
+              onClick={() => go("/add-cardio")}
+              className="flex h-14 items-center gap-3 rounded-full bg-surface px-5 text-base font-medium text-text shadow-lg ring-1 ring-line transition active:scale-[0.98]"
+            >
+              <Heart className="h-5 w-5 text-accent" />
+              Cardio
+            </button>
+            <button
+              onClick={() => go("/add")}
+              className="flex h-14 items-center gap-3 rounded-full bg-surface px-5 text-base font-medium text-text shadow-lg ring-1 ring-line transition active:scale-[0.98]"
+            >
+              <Dumbbell className="h-5 w-5 text-accent" />
+              Set
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => setLogOpen((o) => !o)}
+          className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-bg shadow-lg shadow-accent/30 transition active:scale-[0.96]"
+          aria-label={logOpen ? "Close log menu" : "Log activity"}
+          aria-expanded={logOpen}
+        >
+          {logOpen ? <X className="h-7 w-7" /> : <Plus className="h-7 w-7" />}
+        </button>
+      </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 backdrop-blur">
         <div className="mx-auto grid max-w-md grid-cols-3 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">

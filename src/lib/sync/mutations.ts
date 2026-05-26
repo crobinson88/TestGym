@@ -1,9 +1,16 @@
 import { v4 as uuid } from "uuid";
-import type { GymDB, LocalSet, LocalExercise, LocalCategory } from "../db";
 import type {
-  SetRow,
-  ExerciseRow,
+  GymDB,
+  LocalCardioSession,
+  LocalCategory,
+  LocalExercise,
+  LocalSet,
+} from "../db";
+import type {
+  CardioSessionRow,
   CategoryRow,
+  ExerciseRow,
+  SetRow,
   WeightUnit,
 } from "../database.types";
 import { todayIsoDate } from "../utils";
@@ -30,6 +37,14 @@ export interface AddCategoryInput {
   sort_order?: number;
 }
 
+export interface AddCardioSessionInput {
+  activity_id: string;
+  minutes: number;
+  performed_at?: string;
+  distance?: number | null;
+  notes?: string | null;
+}
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -48,6 +63,10 @@ function pendingExercise(row: ExerciseRow): LocalExercise {
 
 function pendingCategory(row: CategoryRow): LocalCategory {
   return { ...row, sync_status: "pending" };
+}
+
+function pendingCardio(row: CardioSessionRow): LocalCardioSession {
+  return { ...row, sync_status: "pending", sync_attempts: 0, sync_last_error: null };
 }
 
 export interface MutationDeps {
@@ -151,7 +170,57 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return local;
   }
 
-  return { addSet, updateSet, deleteSet, addExercise, addCategory };
+  async function addCardioSession(input: AddCardioSessionInput): Promise<LocalCardioSession> {
+    const activity = await db.met_activities.get(input.activity_id);
+    if (!activity || activity.deleted_at) {
+      throw new Error(`unknown activity_id: ${input.activity_id}`);
+    }
+    const id = uuid();
+    const ts = now();
+    const row: CardioSessionRow = {
+      id,
+      activity_id: input.activity_id,
+      performed_at: input.performed_at ?? todayIsoDate(),
+      minutes: input.minutes,
+      distance: input.distance ?? null,
+      notes: input.notes ?? null,
+      met_value_snapshot: activity.met_value,
+      met_minutes: activity.met_value * input.minutes,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingCardio(row);
+    await db.cardio_sessions.put(local);
+    notify();
+    return local;
+  }
+
+  async function deleteCardioSession(id: string): Promise<void> {
+    const existing = await db.cardio_sessions.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    const updated: LocalCardioSession = {
+      ...existing,
+      deleted_at: ts,
+      updated_at: ts,
+      sync_status: "pending",
+      sync_attempts: 0,
+      sync_last_error: null,
+    };
+    await db.cardio_sessions.put(updated);
+    notify();
+  }
+
+  return {
+    addSet,
+    updateSet,
+    deleteSet,
+    addExercise,
+    addCategory,
+    addCardioSession,
+    deleteCardioSession,
+  };
 }
 
 export type Mutations = ReturnType<typeof createMutations>;

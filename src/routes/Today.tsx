@@ -3,22 +3,40 @@ import { Link } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { syncEngine } from "@/lib/sync";
-import { useExercises, useCategories, useTodaySets } from "@/lib/hooks";
+import {
+  useExercises,
+  useCategories,
+  useTodayCardioSessions,
+  useTodayScore,
+  useTodaySets,
+  useMetActivities,
+} from "@/lib/hooks";
 import { cn, formatVolume, formatWeight, prettyDate, todayIsoDate } from "@/lib/utils";
 
-const VOLUME_FMT = new Intl.NumberFormat();
+const INT_FMT = new Intl.NumberFormat();
 
 export function Today() {
   const sets = useTodaySets();
   const exercises = useExercises();
   const categories = useCategories();
+  const cardio = useTodayCardioSessions();
+  const activities = useMetActivities();
+  const score = useTodayScore();
 
-  if (sets === undefined || exercises === undefined || categories === undefined) {
+  if (
+    sets === undefined ||
+    exercises === undefined ||
+    categories === undefined ||
+    cardio === undefined ||
+    activities === undefined ||
+    score === undefined
+  ) {
     return <div className="p-6 text-center text-muted">Loading...</div>;
   }
 
   const exById = new Map(exercises.map((e) => [e.id, e]));
   const catById = new Map(categories.map((c) => [c.id, c]));
+  const activityById = new Map(activities.map((a) => [a.id, a]));
 
   const grouped = new Map<string, { exercise: string; category: string; sets: typeof sets }>();
   for (const s of sets) {
@@ -37,24 +55,62 @@ export function Today() {
     a.exercise.localeCompare(b.exercise),
   );
 
-  const totalVolume = sets.reduce((sum, s) => sum + s.weight * s.reps, 0);
   const today = todayIsoDate();
+  const nothingLogged = sets.length === 0 && cardio.length === 0;
 
   return (
     <div className="p-4">
       <header className="mb-6">
         <div className="text-xs uppercase tracking-wide text-muted">{prettyDate(today)}</div>
         <h1 className="mt-1 text-2xl font-bold">Today</h1>
+
         <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
-          <div className="text-xs uppercase tracking-wide text-muted">Daily volume</div>
+          <div className="text-xs uppercase tracking-wide text-muted">Today's score</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-4xl font-bold tabular-nums">{VOLUME_FMT.format(Math.round(totalVolume))}</span>
-            <span className="text-sm text-muted">lb · {sets.length} sets</span>
+            <span className="text-5xl font-bold tabular-nums">
+              {INT_FMT.format(Math.round(score.total))}
+            </span>
+            <span className="text-sm text-muted">MET-min</span>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <div className="text-xs uppercase tracking-wide text-muted">Volume</div>
+            <div className="mt-1 flex items-baseline gap-1">
+              <span className="text-xl font-semibold tabular-nums">
+                {INT_FMT.format(Math.round(score.liftingVolume))}
+              </span>
+              <span className="text-xs text-muted">lb</span>
+            </div>
+            <div className="text-xs text-muted">
+              {sets.length} {sets.length === 1 ? "set" : "sets"}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <div className="text-xs uppercase tracking-wide text-muted">Cardio</div>
+            <div className="mt-1 flex items-baseline gap-1">
+              {cardio.length === 0 ? (
+                <span className="text-xl font-semibold text-muted">—</span>
+              ) : (
+                <>
+                  <span className="text-xl font-semibold tabular-nums">
+                    {score.cardioMinutes}
+                  </span>
+                  <span className="text-xs text-muted">min</span>
+                </>
+              )}
+            </div>
+            <div className="text-xs text-muted">
+              {cardio.length === 0
+                ? "nothing logged"
+                : `${cardio.length} ${cardio.length === 1 ? "session" : "sessions"}`}
+            </div>
           </div>
         </div>
       </header>
 
-      {sets.length === 0 && (
+      {nothingLogged && (
         <div className="space-y-4 py-12 text-center">
           <p className="text-muted">No sets logged yet today.</p>
           <Link to="/add" className="inline-block">
@@ -75,6 +131,27 @@ export function Today() {
             sets={g.sets}
           />
         ))}
+
+        {cardio.length > 0 && (
+          <section className="overflow-hidden rounded-2xl border border-line bg-surface">
+            <header className="border-b border-line px-4 py-3">
+              <div className="text-xs uppercase tracking-wide text-muted">Cardio</div>
+              <h2 className="text-base font-semibold">Today's sessions</h2>
+            </header>
+            <ul>
+              {cardio.map((c, i) => (
+                <CardioRow
+                  key={c.id}
+                  sessionId={c.id}
+                  index={i + 1}
+                  activityName={activityById.get(c.activity_id)?.name ?? "Activity"}
+                  minutes={c.minutes}
+                  metMinutes={c.met_minutes ?? c.met_value_snapshot * c.minutes}
+                />
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -108,6 +185,66 @@ function ExerciseGroup({
         ))}
       </ul>
     </section>
+  );
+}
+
+function CardioRow({
+  sessionId,
+  index,
+  activityName,
+  minutes,
+  metMinutes,
+}: {
+  sessionId: string;
+  index: number;
+  activityName: string;
+  minutes: number;
+  metMinutes: number;
+}) {
+  const [confirm, setConfirm] = useState(false);
+
+  async function doDelete() {
+    await syncEngine.mutations.deleteCardioSession(sessionId);
+  }
+
+  return (
+    <li className="flex items-center justify-between border-b border-line/50 px-4 py-3 last:border-b-0">
+      <div className="flex min-w-0 items-baseline gap-3">
+        <span className="w-8 shrink-0 text-sm text-muted">#{index}</span>
+        <div className="min-w-0">
+          <div className="truncate text-base font-medium">{activityName}</div>
+          <div className="text-xs text-muted tabular-nums">
+            {minutes} min · {Math.round(metMinutes)} MET-min
+          </div>
+        </div>
+      </div>
+      {confirm ? (
+        <div className="flex gap-2">
+          <button
+            onClick={doDelete}
+            className="h-10 rounded-lg bg-danger px-3 text-sm font-medium text-bg"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setConfirm(false)}
+            className="h-10 rounded-lg bg-surface2 px-3 text-sm text-text"
+          >
+            Keep
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirm(true)}
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-surface2",
+          )}
+          aria-label={`Delete cardio session ${index}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
+    </li>
   );
 }
 

@@ -13,9 +13,20 @@ export interface SyncDeps {
   now?: () => string;
 }
 
-export type SyncTable = "sets" | "exercises" | "categories";
+export type SyncTable =
+  | "sets"
+  | "exercises"
+  | "categories"
+  | "met_activities"
+  | "cardio_sessions";
 
-export const SYNC_TABLES: readonly SyncTable[] = ["sets", "exercises", "categories"];
+export const SYNC_TABLES: readonly SyncTable[] = [
+  "categories",
+  "exercises",
+  "met_activities",
+  "sets",
+  "cardio_sessions",
+];
 
 export interface DrainResult {
   pushed: number;
