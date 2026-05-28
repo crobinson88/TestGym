@@ -8,6 +8,7 @@ const SECTION_ORDER: TdlSection[] = [
   "follow_ups",
   "product",
   "tgm_tasks",
+  "meeting_action_items",
   "personal_other",
   "new",
 ];

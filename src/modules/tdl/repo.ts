@@ -119,6 +119,7 @@ export const STATUS_CYCLE: Record<TdlSection, TdlStatus[]> = {
   follow_ups: ["open", "worked_today", "done"],
   product: ["open", "worked_today", "ready_for_testing", "done"],
   tgm_tasks: ["open", "worked_today", "done"],
+  meeting_action_items: ["open", "worked_today", "done"],
   personal_other: ["open", "worked_today", "done"],
   new: ["open", "worked_today", "done"],
 };

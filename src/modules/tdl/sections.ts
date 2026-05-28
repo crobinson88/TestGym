@@ -44,6 +44,13 @@ export const SECTIONS: readonly SectionConfig[] = [
     ],
   },
   {
+    key: "meeting_action_items",
+    label: "Meeting Action Items",
+    hasDueDate: true,
+    hasTimeEstimate: true,
+    recurringSeeds: [],
+  },
+  {
     key: "personal_other",
     label: "Personal Other",
     hasDueDate: false,
