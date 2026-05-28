@@ -78,7 +78,7 @@ export async function rollForward(
       is_priority: prev.is_priority,
       notes: null,
       origin_item_id: prev.id,
-      origin_snapshot_date: prev.snapshot_date,
+      origin_snapshot_date: prev.origin_snapshot_date ?? prev.snapshot_date,
       created_at: ts,
       updated_at: ts,
       deleted_at: null,

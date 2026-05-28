@@ -173,6 +173,17 @@ describe("rollForward", () => {
     expect(positions).toEqual([0, 1, 2]);
   });
 
+  it("preserves the original snapshot_date across multiple rolls", async () => {
+    await seed([
+      makeItem("2026-05-04", "follow_ups", { status: "open", title: "Long runner" }),
+    ]);
+    await rollForward("2026-05-04", "2026-05-05", { db });
+    await rollForward("2026-05-05", "2026-05-06", { db });
+    const day6 = await listFor("2026-05-06");
+    expect(day6).toHaveLength(1);
+    expect(day6[0].origin_snapshot_date).toBe("2026-05-04");
+  });
+
   it("seeds an empty tdl_days row for the new day if one doesn't exist", async () => {
     await seed([makeItem("2026-05-27", "follow_ups", { status: "open", title: "x" })]);
     const r = await rollForward("2026-05-27", "2026-05-28", { db });

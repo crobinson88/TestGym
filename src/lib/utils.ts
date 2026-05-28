@@ -39,6 +39,14 @@ export function prettyDate(iso: string): string {
   return PRETTY_DATE.format(new Date(y, m - 1, d));
 }
 
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short" });
+
+export function monthDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
+  const month = SHORT_MONTH.format(new Date(y, m - 1, d));
+  return `${month} ${String(d).padStart(2, "0")}`;
+}
+
 export function relativeDay(iso: string, today = todayIsoDate()): string {
   if (iso === today) return "today";
   const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
