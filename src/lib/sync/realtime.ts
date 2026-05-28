@@ -6,15 +6,30 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TdlDayRow,
+  TdlItemRow,
 } from "../database.types";
 import type { Client, Logger, SyncTable } from "./types";
 import { SYNC_TABLES } from "./types";
 
-type AnyRow = SetRow | ExerciseRow | CategoryRow | MetActivityRow | CardioSessionRow;
+type AnyRow =
+  | SetRow
+  | ExerciseRow
+  | CategoryRow
+  | MetActivityRow
+  | CardioSessionRow
+  | TdlItemRow
+  | TdlDayRow;
 
 export interface MergeResult {
   applied: boolean;
   reason: "applied" | "skipped-equal" | "skipped-stale" | "deleted";
+}
+
+function pkOf(table: SyncTable, row: AnyRow): string {
+  return table === "tdl_days"
+    ? (row as TdlDayRow).snapshot_date
+    : (row as { id: string }).id;
 }
 
 export async function mergeRemote(
@@ -23,7 +38,8 @@ export async function mergeRemote(
   remote: AnyRow,
 ): Promise<MergeResult> {
   const t = db.table(table);
-  const local = (await t.get(remote.id)) as AnyRow | undefined;
+  const key = pkOf(table, remote);
+  const local = (await t.get(key)) as AnyRow | undefined;
 
   if (!local) {
     await t.put({ ...remote, sync_status: "synced" });
@@ -39,15 +55,17 @@ export async function mergeRemote(
     return { applied: true, reason: "applied" };
   }
 
-  await db.conflicts.add({
-    id: crypto.randomUUID(),
-    table_name: table,
-    row_id: remote.id,
-    local_row: local,
-    remote_row: remote,
-    resolved_to: "local",
-    created_at: new Date().toISOString(),
-  });
+  if (table !== "tdl_days") {
+    await db.conflicts.add({
+      id: crypto.randomUUID(),
+      table_name: table,
+      row_id: key,
+      local_row: local,
+      remote_row: remote,
+      resolved_to: "local",
+      created_at: new Date().toISOString(),
+    });
+  }
   return { applied: false, reason: "skipped-stale" };
 }
 
@@ -70,11 +88,13 @@ export function createRealtime({ client, db, log }: RealtimeDeps) {
           (payload: RealtimePostgresChangesPayload<AnyRow>) => {
             const next =
               payload.eventType === "DELETE" ? (payload.old as AnyRow) : (payload.new as AnyRow);
-            if (!next || !next.id) return;
+            if (!next) return;
+            const key = pkOf(table, next);
+            if (!key) return;
             if (payload.eventType === "DELETE") {
               void db
                 .table(table)
-                .delete(next.id)
+                .delete(key)
                 .then(() => onApplied?.(table));
               return;
             }

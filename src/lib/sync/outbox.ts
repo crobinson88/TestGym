@@ -5,6 +5,8 @@ import type {
   LocalExercise,
   LocalMetActivity,
   LocalSet,
+  LocalTdlDay,
+  LocalTdlItem,
 } from "../db";
 import type { Client, DrainResult, Logger, SyncTable } from "./types";
 import { SYNC_TABLES } from "./types";
@@ -14,7 +16,9 @@ type PendingRow =
   | LocalExercise
   | LocalCategory
   | LocalMetActivity
-  | LocalCardioSession;
+  | LocalCardioSession
+  | LocalTdlItem
+  | LocalTdlDay;
 
 const STRIP_KEYS = [
   "sync_status",
@@ -26,10 +30,26 @@ const STRIP_KEYS = [
   "user_id",
 ] as const;
 
+const PK_BY_TABLE: Record<SyncTable, string> = {
+  sets: "id",
+  exercises: "id",
+  categories: "id",
+  met_activities: "id",
+  cardio_sessions: "id",
+  tdl_items: "id",
+  tdl_days: "snapshot_date",
+};
+
 function toPayload(row: PendingRow): Record<string, unknown> {
   const copy = { ...row } as Record<string, unknown>;
   for (const k of STRIP_KEYS) delete copy[k];
   return copy;
+}
+
+function pkOf(table: SyncTable, row: PendingRow): string {
+  return table === "tdl_days"
+    ? (row as LocalTdlDay).snapshot_date
+    : (row as { id: string }).id;
 }
 
 async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<PendingRow[]> {
@@ -45,7 +65,13 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   if (table === "met_activities") {
     return db.met_activities.where("sync_status").equals("pending").limit(limit).toArray();
   }
-  return db.cardio_sessions.where("sync_status").equals("pending").limit(limit).toArray();
+  if (table === "cardio_sessions") {
+    return db.cardio_sessions.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "tdl_items") {
+    return db.tdl_items.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
 }
 
 async function markSynced(
@@ -53,8 +79,9 @@ async function markSynced(
   table: SyncTable,
   rows: ReadonlyArray<PendingRow>,
 ) {
-  const ids = rows.map((r) => r.id);
-  await db.table(table).where("id").anyOf(ids).modify({
+  const keyField = PK_BY_TABLE[table];
+  const keys = rows.map((r) => pkOf(table, r));
+  await db.table(table).where(keyField).anyOf(keys).modify({
     sync_status: "synced",
     sync_attempts: 0,
     sync_last_error: null,
@@ -67,20 +94,21 @@ async function markError(
   row: PendingRow,
   message: string,
 ) {
+  const pk = pkOf(table, row);
   if (table === "sets") {
-    await db.sets.update(row.id, {
+    await db.sets.update(pk, {
       sync_status: "error",
       sync_attempts: (row as LocalSet).sync_attempts + 1,
       sync_last_error: message,
     });
   } else if (table === "cardio_sessions") {
-    await db.cardio_sessions.update(row.id, {
+    await db.cardio_sessions.update(pk, {
       sync_status: "error",
       sync_attempts: (row as LocalCardioSession).sync_attempts + 1,
       sync_last_error: message,
     });
   } else {
-    await db.table(table).update(row.id, {
+    await db.table(table).update(pk, {
       sync_status: "error",
       sync_last_error: message,
     });
@@ -106,7 +134,7 @@ export function createOutbox({ client, db, log, batchSize = 200 }: OutboxDeps) {
       const payload = batch.map(toPayload);
       const { error } = await (client.from(table) as ReturnType<Client["from"]>).upsert(
         payload as never,
-        { onConflict: "id" },
+        { onConflict: PK_BY_TABLE[table] },
       );
       if (error) {
         log?.(`outbox: ${table} batch failed`, error.message);

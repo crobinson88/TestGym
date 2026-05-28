@@ -77,6 +77,49 @@ export interface CardioSessionRow {
   deleted_at: string | null;
 }
 
+export type TdlSection =
+  | "weekly_goals"
+  | "follow_ups"
+  | "product"
+  | "tgm_tasks"
+  | "personal_other"
+  | "new";
+
+export type TdlStatus =
+  | "open"
+  | "worked_today"
+  | "ready_for_testing"
+  | "done"
+  | "cancelled";
+
+export interface TdlItemRow {
+  id: string;
+  snapshot_date: string;
+  section: TdlSection;
+  is_recurring: boolean;
+  position: number;
+  title: string;
+  due_date: string | null;
+  time_estimate_min: number | null;
+  status: TdlStatus;
+  is_priority: boolean;
+  notes: string | null;
+  origin_item_id: string | null;
+  origin_snapshot_date: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface TdlDayRow {
+  snapshot_date: string;
+  limiting_factor_date: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -121,6 +164,21 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<Omit<CardioSessionRow, "met_minutes">>;
+      };
+      tdl_items: {
+        Row: TdlItemRow;
+        Insert: Partial<TdlItemRow> & {
+          id: string;
+          snapshot_date: string;
+          section: TdlSection;
+          title: string;
+        };
+        Update: Partial<TdlItemRow>;
+      };
+      tdl_days: {
+        Row: TdlDayRow;
+        Insert: Partial<TdlDayRow> & { snapshot_date: string };
+        Update: Partial<TdlDayRow>;
       };
     };
   };

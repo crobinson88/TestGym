@@ -18,7 +18,9 @@ export type SyncTable =
   | "exercises"
   | "categories"
   | "met_activities"
-  | "cardio_sessions";
+  | "cardio_sessions"
+  | "tdl_items"
+  | "tdl_days";
 
 export const SYNC_TABLES: readonly SyncTable[] = [
   "categories",
@@ -26,6 +28,8 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   "met_activities",
   "sets",
   "cardio_sessions",
+  "tdl_items",
+  "tdl_days",
 ];
 
 export interface DrainResult {

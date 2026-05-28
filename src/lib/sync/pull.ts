@@ -5,6 +5,8 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TdlDayRow,
+  TdlItemRow,
 } from "../database.types";
 import type { Client, Logger, PullResult, SyncTable } from "./types";
 import { SYNC_TABLES } from "./types";
@@ -105,6 +107,30 @@ async function mergeCardioSessions(db: GymDB, rows: CardioSessionRow[]) {
   });
 }
 
+async function mergeTdlItems(db: GymDB, rows: TdlItemRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.tdl_items, async () => {
+    for (const remote of rows) {
+      const local = await db.tdl_items.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.tdl_items.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
+async function mergeTdlDays(db: GymDB, rows: TdlDayRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.tdl_days, async () => {
+    for (const remote of rows) {
+      const local = await db.tdl_days.get(remote.snapshot_date);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.tdl_days.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -117,6 +143,8 @@ const META_KEYS: Record<SyncTable, string> = {
   categories: "last_pull_categories",
   met_activities: "last_pull_met_activities",
   cardio_sessions: "last_pull_cardio_sessions",
+  tdl_items: "last_pull_tdl_items",
+  tdl_days: "last_pull_tdl_days",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -130,13 +158,15 @@ export function createPull({ client, db, log }: PullDeps) {
   }
 
   async function pull(): Promise<PullResult> {
-    const fetched = {
+    const fetched: PullResult["fetched"] = {
       sets: 0,
       exercises: 0,
       categories: 0,
       met_activities: 0,
       cardio_sessions: 0,
-    } as PullResult["fetched"];
+      tdl_items: 0,
+      tdl_days: 0,
+    };
 
     for (const table of SYNC_TABLES) {
       const since = await readMark(table);
@@ -162,11 +192,21 @@ export function createPull({ client, db, log }: PullDeps) {
           await mergeMetActivities(db, rows);
           fetched.met_activities = rows.length;
           if (rows.length > 0) await writeMark("met_activities", rows[rows.length - 1].updated_at);
-        } else {
+        } else if (table === "cardio_sessions") {
           const rows = await fetchSince<CardioSessionRow>(client, "cardio_sessions", since);
           await mergeCardioSessions(db, rows);
           fetched.cardio_sessions = rows.length;
           if (rows.length > 0) await writeMark("cardio_sessions", rows[rows.length - 1].updated_at);
+        } else if (table === "tdl_items") {
+          const rows = await fetchSince<TdlItemRow>(client, "tdl_items", since);
+          await mergeTdlItems(db, rows);
+          fetched.tdl_items = rows.length;
+          if (rows.length > 0) await writeMark("tdl_items", rows[rows.length - 1].updated_at);
+        } else {
+          const rows = await fetchSince<TdlDayRow>(client, "tdl_days", since);
+          await mergeTdlDays(db, rows);
+          fetched.tdl_days = rows.length;
+          if (rows.length > 0) await writeMark("tdl_days", rows[rows.length - 1].updated_at);
         }
       } catch (err) {
         log?.(`pull: ${table} failed`, (err as Error).message);
