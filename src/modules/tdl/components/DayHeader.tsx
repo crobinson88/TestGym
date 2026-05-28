@@ -61,12 +61,15 @@ export function DayHeader({
           </span>
         </div>
         <div className="text-right">
-          <div className="text-[11px] uppercase tracking-wider text-muted">Done</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted">Active</div>
           <div className="text-lg font-bold tabular-nums">
-            {c.done}/{c.total}
+            {c.active}/{c.total}
             <span className="ml-1 text-xs font-normal text-muted">
-              {c.total === 0 ? "—" : `${Math.round(c.ratio * 100)}%`}
+              {c.total === 0 ? "—" : `${Math.round(c.activeRatio * 100)}%`}
             </span>
+          </div>
+          <div className="text-[11px] tabular-nums text-muted">
+            Priority {c.priorityActive}/{c.priorityTotal}
           </div>
         </div>
       </div>

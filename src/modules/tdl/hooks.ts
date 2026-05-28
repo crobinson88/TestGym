@@ -43,7 +43,11 @@ export function useDay(snapshot_date?: string): DayBundle | undefined {
 export interface DayCompletion {
   total: number;
   done: number;
+  active: number;
   ratio: number;
+  activeRatio: number;
+  priorityTotal: number;
+  priorityActive: number;
 }
 
 export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
@@ -55,9 +59,20 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
       i.status === "ready_for_testing" ||
       i.status === "done",
   );
+  const isActive = (i: LocalTdlItem) => i.status === "worked_today" || i.status === "done";
   const done = counted.filter((i) => i.status === "done").length;
+  const active = counted.filter(isActive).length;
   const total = counted.length;
-  return { total, done, ratio: total === 0 ? 0 : done / total };
+  const priority = counted.filter((i) => i.is_priority);
+  return {
+    total,
+    done,
+    active,
+    ratio: total === 0 ? 0 : done / total,
+    activeRatio: total === 0 ? 0 : active / total,
+    priorityTotal: priority.length,
+    priorityActive: priority.filter(isActive).length,
+  };
 }
 
 export interface HistoryPoint {
