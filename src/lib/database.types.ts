@@ -113,7 +113,6 @@ export interface TdlItemRow {
 
 export interface TdlDayRow {
   snapshot_date: string;
-  limiting_factor_date: string | null;
   note: string | null;
   created_at: string;
   updated_at: string;

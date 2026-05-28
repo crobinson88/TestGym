@@ -190,7 +190,7 @@ export async function reorderSection(
 
 export async function upsertDay(
   snapshot_date: string,
-  patch: Partial<Pick<LocalTdlDay, "limiting_factor_date" | "note">> = {},
+  patch: Partial<Pick<LocalTdlDay, "note">> = {},
 ): Promise<LocalTdlDay> {
   const existing = await db.tdl_days.get(snapshot_date);
   const ts = nowIso();
@@ -198,7 +198,6 @@ export async function upsertDay(
     ? { ...existing, ...patch, updated_at: ts, sync_status: "pending" }
     : {
         snapshot_date,
-        limiting_factor_date: patch.limiting_factor_date ?? null,
         note: patch.note ?? null,
         created_at: ts,
         updated_at: ts,
