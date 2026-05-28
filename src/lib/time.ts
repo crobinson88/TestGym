@@ -1,3 +1,5 @@
+import { addDays } from "./utils";
+
 export const SLOT_MINUTES = 15;
 export const SLOTS_PER_DAY = 96;
 export const HOURS_PER_SLOT = SLOT_MINUTES / 60;
@@ -97,4 +99,45 @@ export function workHoursInRange(
     if (tasksById.get(a.task_id)?.is_work) n++;
   }
   return n * HOURS_PER_SLOT;
+}
+
+export interface WeekHoursPoint {
+  week_start: string;
+  hours: number;
+}
+
+export interface HoursPoint {
+  date: string;
+  hours: number;
+}
+
+export function hoursPerDay(allocs: readonly AllocationLike[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const a of allocs) counts.set(a.date, (counts.get(a.date) ?? 0) + 1);
+  const out = new Map<string, number>();
+  for (const [date, n] of counts) out.set(date, n * HOURS_PER_SLOT);
+  return out;
+}
+
+export function weeklyHours(
+  perDay: ReadonlyMap<string, number>,
+  weekStarts: readonly string[],
+): WeekHoursPoint[] {
+  return weekStarts.map((ws) => {
+    let hours = 0;
+    for (let i = 0; i < 7; i++) hours += perDay.get(addDays(ws, i)) ?? 0;
+    return { week_start: ws, hours };
+  });
+}
+
+export function rollingHours(
+  perDay: ReadonlyMap<string, number>,
+  endDates: readonly string[],
+  windowDays: number,
+): HoursPoint[] {
+  return endDates.map((d) => {
+    let hours = 0;
+    for (let i = 0; i < windowDays; i++) hours += perDay.get(addDays(d, -i)) ?? 0;
+    return { date: d, hours };
+  });
 }

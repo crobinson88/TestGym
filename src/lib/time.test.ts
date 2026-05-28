@@ -3,11 +3,14 @@ import {
   formatHours,
   formatMdy,
   hoursOnDate,
+  hoursPerDay,
   nextTaskColor,
+  rollingHours,
   slotEndLabel,
   SLOTS_PER_DAY,
   TASK_PALETTE,
   taskHoursOnDate,
+  weeklyHours,
   workHoursInRange,
   workHoursOnDate,
 } from "./time";
@@ -91,5 +94,46 @@ describe("totals", () => {
   it("workHoursInRange spans inclusive date range", () => {
     expect(workHoursInRange(allocs, tasks, "2026-05-20", "2026-05-26")).toBeCloseTo(1.75);
     expect(workHoursInRange(allocs, tasks, "2026-05-25", "2026-05-26")).toBeCloseTo(1.5);
+  });
+});
+
+describe("hours aggregation (all logged hours)", () => {
+  const allocs = [
+    { date: "2026-05-26", task_id: "w" },
+    { date: "2026-05-26", task_id: "p" },
+    { date: "2026-05-25", task_id: "w" },
+    { date: "2026-05-25", task_id: "w" },
+    { date: "2026-05-20", task_id: "w" },
+    { date: "2026-05-18", task_id: "p" },
+  ];
+
+  it("hoursPerDay counts every allocation regardless of work flag", () => {
+    const perDay = hoursPerDay(allocs);
+    expect(perDay.get("2026-05-26")).toBeCloseTo(0.5);
+    expect(perDay.get("2026-05-25")).toBeCloseTo(0.5);
+    expect(perDay.get("2026-05-20")).toBeCloseTo(0.25);
+    expect(perDay.get("2026-04-01")).toBeUndefined();
+  });
+
+  it("weeklyHours sums each Mon-Sun week from its start", () => {
+    const perDay = hoursPerDay(allocs);
+    // Week of 2026-05-25 (Mon) covers 25..31 -> 0.5 + 0.5 = 1.0
+    // Week of 2026-05-18 (Mon) covers 18..24 -> 0.25 (the 18th) + 0.25 (the 20th) = 0.5
+    const weeks = weeklyHours(perDay, ["2026-05-18", "2026-05-25"]);
+    expect(weeks).toEqual([
+      { week_start: "2026-05-18", hours: 0.5 },
+      { week_start: "2026-05-25", hours: 1.0 },
+    ]);
+  });
+
+  it("rollingHours sums the trailing window ending on each date", () => {
+    const perDay = hoursPerDay(allocs);
+    const points = rollingHours(perDay, ["2026-05-25", "2026-05-26"], 7);
+    // 25th: window 19..25 -> 0.25 (20th) + 0.5 (25th) = 0.75
+    // 26th: window 20..26 -> 0.25 (20th) + 0.5 (25th) + 0.5 (26th) = 1.25
+    expect(points).toEqual([
+      { date: "2026-05-25", hours: 0.75 },
+      { date: "2026-05-26", hours: 1.25 },
+    ]);
   });
 });
