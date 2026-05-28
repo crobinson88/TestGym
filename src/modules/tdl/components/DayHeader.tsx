@@ -4,13 +4,11 @@ import { Button } from "@/components/ui/Button";
 import { addDays, prettyDate, todayIsoDate } from "@/lib/utils";
 import type { LocalTdlDay, LocalTdlItem } from "../types";
 import { dayCompletion } from "../hooks";
-import { upsertDay } from "../repo";
 import { SECTIONS } from "../sections";
 
 export function DayHeader({
   snapshot_date,
   items,
-  day,
   onNavigate,
 }: {
   snapshot_date: string;
@@ -82,18 +80,6 @@ export function DayHeader({
             {s.label}: {openBySection.get(s.key) ?? 0}
           </span>
         ))}
-        <label className="ml-auto flex items-center gap-1 text-[11px] text-muted">
-          Limiting factor:
-          <input
-            type="date"
-            value={day?.limiting_factor_date ?? ""}
-            onChange={(e) => {
-              const v = e.target.value || null;
-              void upsertDay(snapshot_date, { limiting_factor_date: v });
-            }}
-            className="h-7 rounded-md border border-line bg-surface px-1 text-[11px] text-text"
-          />
-        </label>
       </div>
     </header>
   );

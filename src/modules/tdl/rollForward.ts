@@ -48,10 +48,9 @@ export async function rollForward(
   const db = deps.db ?? defaultDb;
   const now = deps.now ?? (() => new Date().toISOString());
 
-  const [fromRows, toRows, fromDayRow, toDayRow] = await Promise.all([
+  const [fromRows, toRows, toDayRow] = await Promise.all([
     db.tdl_items.where("snapshot_date").equals(fromDate).toArray(),
     db.tdl_items.where("snapshot_date").equals(toDate).toArray(),
-    db.tdl_days.get(fromDate),
     db.tdl_days.get(toDate),
   ]);
 
@@ -110,7 +109,6 @@ export async function rollForward(
     if (!toDayRow) {
       const seed: LocalTdlDay = {
         snapshot_date: toDate,
-        limiting_factor_date: fromDayRow?.limiting_factor_date ?? null,
         note: null,
         created_at: ts,
         updated_at: ts,

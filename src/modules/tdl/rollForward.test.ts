@@ -173,24 +173,11 @@ describe("rollForward", () => {
     expect(positions).toEqual([0, 1, 2]);
   });
 
-  it("seeds tdl_days for the new day, copying limiting_factor_date from previous day", async () => {
-    await seed(
-      [makeItem("2026-05-27", "follow_ups", { status: "open", title: "x" })],
-      [
-        {
-          snapshot_date: "2026-05-27",
-          limiting_factor_date: "2026-06-15",
-          note: null,
-          created_at: "2026-05-27T00:00:00.000Z",
-          updated_at: "2026-05-27T00:00:00.000Z",
-          deleted_at: null,
-          sync_status: "synced",
-        },
-      ],
-    );
+  it("seeds an empty tdl_days row for the new day if one doesn't exist", async () => {
+    await seed([makeItem("2026-05-27", "follow_ups", { status: "open", title: "x" })]);
     const r = await rollForward("2026-05-27", "2026-05-28", { db });
     expect(r.daySeeded).toBe(true);
     const newDay = await db.tdl_days.get("2026-05-28");
-    expect(newDay?.limiting_factor_date).toBe("2026-06-15");
+    expect(newDay?.snapshot_date).toBe("2026-05-28");
   });
 });
