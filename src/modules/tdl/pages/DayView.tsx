@@ -22,6 +22,7 @@ import {
 import { DayHeader } from "../components/DayHeader";
 import { SectionColumn } from "../components/SectionColumn";
 import { RollForwardButton } from "../components/RollForwardButton";
+import { ImportMeetingsButton } from "../components/ImportMeetingsButton";
 
 export default function DayView() {
   const params = useParams<{ date?: string }>();
@@ -127,6 +128,11 @@ export default function DayView() {
         onNavigate={(d) => navigate(`/tdl/${d}`)}
       />
       <div className="p-3">
+        {date === todayIsoDate() && (
+          <div className="mb-4">
+            <ImportMeetingsButton />
+          </div>
+        )}
         {empty && prev && (
           <div className="mb-4">
             <RollForwardButton fromDate={prev} toDate={date} />
