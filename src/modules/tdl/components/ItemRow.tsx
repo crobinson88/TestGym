@@ -3,7 +3,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Flag, GripVertical, MoreVertical, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
-import { cn, monthDay } from "@/lib/utils";
+import { cn, dayMonth } from "@/lib/utils";
 import type { LocalTdlItem } from "../types";
 import {
   cycleStatus,
@@ -93,7 +93,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
           </button>
         )}
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
-          <span>added {monthDay(item.origin_snapshot_date ?? item.snapshot_date)}</span>
+          <span>added {dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
           {cfg.hasDueDate && item.due_date && <span>due {item.due_date}</span>}
           {cfg.hasTimeEstimate && item.time_estimate_min && (
             <span>{item.time_estimate_min}m</span>

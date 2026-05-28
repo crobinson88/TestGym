@@ -41,10 +41,10 @@ export function prettyDate(iso: string): string {
 
 const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short" });
 
-export function monthDay(iso: string): string {
+export function dayMonth(iso: string): string {
   const [y, m, d] = iso.split("-").map((p) => parseInt(p, 10));
   const month = SHORT_MONTH.format(new Date(y, m - 1, d));
-  return `${month} ${String(d).padStart(2, "0")}`;
+  return `${String(d).padStart(2, "0")} ${month}`;
 }
 
 export function relativeDay(iso: string, today = todayIsoDate()): string {
