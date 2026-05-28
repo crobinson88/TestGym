@@ -10,6 +10,7 @@ import { AddSet } from "@/routes/AddSet";
 import { AddCardio } from "@/routes/AddCardio";
 import { History } from "@/routes/History";
 import { TimeTracking } from "@/routes/TimeTracking";
+import { tdlRoutes } from "@/modules/tdl/routes";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
 const Dashboard = lazy(() => import("@/routes/Dashboard"));
@@ -64,6 +65,7 @@ export function App() {
                   </Suspense>
                 }
               />
+              {tdlRoutes()}
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

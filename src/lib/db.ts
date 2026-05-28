@@ -6,6 +6,8 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TdlDayRow,
+  TdlItemRow,
 } from "./database.types";
 
 export type SyncStatus = "pending" | "synced" | "error";
@@ -32,6 +34,14 @@ export interface LocalCardioSession extends CardioSessionRow {
   sync_status: SyncStatus;
   sync_attempts: number;
   sync_last_error: string | null;
+}
+
+export interface LocalTdlItem extends TdlItemRow {
+  sync_status: SyncStatus;
+}
+
+export interface LocalTdlDay extends TdlDayRow {
+  sync_status: SyncStatus;
 }
 
 export interface MetaRow {
@@ -69,6 +79,8 @@ export class GymDB extends Dexie {
   meta!: Table<MetaRow, string>;
   timeTasks!: Table<TimeTaskRow, string>;
   timeAllocations!: Table<TimeAllocationRow, string>;
+  tdl_items!: Table<LocalTdlItem, string>;
+  tdl_days!: Table<LocalTdlDay, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -98,6 +110,11 @@ export class GymDB extends Dexie {
       meta: "key",
       timeTasks: "id, name, sort_order, is_work, updated_at, deleted_at",
       timeAllocations: "id, date, task_id, [date+slot], updated_at",
+    });
+    this.version(4).stores({
+      tdl_items:
+        "id, snapshot_date, [snapshot_date+section+position], updated_at, sync_status, deleted_at",
+      tdl_days: "snapshot_date, updated_at, sync_status, deleted_at",
     });
   }
 }
