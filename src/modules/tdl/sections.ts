@@ -57,13 +57,6 @@ export const SECTIONS: readonly SectionConfig[] = [
     hasTimeEstimate: false,
     recurringSeeds: ["Pay Rent", "Grandma Email", "Run Gusto"],
   },
-  {
-    key: "new",
-    label: "New",
-    hasDueDate: false,
-    hasTimeEstimate: false,
-    recurringSeeds: [],
-  },
 ];
 
 export const SECTION_BY_KEY: Record<TdlSection, SectionConfig> = Object.fromEntries(

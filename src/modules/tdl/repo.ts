@@ -121,7 +121,6 @@ export const STATUS_CYCLE: Record<TdlSection, TdlStatus[]> = {
   tgm_tasks: ["open", "worked_today", "done"],
   meeting_action_items: ["open", "worked_today", "done"],
   personal_other: ["open", "worked_today", "done"],
-  new: ["open", "worked_today", "done"],
 };
 
 export function nextStatus(section: TdlSection, current: TdlStatus): TdlStatus {

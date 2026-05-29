@@ -5,12 +5,13 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 const FIREFLIES_GRAPHQL = "https://api.fireflies.ai/graphql";
-const SECTION = "new";
+const SECTION = "meeting_action_items";
 const ALLOWED_EMAIL = "charlie@theglassmarket.co";
 const RECENT_LIMIT = 25;
-// Timezone for the date/time shown in each item title. Defaults to UTC; set
-// MEETING_TZ (e.g. "Europe/London", "America/New_York") to show local time.
-const MEETING_TZ = process.env.MEETING_TZ ?? "UTC";
+// Timezone the meeting time is shown in (Fireflies gives a UTC instant, not the
+// room's local zone). Defaults to US Eastern; the zone label is shown in the
+// title so it's unambiguous when traveling. Override with the MEETING_TZ env var.
+const MEETING_TZ = process.env.MEETING_TZ ?? "America/New_York";
 
 function env(name: string): string {
   const value = process.env[name];
@@ -194,7 +195,7 @@ async function nextPosition(supabase: Db): Promise<number> {
   return data && data.length ? (data[0].position as number) + 1 : 0;
 }
 
-// "Meeting Name, 28 May 2026, 14:30" — prepended to each item title.
+// "Meeting Name, 28 May 2026, 14:30 EDT" — prepended to each item title.
 function titlePrefix(t: Transcript): string {
   const name = t.title ?? "Meeting";
   const when = t.dateString ?? (t.date ? new Date(t.date).toISOString() : null);
@@ -203,6 +204,7 @@ function titlePrefix(t: Transcript): string {
   const formatted = new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZoneName: "short",
     timeZone: MEETING_TZ,
   }).format(d);
   return `${name}, ${formatted}`;

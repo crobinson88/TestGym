@@ -83,8 +83,7 @@ export type TdlSection =
   | "product"
   | "tgm_tasks"
   | "meeting_action_items"
-  | "personal_other"
-  | "new";
+  | "personal_other";
 
 export type TdlStatus =
   | "open"

@@ -10,7 +10,6 @@ const SECTION_ORDER: TdlSection[] = [
   "tgm_tasks",
   "meeting_action_items",
   "personal_other",
-  "new",
 ];
 
 export interface RollForwardResult {
