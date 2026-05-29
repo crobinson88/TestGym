@@ -10,7 +10,7 @@ import {
   json,
   serviceClient,
   titlePrefix,
-} from "./_fireflies";
+} from "./_fireflies.js";
 
 // One transcript fetch + one Claude call; bump the ceiling for long meetings.
 export const maxDuration = 60;

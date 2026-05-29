@@ -10,7 +10,7 @@ import {
   listRecentTranscripts,
   SECTION,
   type Db,
-} from "./_fireflies";
+} from "./_fireflies.js";
 
 // Listing + a dedupe query only; this stays well under the limit.
 export const maxDuration = 30;
