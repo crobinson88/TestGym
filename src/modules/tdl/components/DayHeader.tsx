@@ -1,4 +1,4 @@
-import { Archive, ChevronLeft, ChevronRight } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { addDays, prettyDate, todayIsoDate } from "@/lib/utils";
@@ -61,6 +61,15 @@ export function DayHeader({
           <span className="ml-1 text-sm text-muted">
             {snapshot_date === today ? "Today" : prettyDate(snapshot_date)}
           </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onNavigate("snoozed")}
+            aria-label="Snoozed items"
+            className="h-10 w-10"
+          >
+            <Clock className="h-5 w-5" />
+          </Button>
           <Button
             size="icon"
             variant="ghost"
