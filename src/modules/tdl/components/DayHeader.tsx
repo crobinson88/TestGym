@@ -5,6 +5,7 @@ import { addDays, prettyDate, todayIsoDate } from "@/lib/utils";
 import type { LocalTdlDay, LocalTdlItem } from "../types";
 import { dayCompletion } from "../hooks";
 import { SECTIONS } from "../sections";
+import { ImportMeetingsButton } from "./ImportMeetingsButton";
 
 export function DayHeader({
   snapshot_date,
@@ -73,6 +74,11 @@ export function DayHeader({
           </div>
         </div>
       </div>
+      {snapshot_date === today && (
+        <div className="mt-2">
+          <ImportMeetingsButton />
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {SECTIONS.map((s) => (
           <span

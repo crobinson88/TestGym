@@ -5,9 +5,12 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 const FIREFLIES_GRAPHQL = "https://api.fireflies.ai/graphql";
-const SECTION = "meeting_action_items";
+const SECTION = "new";
 const ALLOWED_EMAIL = "charlie@theglassmarket.co";
 const RECENT_LIMIT = 25;
+// Timezone for the date/time shown in each item title. Defaults to UTC; set
+// MEETING_TZ (e.g. "Europe/London", "America/New_York") to show local time.
+const MEETING_TZ = process.env.MEETING_TZ ?? "UTC";
 
 function env(name: string): string {
   const value = process.env[name];
@@ -63,7 +66,8 @@ export async function POST(request: Request): Promise<Response> {
       const transcript = await fetchTranscript(id);
       const items = await extractActionItems(transcript);
       if (items.length > 0) {
-        const rows = items.map((it) => buildRow(it, transcript.title, position++));
+        const prefix = titlePrefix(transcript);
+        const rows = items.map((it) => buildRow(it, prefix, position++));
         const { error: insertErr } = await supabase.from("tdl_items").insert(rows);
         if (insertErr) throw insertErr;
         added += rows.length;
@@ -84,6 +88,8 @@ export async function POST(request: Request): Promise<Response> {
 
 type Transcript = {
   title: string | null;
+  dateString: string | null;
+  date: number | null;
   summary: { overview: string | null; action_items: string | null } | null;
   sentences: { speaker_name: string | null; text: string }[] | null;
 };
@@ -122,6 +128,8 @@ async function fetchTranscript(meetingId: string): Promise<Transcript> {
   const query = `query($id: String!) {
     transcript(id: $id) {
       title
+      dateString
+      date
       summary { overview action_items }
       sentences { speaker_name text }
     }
@@ -186,9 +194,23 @@ async function nextPosition(supabase: Db): Promise<number> {
   return data && data.length ? (data[0].position as number) + 1 : 0;
 }
 
+// "Meeting Name, 28 May 2026, 14:30" — prepended to each item title.
+function titlePrefix(t: Transcript): string {
+  const name = t.title ?? "Meeting";
+  const when = t.dateString ?? (t.date ? new Date(t.date).toISOString() : null);
+  const d = when ? new Date(when) : null;
+  if (!d || Number.isNaN(d.getTime())) return name;
+  const formatted = new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: MEETING_TZ,
+  }).format(d);
+  return `${name}, ${formatted}`;
+}
+
 function buildRow(
   it: z.infer<typeof Extraction>["action_items"][number],
-  meetingTitle: string | null,
+  prefix: string,
   position: number,
 ) {
   const now = new Date().toISOString();
@@ -198,12 +220,12 @@ function buildRow(
     section: SECTION,
     is_recurring: false,
     position,
-    title: it.owner ? `${it.task} (@${it.owner})` : it.task,
+    title: `${prefix} - ${it.task}`,
     due_date: it.due_date,
     time_estimate_min: null,
     status: "open",
     is_priority: it.priority === "high",
-    notes: meetingTitle ? `From meeting: ${meetingTitle}` : null,
+    notes: it.owner ? `Owner: ${it.owner}` : null,
     origin_item_id: null,
     origin_snapshot_date: null,
     created_at: now,
