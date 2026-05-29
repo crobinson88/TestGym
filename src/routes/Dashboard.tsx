@@ -1,5 +1,7 @@
 import { useState } from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -13,7 +15,16 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { downloadSetsCsv } from "@/lib/csv";
 import { useDashboardStats, type WeekVolumePoint } from "@/lib/hooks";
+import { useTimeDashboardStats } from "@/lib/timeHooks";
+import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
 import { formatVolume, prettyDate } from "@/lib/utils";
+
+const HOURS_COLOR = "#22d3ee";
+
+function mdTick(iso: string): string {
+  const [, m, d] = iso.split("-");
+  return `${m}/${d}`;
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   Back: "#22d3ee",
@@ -25,6 +36,7 @@ const FALLBACK_COLOR = "#8a8a8a";
 
 export default function Dashboard() {
   const stats = useDashboardStats();
+  const timeStats = useTimeDashboardStats();
   const [exporting, setExporting] = useState(false);
   if (!stats) return <div className="p-6 text-center text-muted">Loading...</div>;
 
@@ -102,6 +114,28 @@ export default function Dashboard() {
           <WeeklyChart data={stats.weekly} categories={stats.categories.map((c) => c.name)} />
         </div>
       </section>
+
+      {timeStats && (
+        <>
+          <section>
+            <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
+              Weekly hours · last 8 weeks
+            </h2>
+            <div className="rounded-2xl border border-line bg-surface p-3">
+              <WeeklyHoursChart data={timeStats.weekly} />
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
+              Rolling 7-day hours · through today
+            </h2>
+            <div className="rounded-2xl border border-line bg-surface p-3">
+              <RollingHoursChart data={timeStats.rolling} />
+            </div>
+          </section>
+        </>
+      )}
 
       <section>
         <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">All-time</h2>
@@ -195,6 +229,73 @@ function WeeklyChart({
           />
         ))}
       </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function WeeklyHoursChart({ data }: { data: WeekHoursPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <CartesianGrid stroke="#2a2a2a" vertical={false} />
+        <XAxis
+          dataKey="week_start"
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          tickFormatter={(iso) => mdTick(iso as string)}
+        />
+        <YAxis
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          width={36}
+          tickFormatter={(v) => formatHours(v as number)}
+        />
+        <Tooltip
+          contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
+          labelStyle={{ color: "#8a8a8a" }}
+          formatter={(value) => [`${formatHours(value as number)} h`, "Hours"]}
+          labelFormatter={(label) => `Week of ${prettyDate(label as string)}`}
+        />
+        <Bar dataKey="hours" fill={HOURS_COLOR} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function RollingHoursChart({ data }: { data: HoursPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <AreaChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="rollingHours" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={HOURS_COLOR} stopOpacity={0.5} />
+            <stop offset="100%" stopColor={HOURS_COLOR} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="#2a2a2a" vertical={false} />
+        <XAxis
+          dataKey="date"
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          minTickGap={28}
+          tickFormatter={(iso) => mdTick(iso as string)}
+        />
+        <YAxis
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          width={36}
+          tickFormatter={(v) => formatHours(v as number)}
+        />
+        <Tooltip
+          contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
+          labelStyle={{ color: "#8a8a8a" }}
+          formatter={(value) => [`${formatHours(value as number)} h`, "7-day total"]}
+          labelFormatter={(label) => prettyDate(label as string)}
+        />
+        <Area
+          type="monotone"
+          dataKey="hours"
+          stroke={HOURS_COLOR}
+          strokeWidth={2}
+          fill="url(#rollingHours)"
+        />
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

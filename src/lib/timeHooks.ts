@@ -1,7 +1,51 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { v4 as uuidv4 } from "uuid";
 import { db, type TimeAllocationRow, type TimeTaskRow } from "./db";
-import { nextTaskColor } from "./time";
+import {
+  hoursPerDay,
+  nextTaskColor,
+  rollingHours,
+  weeklyHours,
+  type HoursPoint,
+  type WeekHoursPoint,
+} from "./time";
+import { addDays, todayIsoDate, weekStart } from "./utils";
+
+const ROLLING_WINDOW_DAYS = 7;
+const ROLLING_SPAN_DAYS = 56;
+const WEEKS_BACK = 8;
+
+export interface TimeDashboardStats {
+  weekly: WeekHoursPoint[];
+  rolling: HoursPoint[];
+}
+
+export function useTimeDashboardStats(): TimeDashboardStats | undefined {
+  return useLiveQuery(async () => {
+    const today = todayIsoDate();
+    const thisWeekStart = weekStart(today);
+    const firstWeekStart = addDays(thisWeekStart, -(WEEKS_BACK - 1) * 7);
+    const rollingStart = addDays(today, -(ROLLING_SPAN_DAYS - 1));
+    const rollingFetchStart = addDays(rollingStart, -(ROLLING_WINDOW_DAYS - 1));
+    const earliest = firstWeekStart < rollingFetchStart ? firstWeekStart : rollingFetchStart;
+
+    const allocs = await db.timeAllocations
+      .where("date")
+      .between(earliest, today, true, true)
+      .toArray();
+    const perDay = hoursPerDay(allocs);
+
+    const weekStarts: string[] = [];
+    for (let i = WEEKS_BACK - 1; i >= 0; i--) weekStarts.push(addDays(thisWeekStart, -i * 7));
+    const weekly = weeklyHours(perDay, weekStarts);
+
+    const rollingDates: string[] = [];
+    for (let i = ROLLING_SPAN_DAYS - 1; i >= 0; i--) rollingDates.push(addDays(today, -i));
+    const rolling = rollingHours(perDay, rollingDates, ROLLING_WINDOW_DAYS);
+
+    return { weekly, rolling };
+  }, []);
+}
 
 export function useTimeTasks() {
   return useLiveQuery(async () => {
