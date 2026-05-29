@@ -16,10 +16,12 @@ import {
 export const maxDuration = 30;
 
 export async function POST(request: Request): Promise<Response> {
-  const supabase = serviceClient();
-  if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
-
   try {
+    // Inside the try: serviceClient() throws on a missing env var, which would
+    // otherwise escape as Vercel's opaque FUNCTION_INVOCATION_FAILED 500.
+    const supabase = serviceClient();
+    if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
+
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);
 
