@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import type { LocalTdlItem } from "../types";
 import type { SectionConfig } from "../sections";
 import { createItem } from "../repo";
+import { isSnoozed } from "../snooze";
 import { ItemRow } from "./ItemRow";
 
 export function SectionColumn({
@@ -25,7 +26,9 @@ export function SectionColumn({
   const [draft, setDraft] = useState("");
 
   const openCount = dated.filter(
-    (i) => i.status === "open" || i.status === "worked_today" || i.status === "ready_for_testing",
+    (i) =>
+      !isSnoozed(i) &&
+      (i.status === "open" || i.status === "worked_today" || i.status === "ready_for_testing"),
   ).length;
 
   async function submit() {

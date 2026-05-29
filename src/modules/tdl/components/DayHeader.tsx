@@ -1,10 +1,11 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { addDays, prettyDate, todayIsoDate } from "@/lib/utils";
 import type { LocalTdlDay, LocalTdlItem } from "../types";
 import { dayCompletion } from "../hooks";
 import { SECTIONS } from "../sections";
+import { isSnoozed } from "../snooze";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 
 export function DayHeader({
@@ -23,7 +24,7 @@ export function DayHeader({
   const openBySection = new Map<string, number>();
   for (const s of SECTIONS) openBySection.set(s.key, 0);
   for (const i of items) {
-    if (i.is_recurring) continue;
+    if (i.is_recurring || isSnoozed(i)) continue;
     if (i.status === "open" || i.status === "worked_today" || i.status === "ready_for_testing") {
       openBySection.set(i.section, (openBySection.get(i.section) ?? 0) + 1);
     }
@@ -60,6 +61,24 @@ export function DayHeader({
           <span className="ml-1 text-sm text-muted">
             {snapshot_date === today ? "Today" : prettyDate(snapshot_date)}
           </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onNavigate("snoozed")}
+            aria-label="Snoozed items"
+            className="h-10 w-10"
+          >
+            <Clock className="h-5 w-5" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onNavigate("archive")}
+            aria-label="Archived items"
+            className="h-10 w-10"
+          >
+            <Archive className="h-5 w-5" />
+          </Button>
         </div>
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-wider text-muted">Active</div>

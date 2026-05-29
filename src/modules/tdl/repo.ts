@@ -27,6 +27,8 @@ export interface CreateItemInput {
   due_date?: string | null;
   time_estimate_min?: number | null;
   is_priority?: boolean;
+  is_archived?: boolean;
+  snoozed_until?: string | null;
   notes?: string | null;
   status?: TdlStatus;
   origin_item_id?: string | null;
@@ -66,6 +68,8 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     time_estimate_min: input.time_estimate_min ?? null,
     status,
     is_priority: input.is_priority ?? false,
+    is_archived: input.is_archived ?? false,
+    snoozed_until: input.snoozed_until ?? null,
     notes: input.notes ?? null,
     origin_item_id: input.origin_item_id ?? null,
     origin_snapshot_date: input.origin_snapshot_date ?? null,
@@ -141,6 +145,30 @@ export async function togglePriority(id: string): Promise<LocalTdlItem | null> {
   const existing = await db.tdl_items.get(id);
   if (!existing) return null;
   return updateItem(id, { is_priority: !existing.is_priority });
+}
+
+export async function archiveItem(id: string): Promise<LocalTdlItem | null> {
+  return updateItem(id, { is_archived: true });
+}
+
+export async function unarchiveItem(id: string): Promise<LocalTdlItem | null> {
+  return updateItem(id, { is_archived: false });
+}
+
+export async function snoozeItem(
+  id: string,
+  until: string,
+): Promise<LocalTdlItem | null> {
+  const existing = await db.tdl_items.get(id);
+  if (!existing) return null;
+  if (!until || until <= existing.snapshot_date) {
+    throw new Error("snoozeItem: until must be a date after the item's day");
+  }
+  return updateItem(id, { snoozed_until: until });
+}
+
+export async function unsnoozeItem(id: string): Promise<LocalTdlItem | null> {
+  return updateItem(id, { snoozed_until: null });
 }
 
 export async function moveItem(

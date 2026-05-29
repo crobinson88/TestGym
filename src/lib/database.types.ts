@@ -103,6 +103,8 @@ export interface TdlItemRow {
   time_estimate_min: number | null;
   status: TdlStatus;
   is_priority: boolean;
+  is_archived: boolean;
+  snoozed_until: string | null;
   notes: string | null;
   origin_item_id: string | null;
   origin_snapshot_date: string | null;

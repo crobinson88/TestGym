@@ -116,6 +116,20 @@ export class GymDB extends Dexie {
         "id, snapshot_date, [snapshot_date+section+position], updated_at, sync_status, deleted_at",
       tdl_days: "snapshot_date, updated_at, sync_status, deleted_at",
     });
+    this.version(5)
+      .stores({
+        tdl_items:
+          "id, snapshot_date, [snapshot_date+section+position], updated_at, sync_status, deleted_at, is_archived",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("tdl_items")
+          .toCollection()
+          .modify((row: LocalTdlItem) => {
+            if (row.is_archived === undefined) row.is_archived = false;
+            if (row.snoozed_until === undefined) row.snoozed_until = null;
+          });
+      });
   }
 }
 
