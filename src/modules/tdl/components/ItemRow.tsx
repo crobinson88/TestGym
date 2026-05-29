@@ -51,7 +51,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
       style={style}
       data-item-id={item.id}
       className={cn(
-        "group flex items-center gap-2 border-b border-line/50 px-2 py-2 last:border-b-0",
+        "group flex w-full max-w-full min-w-0 items-center gap-1.5 overflow-hidden border-b border-line/50 px-2 py-2 last:border-b-0",
         focused && "bg-surface2/40",
         (cancelled || snoozed) && "opacity-50",
       )}
@@ -59,7 +59,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
       <button
         {...attributes}
         {...listeners}
-        className="flex h-9 w-6 cursor-grab items-center justify-center text-muted hover:text-text"
+        className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
         aria-label="Drag"
         tabIndex={-1}
       >
@@ -69,7 +69,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
         type="button"
         onClick={() => void togglePriority(item.id)}
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
           item.is_priority ? "text-warn" : "text-muted hover:text-text",
         )}
         aria-label={item.is_priority ? "Unset priority" : "Set priority"}
@@ -107,7 +107,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
             {item.title}
           </button>
         )}
-        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
           <span>added {dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
           {cfg.hasDueDate && item.due_date && <span>due {item.due_date}</span>}
           {cfg.hasTimeEstimate && item.time_estimate_min && (
@@ -141,9 +141,10 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
         status={item.status}
         section={item.section}
         compact
+        className="shrink-0"
         onClick={() => void cycleStatus(item.id)}
       />
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           type="button"
           onClick={() => setMenu((m) => !m)}
