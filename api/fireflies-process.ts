@@ -18,8 +18,15 @@ export const maxDuration = 60;
 type Body = { meetingId?: string; basePosition?: number; meetingIndex?: number };
 
 export async function POST(request: Request): Promise<Response> {
-  const supabase = serviceClient();
-  if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
+  let supabase: ReturnType<typeof serviceClient>;
+  try {
+    // serviceClient() throws on a missing env var; keep it inside a try so the
+    // failure returns JSON instead of an opaque FUNCTION_INVOCATION_FAILED 500.
+    supabase = serviceClient();
+    if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "init failed" }, 500);
+  }
 
   let body: Body;
   try {
