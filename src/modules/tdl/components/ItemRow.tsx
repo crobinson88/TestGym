@@ -36,9 +36,10 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
       style={style}
       data-item-id={item.id}
       className={cn(
-        "group flex items-center gap-2 border-b border-line/50 px-2 py-2 last:border-b-0",
+        "group relative flex items-center gap-2 border-b border-line/50 px-2 py-2 last:border-b-0",
         focused && "bg-surface2/40",
         cancelled && "opacity-50",
+        menu && "z-30",
       )}
     >
       <button
