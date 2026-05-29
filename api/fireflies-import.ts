@@ -7,7 +7,7 @@ import { z } from "zod";
 const FIREFLIES_GRAPHQL = "https://api.fireflies.ai/graphql";
 const SECTION = "meeting_action_items";
 const ALLOWED_EMAIL = "charlie@theglassmarket.co";
-const RECENT_LIMIT = 25;
+const RECENT_LIMIT = 10;
 // Timezone the meeting time is shown in (Fireflies gives a UTC instant, not the
 // room's local zone). Defaults to US Eastern; the zone label is shown in the
 // title so it's unambiguous when traveling. Override with the MEETING_TZ env var.
