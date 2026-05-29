@@ -3,44 +3,91 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth";
 
-type ImportResult = { added: number; meetings: number; failed: number };
+type TriggerResult = { meetingIds: string[]; basePosition: number };
+type ProcessResult = { added: number; ok: boolean };
 
 export function ImportMeetingsButton() {
   const { session } = useAuth();
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function go() {
     if (!session) return;
     setRunning(true);
+    setProgress(null);
     setMessage(null);
     setError(null);
+    const token = session.access_token;
     try {
+      // 1) Fast call: which meetings are new? Returns instantly.
       const res = await fetch("/api/fireflies-import", {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const body = (await res.json()) as Partial<ImportResult> & { error?: string };
+      const body = (await res.json()) as Partial<TriggerResult> & { error?: string };
       if (!res.ok) throw new Error(body.error ?? `Import failed (${res.status})`);
-      const { added = 0, meetings = 0, failed = 0 } = body;
+
+      const meetingIds = body.meetingIds ?? [];
+      const basePosition = body.basePosition ?? 0;
+      const total = meetingIds.length;
+      if (total === 0) {
+        setMessage("No new meetings");
+        return;
+      }
+
+      // 2) Process each meeting in its own request, in parallel. Items appear on
+      // the board via Realtime as each finishes; we just track the X-of-N count.
+      setProgress({ done: 0, total });
+      let added = 0;
+      let failed = 0;
+      let done = 0;
+      await Promise.all(
+        meetingIds.map(async (meetingId, meetingIndex) => {
+          try {
+            const r = await fetch("/api/fireflies-process", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ meetingId, basePosition, meetingIndex }),
+            });
+            const b = (await r.json()) as Partial<ProcessResult>;
+            if (!r.ok || !b.ok) failed++;
+            else added += b.added ?? 0;
+          } catch {
+            failed++;
+          } finally {
+            done++;
+            setProgress({ done, total });
+          }
+        }),
+      );
+
+      const ok = total - failed;
       const base =
-        meetings === 0
-          ? "No new meetings"
-          : `Added ${added} item${added === 1 ? "" : "s"} from ${meetings} meeting${meetings === 1 ? "" : "s"}`;
-      setMessage(failed > 0 ? `${base} (${failed} failed)` : base);
+        added === 0
+          ? `No action items found in ${ok} meeting${ok === 1 ? "" : "s"}`
+          : `Added ${added} item${added === 1 ? "" : "s"} from ${ok} meeting${ok === 1 ? "" : "s"}`;
+      setMessage(failed > 0 ? `${base} (${failed} failed — tap again to retry)` : base);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
       setRunning(false);
+      setProgress(null);
     }
   }
+
+  const label = running
+    ? progress
+      ? `Importing ${progress.done} of ${progress.total}...`
+      : "Importing..."
+    : "Import meeting action items";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button onClick={go} disabled={running || !session} variant="secondary" size="sm">
         <Download className="mr-1 h-4 w-4" />
-        {running ? "Importing..." : "Import meeting action items"}
+        {label}
       </Button>
       {message && <span className="text-xs text-success">{message}</span>}
       {error && <span className="text-xs text-danger">{error}</span>}
