@@ -34,6 +34,8 @@ function makeItem(
     time_estimate_min: null,
     status: "open",
     is_priority: false,
+    is_archived: false,
+    snoozed_until: null,
     notes: null,
     origin_item_id: null,
     origin_snapshot_date: null,
@@ -81,32 +83,78 @@ describe("rollForward", () => {
     expect(next[0].title).toBe("TGM Email");
   });
 
-  it("does not carry done non-recurring items", async () => {
+  it("carries done non-recurring items and preserves done status", async () => {
     await seed([
       makeItem("2026-05-27", "follow_ups", { status: "done", title: "Done task" }),
     ]);
     const r = await rollForward("2026-05-27", "2026-05-28", { db });
-    expect(r.created).toBe(0);
-    expect(await listFor("2026-05-28")).toHaveLength(0);
+    expect(r.created).toBe(1);
+    const next = await listFor("2026-05-28");
+    expect(next).toHaveLength(1);
+    expect(next[0].status).toBe("done");
   });
 
-  it("does not carry cancelled items", async () => {
+  it("carries cancelled items and preserves cancelled status", async () => {
     await seed([
       makeItem("2026-05-27", "follow_ups", { status: "cancelled", title: "Cancelled" }),
     ]);
     const r = await rollForward("2026-05-27", "2026-05-28", { db });
-    expect(r.created).toBe(0);
-    expect(await listFor("2026-05-28")).toHaveLength(0);
+    expect(r.created).toBe(1);
+    const next = await listFor("2026-05-28");
+    expect(next).toHaveLength(1);
+    expect(next[0].status).toBe("cancelled");
   });
 
-  it("carries worked_today as open on the new day", async () => {
+  it("preserves worked_today status on the new day", async () => {
     await seed([
       makeItem("2026-05-27", "follow_ups", { status: "worked_today", title: "Mid-flight" }),
     ]);
     await rollForward("2026-05-27", "2026-05-28", { db });
     const next = await listFor("2026-05-28");
     expect(next).toHaveLength(1);
-    expect(next[0].status).toBe("open");
+    expect(next[0].status).toBe("worked_today");
+  });
+
+  it("does not carry archived items", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", {
+        status: "open",
+        is_archived: true,
+        title: "Archived",
+      }),
+    ]);
+    const r = await rollForward("2026-05-27", "2026-05-28", { db });
+    expect(r.created).toBe(0);
+    expect(await listFor("2026-05-28")).toHaveLength(0);
+  });
+
+  it("preserves snoozed_until on non-recurring carry", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", {
+        status: "open",
+        snoozed_until: "2026-06-10",
+        title: "Snoozed",
+      }),
+    ]);
+    await rollForward("2026-05-27", "2026-05-28", { db });
+    const next = await listFor("2026-05-28");
+    expect(next).toHaveLength(1);
+    expect(next[0].snoozed_until).toBe("2026-06-10");
+  });
+
+  it("clears snoozed_until when carrying recurring items", async () => {
+    await seed([
+      makeItem("2026-05-27", "tgm_tasks", {
+        is_recurring: true,
+        status: "open",
+        snoozed_until: "2026-06-10",
+        title: "TGM Email",
+      }),
+    ]);
+    await rollForward("2026-05-27", "2026-05-28", { db });
+    const next = await listFor("2026-05-28");
+    expect(next).toHaveLength(1);
+    expect(next[0].snoozed_until).toBeNull();
   });
 
   it("carries ready_for_testing as ready_for_testing", async () => {

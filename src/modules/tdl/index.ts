@@ -11,7 +11,12 @@ export {
   reorderSection,
   upsertDay,
   nextStatus,
+  archiveItem,
+  unarchiveItem,
+  snoozeItem,
+  unsnoozeItem,
 } from "./repo";
+export { isSnoozed, isActive } from "./snooze";
 export type {
   TdlSection,
   TdlStatus,

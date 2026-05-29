@@ -22,18 +22,29 @@ export function StatusPill({
   section,
   onClick,
   compact = false,
+  className,
 }: {
   status: TdlStatus;
   section: TdlSection;
   onClick?: () => void;
   compact?: boolean;
+  className?: string;
 }) {
   const label = status === "ready_for_testing" && section !== "product" ? LABELS.worked_today : LABELS[status];
   const cls = CLASSES[status];
   const sizing = compact ? "h-7 px-2 text-[11px]" : "h-9 px-3 text-xs";
   if (!onClick) {
     return (
-      <span className={cn("inline-flex items-center rounded-full font-medium", sizing, cls)}>{label}</span>
+      <span
+        className={cn(
+          "inline-flex items-center whitespace-nowrap rounded-full font-medium",
+          sizing,
+          cls,
+          className,
+        )}
+      >
+        {label}
+      </span>
     );
   }
   return (
@@ -41,9 +52,10 @@ export function StatusPill({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center rounded-full font-medium transition active:scale-[0.97]",
+        "inline-flex items-center whitespace-nowrap rounded-full font-medium transition active:scale-[0.97]",
         sizing,
         cls,
+        className,
       )}
     >
       {label}

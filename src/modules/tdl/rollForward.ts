@@ -25,19 +25,17 @@ export interface RollForwardDeps {
 }
 
 function carryStatusFor(prev: LocalTdlItem): TdlStatus {
+  // Recurring items reset each day; everything else keeps its status so that
+  // done/cancelled work stays visible until it is explicitly archived.
   if (prev.is_recurring) return "open";
-  if (prev.status === "ready_for_testing") return "ready_for_testing";
-  return "open";
+  return prev.status;
 }
 
 function shouldCarry(prev: LocalTdlItem): boolean {
+  // Carry every live item of any status. Archiving is the only opt-out.
   if (prev.deleted_at) return false;
-  if (prev.is_recurring) return true;
-  return (
-    prev.status === "open" ||
-    prev.status === "worked_today" ||
-    prev.status === "ready_for_testing"
-  );
+  if (prev.is_archived) return false;
+  return true;
 }
 
 export async function rollForward(
@@ -76,6 +74,8 @@ export async function rollForward(
       time_estimate_min: prev.is_recurring ? null : prev.time_estimate_min,
       status: carryStatusFor(prev),
       is_priority: prev.is_priority,
+      is_archived: false,
+      snoozed_until: prev.is_recurring ? null : prev.snoozed_until,
       notes: null,
       origin_item_id: prev.id,
       origin_snapshot_date: prev.origin_snapshot_date ?? prev.snapshot_date,
