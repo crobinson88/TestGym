@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { SECTIONS } from "./sections";
+import { isSnoozed } from "./snooze";
 import type { LocalTdlDay, LocalTdlItem } from "./types";
 
 export interface DayBundle {
@@ -31,13 +32,27 @@ export function useDay(snapshot_date?: string): DayBundle | undefined {
       db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray(),
       db.tdl_days.get(snapshot_date),
     ]);
-    const live = rows.filter((r) => !r.deleted_at);
+    const live = rows.filter((r) => !r.deleted_at && !r.is_archived);
     return {
       items: live,
       day: day ?? null,
       bySection: bucket(live),
     };
   }, [snapshot_date]);
+}
+
+export function useArchivedItems(): LocalTdlItem[] | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.tdl_items.toArray();
+    return rows
+      .filter((r) => r.is_archived && !r.deleted_at)
+      .sort(
+        (a, b) =>
+          b.snapshot_date.localeCompare(a.snapshot_date) ||
+          a.section.localeCompare(b.section) ||
+          a.position - b.position,
+      );
+  }, []);
 }
 
 export interface DayCompletion {
@@ -51,7 +66,7 @@ export interface DayCompletion {
 }
 
 export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
-  const nonRecurring = items.filter((i) => !i.is_recurring);
+  const nonRecurring = items.filter((i) => !i.is_recurring && !isSnoozed(i));
   const counted = nonRecurring.filter(
     (i) =>
       i.status === "open" ||
@@ -85,7 +100,7 @@ export interface HistoryPoint {
 export function useHistory(limit = 90): HistoryPoint[] | undefined {
   return useLiveQuery(async () => {
     const rows = await db.tdl_items.toArray();
-    const live = rows.filter((r) => !r.deleted_at && !r.is_recurring);
+    const live = rows.filter((r) => !r.deleted_at && !r.is_recurring && !r.is_archived);
     const byDate = new Map<string, LocalTdlItem[]>();
     for (const r of live) {
       const arr = byDate.get(r.snapshot_date) ?? [];
