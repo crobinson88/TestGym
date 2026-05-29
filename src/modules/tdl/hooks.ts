@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { todayIsoDate } from "@/lib/utils";
 import { SECTIONS } from "./sections";
 import { isSnoozed } from "./snooze";
 import type { LocalTdlDay, LocalTdlItem } from "./types";
@@ -32,7 +33,9 @@ export function useDay(snapshot_date?: string): DayBundle | undefined {
       db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray(),
       db.tdl_days.get(snapshot_date),
     ]);
-    const live = rows.filter((r) => !r.deleted_at && !r.is_archived);
+    // Snoozed items disappear from the day view until the snapshot reaches
+    // their wake-up date; they live on in the snoozed list instead.
+    const live = rows.filter((r) => !r.deleted_at && !r.is_archived && !isSnoozed(r));
     return {
       items: live,
       day: day ?? null,
@@ -52,6 +55,36 @@ export function useArchivedItems(): LocalTdlItem[] | undefined {
           a.section.localeCompare(b.section) ||
           a.position - b.position,
       );
+  }, []);
+}
+
+const SECTION_INDEX = new Map(SECTIONS.map((s, i) => [s.key, i]));
+
+// Items currently snoozed (wake-up date still after `today`), deduped and
+// ordered by section. A snoozed item carries forward each day, so the same task
+// can have a row on several snapshots; keep only the tip of each roll-forward
+// chain (the row no other live row carries from) so each task shows once.
+export function selectSnoozed(rows: LocalTdlItem[], today: string): LocalTdlItem[] {
+  const live = rows.filter(
+    (r) => !r.deleted_at && !r.is_archived && isSnoozed(r, today),
+  );
+  const carriedFrom = new Set(
+    live.map((r) => r.origin_item_id).filter((id): id is string => Boolean(id)),
+  );
+  return live
+    .filter((r) => !carriedFrom.has(r.id))
+    .sort(
+      (a, b) =>
+        (SECTION_INDEX.get(a.section) ?? 0) - (SECTION_INDEX.get(b.section) ?? 0) ||
+        (a.snoozed_until ?? "").localeCompare(b.snoozed_until ?? "") ||
+        a.position - b.position,
+    );
+}
+
+export function useSnoozedItems(): LocalTdlItem[] | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.tdl_items.toArray();
+    return selectSnoozed(rows, todayIsoDate());
   }, []);
 }
 
