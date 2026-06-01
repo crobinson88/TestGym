@@ -57,16 +57,15 @@ export function useTodaySetsForExercise(exerciseId?: string) {
   }, [exerciseId]);
 }
 
-export function useTodaySets() {
+export function useSetsForDate(date: string) {
   return useLiveQuery(async () => {
-    const today = todayIsoDate();
-    const rows = await db.sets.where("performed_at").equals(today).toArray();
+    const rows = await db.sets.where("performed_at").equals(date).toArray();
     return rows
       .filter((s) => !s.deleted_at)
       .sort((a, b) =>
         a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : 0,
       );
-  }, []);
+  }, [date]);
 }
 
 export interface ExerciseHistoryPoint {

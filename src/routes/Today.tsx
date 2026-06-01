@@ -1,15 +1,28 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { syncEngine } from "@/lib/sync";
-import { useExercises, useCategories, useTodaySets } from "@/lib/hooks";
-import { cn, formatVolume, formatWeight, prettyDate, todayIsoDate } from "@/lib/utils";
+import { useExercises, useCategories, useSetsForDate } from "@/lib/hooks";
+import {
+  cn,
+  formatVolume,
+  formatWeight,
+  prettyDate,
+  relativeDay,
+  addDays,
+  todayIsoDate,
+} from "@/lib/utils";
 
 export function Today() {
-  const sets = useTodaySets();
+  const today = todayIsoDate();
+  const [selectedDate, setSelectedDate] = useState(today);
+  const sets = useSetsForDate(selectedDate);
   const exercises = useExercises();
   const categories = useCategories();
+
+  const isToday = selectedDate === today;
+  const atLatest = selectedDate >= today;
 
   if (sets === undefined || exercises === undefined || categories === undefined) {
     return <div className="p-6 text-center text-muted">Loading...</div>;
@@ -36,13 +49,48 @@ export function Today() {
   );
 
   const totalVolume = sets.reduce((sum, s) => sum + s.weight * s.reps, 0);
-  const today = todayIsoDate();
+  const title = isToday ? "Today" : relativeDay(selectedDate, today);
 
   return (
     <div className="p-4">
       <header className="mb-6">
-        <div className="text-xs uppercase tracking-wide text-muted">{prettyDate(today)}</div>
-        <h1 className="mt-1 text-2xl font-bold">Today</h1>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => setSelectedDate(addDays(selectedDate, -1))}
+            aria-label="Previous day"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-surface2"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+
+          <label className="relative flex cursor-pointer flex-col items-center">
+            <span className="text-xs uppercase tracking-wide text-muted">
+              {prettyDate(selectedDate)}
+            </span>
+            <span className="flex items-center gap-1.5 text-lg font-semibold">
+              {title}
+              <Calendar className="h-4 w-4 text-muted" />
+            </span>
+            <input
+              type="date"
+              value={selectedDate}
+              max={today}
+              onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              aria-label="Select date"
+            />
+          </label>
+
+          <button
+            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+            disabled={atLatest}
+            aria-label="Next day"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-surface2 disabled:opacity-30"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        </div>
+
         <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
           <div className="text-xs uppercase tracking-wide text-muted">Daily volume</div>
           <div className="mt-1 flex items-baseline gap-2">
@@ -54,13 +102,17 @@ export function Today() {
 
       {sets.length === 0 && (
         <div className="space-y-4 py-12 text-center">
-          <p className="text-muted">No sets logged yet today.</p>
-          <Link to="/add" className="inline-block">
-            <Button size="lg" className="px-8">
-              <Plus className="mr-2 h-5 w-5" />
-              Log your first set
-            </Button>
-          </Link>
+          <p className="text-muted">
+            {isToday ? "No sets logged yet today." : "No sets logged on this day."}
+          </p>
+          {isToday && (
+            <Link to="/add" className="inline-block">
+              <Button size="lg" className="px-8">
+                <Plus className="mr-2 h-5 w-5" />
+                Log your first set
+              </Button>
+            </Link>
+          )}
         </div>
       )}
 
@@ -85,7 +137,7 @@ function ExerciseGroup({
 }: {
   exercise: string;
   category: string;
-  sets: ReturnType<typeof useTodaySets> extends (infer T)[] | undefined ? T[] : never;
+  sets: ReturnType<typeof useSetsForDate> extends (infer T)[] | undefined ? T[] : never;
 }) {
   const subtotal = sets.reduce((sum, s) => sum + s.weight * s.reps, 0);
   return (
