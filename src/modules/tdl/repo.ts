@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import { SECTION_BY_KEY } from "./sections";
+import { isResettable } from "./snooze";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
 
 const nowIso = () => new Date().toISOString();
@@ -235,6 +236,22 @@ export async function upsertDay(
   await db.tdl_days.put(next);
   pokeOutbox();
   return next;
+}
+
+// Reset every non-archived, non-snoozed item on a day back to "open". Returns
+// how many rows changed.
+export async function resetDayStatuses(snapshot_date: string): Promise<number> {
+  const rows = await db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray();
+  const targets = rows.filter(isResettable);
+  if (targets.length === 0) return 0;
+  const ts = nowIso();
+  await db.transaction("rw", db.tdl_items, async () => {
+    for (const r of targets) {
+      await db.tdl_items.put({ ...r, status: "open", updated_at: ts, sync_status: "pending" });
+    }
+  });
+  pokeOutbox();
+  return targets.length;
 }
 
 export function isValidSection(s: string): s is TdlSection {

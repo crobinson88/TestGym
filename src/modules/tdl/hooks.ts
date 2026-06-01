@@ -7,6 +7,10 @@ import type { LocalTdlDay, LocalTdlItem } from "./types";
 
 export interface DayBundle {
   items: LocalTdlItem[];
+  // Items used for the day's completion score. Same as `items` plus the
+  // done-then-archived tasks, which keep counting even though they no longer
+  // render on the board.
+  completionItems: LocalTdlItem[];
   day: LocalTdlDay | null;
   bySection: Record<string, { recurring: LocalTdlItem[]; dated: LocalTdlItem[] }>;
 }
@@ -28,7 +32,8 @@ function bucket(items: LocalTdlItem[]): DayBundle["bySection"] {
 
 export function useDay(snapshot_date?: string): DayBundle | undefined {
   return useLiveQuery(async () => {
-    if (!snapshot_date) return { items: [], day: null, bySection: bucket([]) };
+    if (!snapshot_date)
+      return { items: [], completionItems: [], day: null, bySection: bucket([]) };
     const [rows, day] = await Promise.all([
       db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray(),
       db.tdl_days.get(snapshot_date),
@@ -36,8 +41,12 @@ export function useDay(snapshot_date?: string): DayBundle | undefined {
     // Snoozed items disappear from the day view until the snapshot reaches
     // their wake-up date; they live on in the snoozed list instead.
     const live = rows.filter((r) => !r.deleted_at && !r.is_archived && !isSnoozed(r));
+    // dayCompletion keeps done-then-archived items; hand it everything live
+    // (including archived) and let it decide what counts.
+    const completionItems = rows.filter((r) => !r.deleted_at);
     return {
       items: live,
+      completionItems,
       day: day ?? null,
       bySection: bucket(live),
     };
@@ -99,7 +108,12 @@ export interface DayCompletion {
 }
 
 export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
-  const nonRecurring = items.filter((i) => !i.is_recurring && !isSnoozed(i));
+  // Archived items normally drop off the day, but an item that was marked done
+  // and then archived stays counted — archiving a finished task shouldn't claw
+  // back the point it earned.
+  const nonRecurring = items.filter(
+    (i) => !i.is_recurring && !isSnoozed(i) && (!i.is_archived || i.status === "done"),
+  );
   const counted = nonRecurring.filter(
     (i) =>
       i.status === "open" ||
@@ -133,7 +147,9 @@ export interface HistoryPoint {
 export function useHistory(limit = 90): HistoryPoint[] | undefined {
   return useLiveQuery(async () => {
     const rows = await db.tdl_items.toArray();
-    const live = rows.filter((r) => !r.deleted_at && !r.is_recurring && !r.is_archived);
+    const live = rows.filter(
+      (r) => !r.deleted_at && !r.is_recurring && (!r.is_archived || r.status === "done"),
+    );
     const byDate = new Map<string, LocalTdlItem[]>();
     for (const r of live) {
       const arr = byDate.get(r.snapshot_date) ?? [];

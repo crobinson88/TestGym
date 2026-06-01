@@ -1,0 +1,89 @@
+import { describe, expect, it } from "vitest";
+import { v4 as uuid } from "uuid";
+import type { LocalTdlItem } from "@/lib/db";
+import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
+import { dayCompletion } from "./hooks";
+import { isResettable } from "./snooze";
+
+const DATE = "2026-06-01";
+
+function makeItem(over: Partial<TdlItemRow> = {}, section: TdlSection = "follow_ups"): LocalTdlItem {
+  const ts = `${DATE}T08:00:00.000Z`;
+  const row: TdlItemRow = {
+    id: uuid(),
+    snapshot_date: DATE,
+    section,
+    is_recurring: false,
+    position: 0,
+    title: "Task",
+    due_date: null,
+    time_estimate_min: null,
+    status: "open",
+    is_priority: false,
+    is_archived: false,
+    snoozed_until: null,
+    notes: null,
+    origin_item_id: null,
+    origin_snapshot_date: null,
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+    ...over,
+  };
+  return { ...row, sync_status: "synced" };
+}
+
+describe("dayCompletion", () => {
+  it("keeps a done item counted after it is archived", () => {
+    const open = makeItem({ status: "open" });
+    const doneThenArchived = makeItem({ status: "done", is_archived: true });
+    const c = dayCompletion([open, doneThenArchived]);
+    expect(c.total).toBe(2);
+    expect(c.done).toBe(1);
+    expect(c.active).toBe(1);
+  });
+
+  it("drops an archived item that was not done", () => {
+    const open = makeItem({ status: "open" });
+    const archivedOpen = makeItem({ status: "open", is_archived: true });
+    const archivedWorked = makeItem({ status: "worked_today", is_archived: true });
+    const c = dayCompletion([open, archivedOpen, archivedWorked]);
+    expect(c.total).toBe(1);
+    expect(c.done).toBe(0);
+    expect(c.active).toBe(0);
+  });
+
+  it("counts a priority done item toward the priority total even when archived", () => {
+    const c = dayCompletion([
+      makeItem({ status: "done", is_archived: true, is_priority: true }),
+    ]);
+    expect(c.priorityTotal).toBe(1);
+    expect(c.priorityActive).toBe(1);
+  });
+});
+
+describe("isResettable", () => {
+  const cases: Array<[string, Partial<TdlItemRow>, boolean]> = [
+    ["worked_today item resets", { status: "worked_today" }, true],
+    ["done item resets", { status: "done" }, true],
+    ["already-open item is skipped", { status: "open" }, false],
+    ["archived item is skipped", { status: "done", is_archived: true }, false],
+    [
+      "snoozed item is skipped",
+      { status: "done", snoozed_until: "2026-06-10" },
+      false,
+    ],
+    [
+      "deleted item is skipped",
+      { status: "done", deleted_at: `${DATE}T09:00:00.000Z` },
+      false,
+    ],
+    ["recurring item still resets", { status: "done", is_recurring: true }, true],
+  ];
+
+  it.each(cases)("%s", (_label, over, expected) => {
+    expect(isResettable(makeItem(over as Partial<TdlItemRow> & { status: TdlStatus }))).toBe(
+      expected,
+    );
+  });
+});

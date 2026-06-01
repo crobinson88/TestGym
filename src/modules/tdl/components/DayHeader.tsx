@@ -7,18 +7,21 @@ import { dayCompletion } from "../hooks";
 import { SECTIONS } from "../sections";
 import { isSnoozed } from "../snooze";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
+import { ResetStatusesButton } from "./ResetStatusesButton";
 
 export function DayHeader({
   snapshot_date,
   items,
+  completionItems,
   onNavigate,
 }: {
   snapshot_date: string;
   items: LocalTdlItem[];
+  completionItems: LocalTdlItem[];
   day: LocalTdlDay | null;
   onNavigate: (next: string) => void;
 }) {
-  const c = dayCompletion(items);
+  const c = dayCompletion(completionItems);
   const today = todayIsoDate();
 
   const openBySection = new Map<string, number>();
@@ -93,11 +96,10 @@ export function DayHeader({
           </div>
         </div>
       </div>
-      {snapshot_date === today && (
-        <div className="mt-2">
-          <ImportMeetingsButton />
-        </div>
-      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {snapshot_date === today && <ImportMeetingsButton />}
+        <ResetStatusesButton snapshot_date={snapshot_date} items={items} />
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {SECTIONS.map((s) => (
           <span
