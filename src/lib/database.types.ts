@@ -121,6 +121,27 @@ export interface TdlDayRow {
   deleted_at: string | null;
 }
 
+export interface TimeTaskRow {
+  id: string;
+  name: string;
+  color: string;
+  is_work: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface TimeAllocationRow {
+  id: string;
+  date: string;
+  slot: number;
+  task_id: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -180,6 +201,21 @@ export type Database = {
         Row: TdlDayRow;
         Insert: Partial<TdlDayRow> & { snapshot_date: string };
         Update: Partial<TdlDayRow>;
+      };
+      time_tasks: {
+        Row: TimeTaskRow;
+        Insert: Partial<TimeTaskRow> & { id: string; name: string; color: string };
+        Update: Partial<TimeTaskRow>;
+      };
+      time_allocations: {
+        Row: TimeAllocationRow;
+        Insert: Partial<TimeAllocationRow> & {
+          id: string;
+          date: string;
+          slot: number;
+          task_id: string;
+        };
+        Update: Partial<TimeAllocationRow>;
       };
     };
   };

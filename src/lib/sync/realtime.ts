@@ -8,9 +8,11 @@ import type {
   SetRow,
   TdlDayRow,
   TdlItemRow,
+  TimeAllocationRow,
+  TimeTaskRow,
 } from "../database.types";
 import type { Client, Logger, SyncTable } from "./types";
-import { SYNC_TABLES } from "./types";
+import { DEXIE_TABLE, SYNC_TABLES } from "./types";
 
 type AnyRow =
   | SetRow
@@ -19,7 +21,9 @@ type AnyRow =
   | MetActivityRow
   | CardioSessionRow
   | TdlItemRow
-  | TdlDayRow;
+  | TdlDayRow
+  | TimeTaskRow
+  | TimeAllocationRow;
 
 export interface MergeResult {
   applied: boolean;
@@ -37,7 +41,7 @@ export async function mergeRemote(
   table: SyncTable,
   remote: AnyRow,
 ): Promise<MergeResult> {
-  const t = db.table(table);
+  const t = db.table(DEXIE_TABLE[table]);
   const key = pkOf(table, remote);
   const local = (await t.get(key)) as AnyRow | undefined;
 
@@ -93,7 +97,7 @@ export function createRealtime({ client, db, log }: RealtimeDeps) {
             if (!key) return;
             if (payload.eventType === "DELETE") {
               void db
-                .table(table)
+                .table(DEXIE_TABLE[table])
                 .delete(key)
                 .then(() => onApplied?.(table));
               return;

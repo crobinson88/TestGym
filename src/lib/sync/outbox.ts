@@ -7,9 +7,11 @@ import type {
   LocalSet,
   LocalTdlDay,
   LocalTdlItem,
+  LocalTimeAllocation,
+  LocalTimeTask,
 } from "../db";
 import type { Client, DrainResult, Logger, SyncTable } from "./types";
-import { SYNC_TABLES } from "./types";
+import { DEXIE_TABLE, SYNC_TABLES } from "./types";
 
 type PendingRow =
   | LocalSet
@@ -18,7 +20,9 @@ type PendingRow =
   | LocalMetActivity
   | LocalCardioSession
   | LocalTdlItem
-  | LocalTdlDay;
+  | LocalTdlDay
+  | LocalTimeTask
+  | LocalTimeAllocation;
 
 const STRIP_KEYS = [
   "sync_status",
@@ -38,6 +42,8 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   cardio_sessions: "id",
   tdl_items: "id",
   tdl_days: "snapshot_date",
+  time_tasks: "id",
+  time_allocations: "id",
 };
 
 function toPayload(row: PendingRow): Record<string, unknown> {
@@ -71,6 +77,15 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   if (table === "tdl_items") {
     return db.tdl_items.where("sync_status").equals("pending").limit(limit).toArray();
   }
+  if (table === "tdl_days") {
+    return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "time_tasks") {
+    return db.timeTasks.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "time_allocations") {
+    return db.timeAllocations.where("sync_status").equals("pending").limit(limit).toArray();
+  }
   return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
 }
 
@@ -81,7 +96,7 @@ async function markSynced(
 ) {
   const keyField = PK_BY_TABLE[table];
   const keys = rows.map((r) => pkOf(table, r));
-  await db.table(table).where(keyField).anyOf(keys).modify({
+  await db.table(DEXIE_TABLE[table]).where(keyField).anyOf(keys).modify({
     sync_status: "synced",
     sync_attempts: 0,
     sync_last_error: null,
@@ -108,7 +123,7 @@ async function markError(
       sync_last_error: message,
     });
   } else {
-    await db.table(table).update(pk, {
+    await db.table(DEXIE_TABLE[table]).update(pk, {
       sync_status: "error",
       sync_last_error: message,
     });
@@ -174,7 +189,7 @@ export function createOutbox({ client, db, log, batchSize = 200 }: OutboxDeps) {
   async function pendingCount(): Promise<number> {
     const counts = await Promise.all(
       SYNC_TABLES.map((t) =>
-        db.table(t).where("sync_status").equals("pending").count(),
+        db.table(DEXIE_TABLE[t]).where("sync_status").equals("pending").count(),
       ),
     );
     return counts.reduce((a, b) => a + b, 0);

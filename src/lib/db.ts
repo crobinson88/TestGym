@@ -8,6 +8,8 @@ import type {
   SetRow,
   TdlDayRow,
   TdlItemRow,
+  TimeAllocationRow,
+  TimeTaskRow,
 } from "./database.types";
 
 export type SyncStatus = "pending" | "synced" | "error";
@@ -50,23 +52,12 @@ export interface MetaRow {
   updated_at: string;
 }
 
-export interface TimeTaskRow {
-  id: string;
-  name: string;
-  color: string;
-  is_work: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
+export interface LocalTimeTask extends TimeTaskRow {
+  sync_status: SyncStatus;
 }
 
-export interface TimeAllocationRow {
-  id: string;
-  date: string;
-  slot: number;
-  task_id: string;
-  updated_at: string;
+export interface LocalTimeAllocation extends TimeAllocationRow {
+  sync_status: SyncStatus;
 }
 
 export class GymDB extends Dexie {
@@ -77,8 +68,8 @@ export class GymDB extends Dexie {
   cardio_sessions!: Table<LocalCardioSession, string>;
   conflicts!: Table<ConflictRow, string>;
   meta!: Table<MetaRow, string>;
-  timeTasks!: Table<TimeTaskRow, string>;
-  timeAllocations!: Table<TimeAllocationRow, string>;
+  timeTasks!: Table<LocalTimeTask, string>;
+  timeAllocations!: Table<LocalTimeAllocation, string>;
   tdl_items!: Table<LocalTdlItem, string>;
   tdl_days!: Table<LocalTdlDay, string>;
 
@@ -128,6 +119,32 @@ export class GymDB extends Dexie {
           .modify((row: LocalTdlItem) => {
             if (row.is_archived === undefined) row.is_archived = false;
             if (row.snoozed_until === undefined) row.snoozed_until = null;
+          });
+      });
+    this.version(6)
+      .stores({
+        timeTasks: "id, name, sort_order, is_work, updated_at, sync_status, deleted_at",
+        timeAllocations: "id, date, task_id, [date+slot], updated_at, sync_status, deleted_at",
+      })
+      .upgrade(async (tx) => {
+        const now = new Date().toISOString();
+        // Pre-sync time rows were local-only; mark them pending so the
+        // outbox finally pushes the backlog to Supabase.
+        await tx
+          .table("timeTasks")
+          .toCollection()
+          .modify((row: LocalTimeTask) => {
+            if (row.sync_status === undefined) row.sync_status = "pending";
+            if (row.created_at === undefined) row.created_at = now;
+            if (row.deleted_at === undefined) row.deleted_at = null;
+          });
+        await tx
+          .table("timeAllocations")
+          .toCollection()
+          .modify((row: LocalTimeAllocation) => {
+            if (row.sync_status === undefined) row.sync_status = "pending";
+            if (row.created_at === undefined) row.created_at = now;
+            if (row.deleted_at === undefined) row.deleted_at = null;
           });
       });
   }

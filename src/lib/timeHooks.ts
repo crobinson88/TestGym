@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { v4 as uuidv4 } from "uuid";
-import { db, type TimeAllocationRow, type TimeTaskRow } from "./db";
+import { db, type LocalTimeAllocation, type LocalTimeTask } from "./db";
+import { syncEngine } from "./sync";
 import {
   hoursPerDay,
   nextTaskColor,
@@ -14,6 +15,14 @@ import { addDays, todayIsoDate, weekStart } from "./utils";
 const ROLLING_WINDOW_DAYS = 7;
 const ROLLING_SPAN_DAYS = 56;
 const WEEKS_BACK = 8;
+
+function pokeOutbox() {
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    void syncEngine.drain();
+  }
+}
+
+const live = (a: LocalTimeAllocation) => !a.deleted_at;
 
 export interface TimeDashboardStats {
   weekly: WeekHoursPoint[];
@@ -29,10 +38,9 @@ export function useTimeDashboardStats(): TimeDashboardStats | undefined {
     const rollingFetchStart = addDays(rollingStart, -(ROLLING_WINDOW_DAYS - 1));
     const earliest = firstWeekStart < rollingFetchStart ? firstWeekStart : rollingFetchStart;
 
-    const allocs = await db.timeAllocations
-      .where("date")
-      .between(earliest, today, true, true)
-      .toArray();
+    const allocs = (
+      await db.timeAllocations.where("date").between(earliest, today, true, true).toArray()
+    ).filter(live);
     const perDay = hoursPerDay(allocs);
 
     const weekStarts: string[] = [];
@@ -58,16 +66,18 @@ export function useTimeTasks() {
 
 export function useAllocationsForDate(date: string) {
   return useLiveQuery(async () => {
-    return db.timeAllocations.where("date").equals(date).toArray();
+    const rows = await db.timeAllocations.where("date").equals(date).toArray();
+    return rows.filter(live);
   }, [date]);
 }
 
 export function useAllocationsInRange(startDate: string, endDate: string) {
   return useLiveQuery(async () => {
-    return db.timeAllocations
+    const rows = await db.timeAllocations
       .where("date")
       .between(startDate, endDate, true, true)
       .toArray();
+    return rows.filter(live);
   }, [startDate, endDate]);
 }
 
@@ -75,13 +85,13 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-export async function createTimeTask(input: { name: string; isWork: boolean }): Promise<TimeTaskRow> {
+export async function createTimeTask(input: { name: string; isWork: boolean }): Promise<LocalTimeTask> {
   const name = input.name.trim();
   if (!name) throw new Error("Task name required");
   const existing = await db.timeTasks.toArray();
   const usedColors = existing.filter((t) => !t.deleted_at).map((t) => t.color);
   const maxSort = existing.reduce((m, t) => Math.max(m, t.sort_order), -1);
-  const row: TimeTaskRow = {
+  const row: LocalTimeTask = {
     id: uuidv4(),
     name,
     color: nextTaskColor(usedColors),
@@ -90,61 +100,97 @@ export async function createTimeTask(input: { name: string; isWork: boolean }): 
     created_at: nowIso(),
     updated_at: nowIso(),
     deleted_at: null,
+    sync_status: "pending",
   };
   await db.timeTasks.put(row);
+  pokeOutbox();
   return row;
 }
 
 export async function updateTimeTask(
   id: string,
-  patch: Partial<Pick<TimeTaskRow, "name" | "is_work" | "color">>,
+  patch: Partial<Pick<LocalTimeTask, "name" | "is_work" | "color">>,
 ) {
   const existing = await db.timeTasks.get(id);
   if (!existing) return;
-  const next: TimeTaskRow = {
+  const next: LocalTimeTask = {
     ...existing,
     ...patch,
     name: patch.name !== undefined ? patch.name.trim() : existing.name,
     updated_at: nowIso(),
+    sync_status: "pending",
   };
   await db.timeTasks.put(next);
+  pokeOutbox();
 }
 
 export async function deleteTimeTaskCascade(id: string) {
   await db.transaction("rw", db.timeTasks, db.timeAllocations, async () => {
     const existing = await db.timeTasks.get(id);
     if (!existing) return;
-    await db.timeTasks.put({ ...existing, deleted_at: nowIso(), updated_at: nowIso() });
-    await db.timeAllocations.where("task_id").equals(id).delete();
+    const ts = nowIso();
+    await db.timeTasks.put({
+      ...existing,
+      deleted_at: ts,
+      updated_at: ts,
+      sync_status: "pending",
+    });
+    const allocs = await db.timeAllocations.where("task_id").equals(id).toArray();
+    for (const a of allocs) {
+      if (a.deleted_at) continue;
+      await db.timeAllocations.put({
+        ...a,
+        deleted_at: ts,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
   });
+  pokeOutbox();
 }
 
 export async function countAllocationsForTask(id: string): Promise<number> {
-  return db.timeAllocations.where("task_id").equals(id).count();
+  const rows = await db.timeAllocations.where("task_id").equals(id).toArray();
+  return rows.filter(live).length;
 }
 
 export async function setAllocation(date: string, slot: number, taskId: string) {
   const id = `${date}#${slot}`;
-  const row: TimeAllocationRow = {
+  const existing = await db.timeAllocations.get(id);
+  const ts = nowIso();
+  const row: LocalTimeAllocation = {
     id,
     date,
     slot,
     task_id: taskId,
-    updated_at: nowIso(),
+    created_at: existing?.created_at ?? ts,
+    updated_at: ts,
+    deleted_at: null,
+    sync_status: "pending",
   };
   await db.timeAllocations.put(row);
+  pokeOutbox();
 }
 
 export async function clearAllocation(date: string, slot: number) {
   const id = `${date}#${slot}`;
-  await db.timeAllocations.delete(id);
+  const existing = await db.timeAllocations.get(id);
+  if (!existing || existing.deleted_at) return;
+  const ts = nowIso();
+  await db.timeAllocations.put({
+    ...existing,
+    deleted_at: ts,
+    updated_at: ts,
+    sync_status: "pending",
+  });
+  pokeOutbox();
 }
 
 export async function toggleOrAssignAllocation(date: string, slot: number, taskId: string) {
   const id = `${date}#${slot}`;
   const existing = await db.timeAllocations.get(id);
-  if (existing && existing.task_id === taskId) {
-    await db.timeAllocations.delete(id);
+  if (existing && !existing.deleted_at && existing.task_id === taskId) {
+    await clearAllocation(date, slot);
     return;
   }
   await setAllocation(date, slot, taskId);

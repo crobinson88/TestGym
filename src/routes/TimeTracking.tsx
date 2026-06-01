@@ -26,7 +26,7 @@ import {
   useAllocationsInRange,
   useTimeTasks,
 } from "@/lib/timeHooks";
-import type { TimeTaskRow } from "@/lib/db";
+import type { LocalTimeTask } from "@/lib/db";
 
 const SLOT_INDICES = Array.from({ length: SLOTS_PER_DAY }, (_, i) => i);
 
@@ -44,7 +44,7 @@ export function TimeTracking() {
   const yesterdayAllocs = useAllocationsForDate(yesterday);
 
   const tasksById = useMemo(() => {
-    const m = new Map<string, TimeTaskRow>();
+    const m = new Map<string, LocalTimeTask>();
     for (const t of tasks ?? []) m.set(t.id, t);
     return m;
   }, [tasks]);
@@ -272,7 +272,7 @@ function ManageTasksModal({
   onClose,
   onTaskDeleted,
 }: {
-  tasks: readonly TimeTaskRow[];
+  tasks: readonly LocalTimeTask[];
   onClose: () => void;
   onTaskDeleted: (id: string) => void;
 }) {
@@ -314,7 +314,7 @@ function ManageTasksModal({
     onTaskDeleted(id);
   }
 
-  function startEdit(t: TimeTaskRow) {
+  function startEdit(t: LocalTimeTask) {
     setEditingId(t.id);
     setEditName(t.name);
   }
