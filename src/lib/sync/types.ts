@@ -20,7 +20,9 @@ export type SyncTable =
   | "met_activities"
   | "cardio_sessions"
   | "tdl_items"
-  | "tdl_days";
+  | "tdl_days"
+  | "time_tasks"
+  | "time_allocations";
 
 export const SYNC_TABLES: readonly SyncTable[] = [
   "categories",
@@ -30,7 +32,23 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   "cardio_sessions",
   "tdl_items",
   "tdl_days",
+  "time_tasks",
+  "time_allocations",
 ];
+
+// Dexie store names match the Supabase table name for every table except the
+// time-tracking pair, which uses camelCase stores. Map SyncTable -> Dexie store.
+export const DEXIE_TABLE: Record<SyncTable, string> = {
+  sets: "sets",
+  exercises: "exercises",
+  categories: "categories",
+  met_activities: "met_activities",
+  cardio_sessions: "cardio_sessions",
+  tdl_items: "tdl_items",
+  tdl_days: "tdl_days",
+  time_tasks: "timeTasks",
+  time_allocations: "timeAllocations",
+};
 
 export interface DrainResult {
   pushed: number;

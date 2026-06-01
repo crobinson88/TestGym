@@ -6,6 +6,8 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TimeAllocationRow,
+  TimeTaskRow,
 } from "../database.types";
 
 export async function newTestDb(): Promise<GymDB> {
@@ -99,6 +101,40 @@ export function makeCardioSession(
     met_minutes: 294,
     client_id: null,
     user_id: null,
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+    ...over,
+  };
+}
+
+export function makeTimeTask(over: Partial<TimeTaskRow> = {}): TimeTaskRow {
+  const ts = new Date().toISOString();
+  return {
+    id: uuid(),
+    name: "Deep work",
+    color: "#22d3ee",
+    is_work: true,
+    sort_order: 0,
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+    ...over,
+  };
+}
+
+export function makeTimeAllocation(
+  task_id: string,
+  over: Partial<TimeAllocationRow> = {},
+): TimeAllocationRow {
+  const ts = new Date().toISOString();
+  const date = over.date ?? "2026-05-19";
+  const slot = over.slot ?? 36;
+  return {
+    id: `${date}#${slot}`,
+    date,
+    slot,
+    task_id,
     created_at: ts,
     updated_at: ts,
     deleted_at: null,

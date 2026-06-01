@@ -7,6 +7,8 @@ import type {
   SetRow,
   TdlDayRow,
   TdlItemRow,
+  TimeAllocationRow,
+  TimeTaskRow,
 } from "../database.types";
 import type { Client, Logger, PullResult, SyncTable } from "./types";
 import { SYNC_TABLES } from "./types";
@@ -131,6 +133,30 @@ async function mergeTdlDays(db: GymDB, rows: TdlDayRow[]) {
   });
 }
 
+async function mergeTimeTasks(db: GymDB, rows: TimeTaskRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.timeTasks, async () => {
+    for (const remote of rows) {
+      const local = await db.timeTasks.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.timeTasks.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
+async function mergeTimeAllocations(db: GymDB, rows: TimeAllocationRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.timeAllocations, async () => {
+    for (const remote of rows) {
+      const local = await db.timeAllocations.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.timeAllocations.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -145,6 +171,8 @@ const META_KEYS: Record<SyncTable, string> = {
   cardio_sessions: "last_pull_cardio_sessions",
   tdl_items: "last_pull_tdl_items",
   tdl_days: "last_pull_tdl_days",
+  time_tasks: "last_pull_time_tasks",
+  time_allocations: "last_pull_time_allocations",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -166,6 +194,8 @@ export function createPull({ client, db, log }: PullDeps) {
       cardio_sessions: 0,
       tdl_items: 0,
       tdl_days: 0,
+      time_tasks: 0,
+      time_allocations: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -202,11 +232,23 @@ export function createPull({ client, db, log }: PullDeps) {
           await mergeTdlItems(db, rows);
           fetched.tdl_items = rows.length;
           if (rows.length > 0) await writeMark("tdl_items", rows[rows.length - 1].updated_at);
-        } else {
+        } else if (table === "tdl_days") {
           const rows = await fetchSince<TdlDayRow>(client, "tdl_days", since);
           await mergeTdlDays(db, rows);
           fetched.tdl_days = rows.length;
           if (rows.length > 0) await writeMark("tdl_days", rows[rows.length - 1].updated_at);
+        } else if (table === "time_tasks") {
+          const rows = await fetchSince<TimeTaskRow>(client, "time_tasks", since);
+          await mergeTimeTasks(db, rows);
+          fetched.time_tasks = rows.length;
+          if (rows.length > 0) await writeMark("time_tasks", rows[rows.length - 1].updated_at);
+        } else {
+          const rows = await fetchSince<TimeAllocationRow>(client, "time_allocations", since);
+          await mergeTimeAllocations(db, rows);
+          fetched.time_allocations = rows.length;
+          if (rows.length > 0) {
+            await writeMark("time_allocations", rows[rows.length - 1].updated_at);
+          }
         }
       } catch (err) {
         log?.(`pull: ${table} failed`, (err as Error).message);
