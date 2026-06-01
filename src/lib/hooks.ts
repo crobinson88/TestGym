@@ -59,16 +59,19 @@ export function useTodaySetsForExercise(exerciseId?: string) {
   }, [exerciseId]);
 }
 
-export function useTodaySets() {
+export function useSetsForDate(date: string) {
   return useLiveQuery(async () => {
-    const today = todayIsoDate();
-    const rows = await db.sets.where("performed_at").equals(today).toArray();
+    const rows = await db.sets.where("performed_at").equals(date).toArray();
     return rows
       .filter((s) => !s.deleted_at)
       .sort((a, b) =>
         a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : 0,
       );
-  }, []);
+  }, [date]);
+}
+
+export function useTodaySets() {
+  return useSetsForDate(todayIsoDate());
 }
 
 export function useMetActivities(kind?: MetActivityKind) {
@@ -82,19 +85,22 @@ export function useMetActivities(kind?: MetActivityKind) {
   }, [kind]);
 }
 
-export function useTodayCardioSessions() {
+export function useCardioSessionsForDate(date: string) {
   return useLiveQuery(async () => {
-    const today = todayIsoDate();
     const rows = await db.cardio_sessions
       .where("performed_at")
-      .equals(today)
+      .equals(date)
       .toArray();
     return rows
       .filter((s) => !s.deleted_at)
       .sort((a, b) =>
         a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : 0,
       );
-  }, []);
+  }, [date]);
+}
+
+export function useTodayCardioSessions() {
+  return useCardioSessionsForDate(todayIsoDate());
 }
 
 export interface TodayScore {
@@ -106,12 +112,11 @@ export interface TodayScore {
   total: number;
 }
 
-export function useTodayScore(): TodayScore | undefined {
+export function useScoreForDate(date: string): TodayScore | undefined {
   return useLiveQuery(async () => {
-    const today = todayIsoDate();
     const [sets, cardio] = await Promise.all([
-      db.sets.where("performed_at").equals(today).toArray(),
-      db.cardio_sessions.where("performed_at").equals(today).toArray(),
+      db.sets.where("performed_at").equals(date).toArray(),
+      db.cardio_sessions.where("performed_at").equals(date).toArray(),
     ]);
     const liveSets = sets.filter((s) => !s.deleted_at);
     const liveCardio = cardio.filter((c) => !c.deleted_at);
@@ -133,7 +138,11 @@ export function useTodayScore(): TodayScore | undefined {
       cardioMetMinutes: cardioMetMin,
       total: lifting + cardioMetMin,
     };
-  }, []);
+  }, [date]);
+}
+
+export function useTodayScore(): TodayScore | undefined {
+  return useScoreForDate(todayIsoDate());
 }
 
 export interface ExerciseHistoryPoint {
