@@ -15,3 +15,9 @@ export function isSnoozed(
 export function isActive(item: LocalTdlItem): boolean {
   return !item.deleted_at && !item.is_archived && !isSnoozed(item);
 }
+
+// Items eligible for a bulk "reset to Open": everything live on the day that
+// isn't already open — recurring included, archived and snoozed excluded.
+export function isResettable(item: LocalTdlItem): boolean {
+  return isActive(item) && item.status !== "open";
+}

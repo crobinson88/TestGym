@@ -123,6 +123,7 @@ export default function DayView() {
       <DayHeader
         snapshot_date={date}
         items={bundle.items}
+        completionItems={bundle.completionItems}
         day={bundle.day}
         onNavigate={(d) => navigate(`/tdl/${d}`)}
       />
