@@ -89,7 +89,13 @@ export async function createTimeTask(input: { name: string; isWork: boolean }): 
   const name = input.name.trim();
   if (!name) throw new Error("Task name required");
   const existing = await db.timeTasks.toArray();
-  const usedColors = existing.filter((t) => !t.deleted_at).map((t) => t.color);
+  const liveTasks = existing.filter((t) => !t.deleted_at);
+  // Reuse an existing live task with the same name instead of minting a second
+  // row. Two devices each creating e.g. "TGM" offline used to produce duplicate
+  // categories with different ids, diverging the task list and day grid.
+  const dupe = liveTasks.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  if (dupe) return dupe;
+  const usedColors = liveTasks.map((t) => t.color);
   const maxSort = existing.reduce((m, t) => Math.max(m, t.sort_order), -1);
   const row: LocalTimeTask = {
     id: uuidv4(),
