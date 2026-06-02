@@ -133,7 +133,7 @@ export async function extractActionItems(t: Transcript) {
       "to-dos someone must act on; ignore discussion and chit-chat. " +
       `Today is ${today}; resolve relative dates (e.g. "next Friday") to an ISO date (YYYY-MM-DD). ` +
       "Use null for owner or due_date when not stated.",
-    output_config: { format: zodOutputFormat(Extraction), effort: "low" },
+    output_config: { format: zodOutputFormat(Extraction) },
     messages: [
       {
         role: "user",
