@@ -81,7 +81,8 @@ export async function listRecentTranscripts(): Promise<{ id: string; title: stri
     data?: { transcripts: { id: string; title: string | null }[] };
     errors?: unknown;
   };
-  if (body.errors || !body.data) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
+  // Tolerate field-level (partial) errors: only fail when no data came back.
+  if (!body.data?.transcripts) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
   return body.data.transcripts;
 }
 
@@ -104,8 +105,16 @@ export async function fetchTranscript(meetingId: string): Promise<Transcript> {
     body: JSON.stringify({ query, variables: { id: meetingId } }),
   });
   if (!res.ok) throw new Error(`Fireflies API ${res.status}`);
-  const body = (await res.json()) as { data?: { transcript: Transcript }; errors?: unknown };
-  if (body.errors || !body.data) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
+  const body = (await res.json()) as {
+    data?: { transcript: Transcript | null };
+    errors?: unknown;
+  };
+  // Fireflies often returns a usable transcript alongside field-level errors
+  // (GraphQL partial results). Failing on any `errors` discarded the whole
+  // transcript, so every meeting "failed" before extraction. Only fail when
+  // there's genuinely no transcript; log partials and proceed with what we got.
+  if (!body.data?.transcript) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
+  if (body.errors) console.warn("Fireflies partial errors for", meetingId, JSON.stringify(body.errors));
   return body.data.transcript;
 }
 
