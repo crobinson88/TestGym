@@ -61,7 +61,10 @@ export const Extraction = z.object({
       task: z.string(),
       owner: z.string().nullable(),
       due_date: z.string().nullable(),
-      priority: z.enum(["low", "med", "high"]),
+      // Kept lenient: zodOutputFormat (zod v4) emits enums as plain strings in
+      // the JSON schema, so the model isn't constrained and strict enum parsing
+      // threw "Invalid option". Downstream only checks whether it's "high".
+      priority: z.string().nullable(),
     }),
   ),
 });
