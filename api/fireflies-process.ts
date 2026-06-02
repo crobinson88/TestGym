@@ -61,6 +61,9 @@ export async function POST(request: Request): Promise<Response> {
 
     return json({ added, ok: true }, 200);
   } catch (e) {
+    // Log so the real cause is visible in Vercel runtime logs (the 200 below
+    // otherwise hides it from the platform's error view).
+    console.error("fireflies-process failed", meetingId, e);
     // 200 with ok:false: a single meeting failing isn't a request error — the
     // client tallies it as failed and the user can re-tap to retry just that one.
     return json({ added: 0, ok: false, error: e instanceof Error ? e.message : "failed" }, 200);

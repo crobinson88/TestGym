@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth";
 
 type TriggerResult = { meetingIds: string[]; basePosition: number };
-type ProcessResult = { added: number; ok: boolean };
+type ProcessResult = { added: number; ok: boolean; error?: string };
 
 // Read a response as JSON, but degrade gracefully when the server returns a
 // non-JSON body (e.g. Vercel's plain-text "A server error has occurred" on a
@@ -59,6 +59,7 @@ export function ImportMeetingsButton() {
       let added = 0;
       let failed = 0;
       let done = 0;
+      let firstError: string | null = null;
       await Promise.all(
         meetingIds.map(async (meetingId, meetingIndex) => {
           try {
@@ -67,11 +68,16 @@ export function ImportMeetingsButton() {
               headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
               body: JSON.stringify({ meetingId, basePosition, meetingIndex }),
             });
-            const { parsed: b } = await readJson<Partial<ProcessResult>>(r);
-            if (!r.ok || !b?.ok) failed++;
-            else added += b.added ?? 0;
-          } catch {
+            const { parsed: b, text } = await readJson<Partial<ProcessResult>>(r);
+            if (!r.ok || !b?.ok) {
+              failed++;
+              firstError ??= b?.error ?? text.trim().slice(0, 160) ?? `HTTP ${r.status}`;
+            } else {
+              added += b.added ?? 0;
+            }
+          } catch (e) {
             failed++;
+            firstError ??= e instanceof Error ? e.message : "request failed";
           } finally {
             done++;
             setProgress({ done, total });
@@ -84,7 +90,9 @@ export function ImportMeetingsButton() {
         added === 0
           ? `No action items found in ${ok} meeting${ok === 1 ? "" : "s"}`
           : `Added ${added} item${added === 1 ? "" : "s"} from ${ok} meeting${ok === 1 ? "" : "s"}`;
-      setMessage(failed > 0 ? `${base} (${failed} failed — tap again to retry)` : base);
+      // Surface the first failure reason so a silent per-meeting throw is debuggable.
+      const suffix = failed > 0 ? ` (${failed} failed${firstError ? `: ${firstError}` : ""} — tap again to retry)` : "";
+      setMessage(`${base}${suffix}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
