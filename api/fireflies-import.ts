@@ -10,27 +10,35 @@ import {
   listRecentTranscripts,
   SECTION,
   type Db,
-} from "./_fireflies";
+} from "./_fireflies.js";
 
 // Listing + a dedupe query only; this stays well under the limit.
 export const maxDuration = 30;
 
 export async function POST(request: Request): Promise<Response> {
-  const supabase = serviceClient();
-  if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
+  try {
+    // Inside the try: serviceClient() throws on a missing env var, which would
+    // otherwise escape as Vercel's opaque FUNCTION_INVOCATION_FAILED 500.
+    const supabase = serviceClient();
+    if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
 
-  const recent = await listRecentTranscripts();
-  const ids = recent.map((t) => t.id);
+    const recent = await listRecentTranscripts();
+    const ids = recent.map((t) => t.id);
 
-  const { data: known } = await supabase
-    .from("fireflies_ingests")
-    .select("meeting_id")
-    .in("meeting_id", ids);
-  const seen = new Set((known ?? []).map((r) => r.meeting_id as string));
-  const meetingIds = recent.filter((t) => !seen.has(t.id)).map((t) => t.id);
+    const { data: known } = await supabase
+      .from("fireflies_ingests")
+      .select("meeting_id")
+      .in("meeting_id", ids);
+    const seen = new Set((known ?? []).map((r) => r.meeting_id as string));
+    const meetingIds = recent.filter((t) => !seen.has(t.id)).map((t) => t.id);
 
-  const basePosition = await nextPosition(supabase);
-  return json({ meetingIds, basePosition }, 200);
+    const basePosition = await nextPosition(supabase);
+    return json({ meetingIds, basePosition }, 200);
+  } catch (e) {
+    // Always answer with JSON so the client surfaces the real reason instead of
+    // choking on Vercel's plain-text "A server error has occurred" 500 body.
+    return json({ error: e instanceof Error ? e.message : "import failed" }, 500);
+  }
 }
 
 async function nextPosition(supabase: Db): Promise<number> {

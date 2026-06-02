@@ -61,7 +61,10 @@ export const Extraction = z.object({
       task: z.string(),
       owner: z.string().nullable(),
       due_date: z.string().nullable(),
-      priority: z.enum(["low", "med", "high"]),
+      // Kept lenient: zodOutputFormat (zod v4) emits enums as plain strings in
+      // the JSON schema, so the model isn't constrained and strict enum parsing
+      // threw "Invalid option". Downstream only checks whether it's "high".
+      priority: z.string().nullable(),
     }),
   ),
 });
@@ -81,7 +84,8 @@ export async function listRecentTranscripts(): Promise<{ id: string; title: stri
     data?: { transcripts: { id: string; title: string | null }[] };
     errors?: unknown;
   };
-  if (body.errors || !body.data) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
+  // Tolerate field-level (partial) errors: only fail when no data came back.
+  if (!body.data?.transcripts) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
   return body.data.transcripts;
 }
 
@@ -104,8 +108,16 @@ export async function fetchTranscript(meetingId: string): Promise<Transcript> {
     body: JSON.stringify({ query, variables: { id: meetingId } }),
   });
   if (!res.ok) throw new Error(`Fireflies API ${res.status}`);
-  const body = (await res.json()) as { data?: { transcript: Transcript }; errors?: unknown };
-  if (body.errors || !body.data) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
+  const body = (await res.json()) as {
+    data?: { transcript: Transcript | null };
+    errors?: unknown;
+  };
+  // Fireflies often returns a usable transcript alongside field-level errors
+  // (GraphQL partial results). Failing on any `errors` discarded the whole
+  // transcript, so every meeting "failed" before extraction. Only fail when
+  // there's genuinely no transcript; log partials and proceed with what we got.
+  if (!body.data?.transcript) throw new Error(`Fireflies GraphQL: ${JSON.stringify(body.errors)}`);
+  if (body.errors) console.warn("Fireflies partial errors for", meetingId, JSON.stringify(body.errors));
   return body.data.transcript;
 }
 
@@ -117,14 +129,14 @@ export async function extractActionItems(t: Transcript) {
     .join("\n");
 
   const result = await anthropic.messages.parse({
-    model: "claude-opus-4-7",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 4000,
     system:
       "Extract concrete action items from a meeting transcript. Include only real " +
       "to-dos someone must act on; ignore discussion and chit-chat. " +
       `Today is ${today}; resolve relative dates (e.g. "next Friday") to an ISO date (YYYY-MM-DD). ` +
       "Use null for owner or due_date when not stated.",
-    output_config: { format: zodOutputFormat(Extraction), effort: "low" },
+    output_config: { format: zodOutputFormat(Extraction) },
     messages: [
       {
         role: "user",

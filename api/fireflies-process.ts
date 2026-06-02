@@ -10,7 +10,7 @@ import {
   json,
   serviceClient,
   titlePrefix,
-} from "./_fireflies";
+} from "./_fireflies.js";
 
 // One transcript fetch + one Claude call; bump the ceiling for long meetings.
 export const maxDuration = 60;
@@ -18,8 +18,15 @@ export const maxDuration = 60;
 type Body = { meetingId?: string; basePosition?: number; meetingIndex?: number };
 
 export async function POST(request: Request): Promise<Response> {
-  const supabase = serviceClient();
-  if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
+  let supabase: ReturnType<typeof serviceClient>;
+  try {
+    // serviceClient() throws on a missing env var; keep it inside a try so the
+    // failure returns JSON instead of an opaque FUNCTION_INVOCATION_FAILED 500.
+    supabase = serviceClient();
+    if (!(await authedUser(request, supabase))) return json({ error: "unauthorized" }, 401);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "init failed" }, 500);
+  }
 
   let body: Body;
   try {
@@ -54,6 +61,9 @@ export async function POST(request: Request): Promise<Response> {
 
     return json({ added, ok: true }, 200);
   } catch (e) {
+    // Log so the real cause is visible in Vercel runtime logs (the 200 below
+    // otherwise hides it from the platform's error view).
+    console.error("fireflies-process failed", meetingId, e);
     // 200 with ok:false: a single meeting failing isn't a request error — the
     // client tallies it as failed and the user can re-tap to retry just that one.
     return json({ added: 0, ok: false, error: e instanceof Error ? e.message : "failed" }, 200);
