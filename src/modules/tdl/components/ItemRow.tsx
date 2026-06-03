@@ -8,6 +8,7 @@ import {
   Flag,
   GripVertical,
   MoreVertical,
+  Pencil,
   Trash2,
   X,
 } from "lucide-react";
@@ -38,6 +39,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
     opacity: isDragging ? 0.4 : 1,
   };
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [menu, setMenu] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
   const cfg = SECTION_BY_KEY[item.section];
@@ -98,9 +100,11 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
         ) : (
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
             className={cn(
-              "block w-full truncate text-left text-sm",
+              "block w-full text-left text-sm",
+              expanded ? "whitespace-normal break-words" : "truncate",
               done && "line-through text-muted",
               cancelled && "line-through",
             )}
@@ -156,6 +160,16 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
         </button>
         {menu && (
           <div className="absolute right-0 top-9 z-20 min-w-[160px] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(true);
+                setMenu(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+            >
+              <Pencil className="h-4 w-4" /> Edit
+            </button>
             {snoozed ? (
               <button
                 type="button"
