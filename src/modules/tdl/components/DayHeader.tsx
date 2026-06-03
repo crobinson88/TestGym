@@ -35,33 +35,35 @@ export function DayHeader({
 
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-bg/95 px-4 py-3 backdrop-blur">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => onNavigate(addDays(snapshot_date, -1))}
-            aria-label="Previous day"
-            className="h-10 w-10"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <Input
-            type="date"
-            value={snapshot_date}
-            onChange={(e) => onNavigate(e.target.value)}
-            className="h-10 w-[160px] px-2 text-sm"
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => onNavigate(addDays(snapshot_date, 1))}
-            aria-label="Next day"
-            className="h-10 w-10"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Button>
-          <span className="ml-1 text-sm text-muted">
+      <div className="flex items-center gap-1">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => onNavigate(addDays(snapshot_date, -1))}
+          aria-label="Previous day"
+          className="h-10 w-10 shrink-0"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        <Input
+          type="date"
+          value={snapshot_date}
+          onChange={(e) => onNavigate(e.target.value)}
+          className="h-10 min-w-0 flex-1 px-2 text-sm"
+        />
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => onNavigate(addDays(snapshot_date, 1))}
+          aria-label="Next day"
+          className="h-10 w-10 shrink-0"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </Button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <span className="truncate text-sm text-muted">
             {snapshot_date === today ? "Today" : prettyDate(snapshot_date)}
           </span>
           <Button
@@ -69,7 +71,7 @@ export function DayHeader({
             variant="ghost"
             onClick={() => onNavigate("snoozed")}
             aria-label="Snoozed items"
-            className="h-10 w-10"
+            className="h-10 w-10 shrink-0"
           >
             <Clock className="h-5 w-5" />
           </Button>
@@ -78,12 +80,12 @@ export function DayHeader({
             variant="ghost"
             onClick={() => onNavigate("archive")}
             aria-label="Archived items"
-            className="h-10 w-10"
+            className="h-10 w-10 shrink-0"
           >
             <Archive className="h-5 w-5" />
           </Button>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="text-[11px] uppercase tracking-wider text-muted">Active</div>
           <div className="text-lg font-bold tabular-nums">
             {c.active}/{c.total}
