@@ -71,7 +71,7 @@ export function AppLayout() {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-32">
+      <main className="flex-1 overflow-x-hidden overflow-y-auto pb-32">
         <Outlet />
       </main>
 
