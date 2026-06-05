@@ -39,6 +39,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
     opacity: isDragging ? 0.4 : 1,
   };
   const [editing, setEditing] = useState(false);
+  const [editingTime, setEditingTime] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [menu, setMenu] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
@@ -68,6 +69,46 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
       >
         <GripVertical className="h-4 w-4" />
       </button>
+      {editingTime ? (
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          step={1}
+          autoFocus
+          defaultValue={item.time_estimate_min ?? ""}
+          className="h-9 w-12 shrink-0 px-1 text-center text-sm"
+          aria-label="Time in minutes"
+          onBlur={(e) => {
+            const raw = e.currentTarget.value.trim();
+            const next = raw === "" ? null : Math.max(0, Math.trunc(Number(raw)));
+            if (raw !== "" && Number.isNaN(next)) {
+              setEditingTime(false);
+              return;
+            }
+            if (next !== item.time_estimate_min) {
+              void updateItem(item.id, { time_estimate_min: next });
+            }
+            setEditingTime(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+            if (e.key === "Escape") setEditingTime(false);
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditingTime(true)}
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg tabular-nums",
+            item.time_estimate_min != null ? "text-text" : "text-muted hover:text-text",
+          )}
+          aria-label={item.time_estimate_min != null ? `Time ${item.time_estimate_min} minutes` : "Set time"}
+        >
+          {item.time_estimate_min != null ? item.time_estimate_min : <Clock className="h-4 w-4" />}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => void togglePriority(item.id)}
@@ -115,9 +156,6 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
           <span>added {dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
           {cfg.hasDueDate && item.due_date && <span>due {item.due_date}</span>}
-          {cfg.hasTimeEstimate && item.time_estimate_min && (
-            <span>{item.time_estimate_min}m</span>
-          )}
           {snoozed && item.snoozed_until && (
             <span className="inline-flex items-center gap-1 text-accent">
               <Clock className="h-3 w-3" /> snoozed until {dayMonth(item.snoozed_until)}
