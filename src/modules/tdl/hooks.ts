@@ -147,8 +147,8 @@ export interface SectionStatusCounts {
 
 // Per-section status tally for the section header. Snoozed items are excluded to
 // match the board (they live on the snoozed list, not the day). `inProgress`
-// folds in `ready_for_testing` for non-product sections, mirroring how the
-// status pill relabels it there.
+// covers everything actively being worked but not done, so `ready_for_testing`
+// always counts toward it; in Product it is *also* surfaced as `testing`.
 export function sectionStatusCounts(
   items: LocalTdlItem[],
   isProduct = false,
@@ -164,8 +164,8 @@ export function sectionStatusCounts(
     if (isSnoozed(item)) continue;
     const status: TdlStatus = item.status;
     if (status === "ready_for_testing") {
+      counts.inProgress += 1;
       if (isProduct) counts.testing += 1;
-      else counts.inProgress += 1;
     } else if (status === "worked_today") {
       counts.inProgress += 1;
     } else if (status === "open") {

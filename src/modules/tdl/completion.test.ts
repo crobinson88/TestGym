@@ -75,12 +75,12 @@ describe("sectionStatusCounts", () => {
     expect(c).toEqual({ open: 2, inProgress: 1, testing: 0, done: 1, cancelled: 1 });
   });
 
-  it("counts ready_for_testing as testing for the product section", () => {
+  it("counts product testing items toward both in progress and testing", () => {
     const items = [
       makeItem({ status: "ready_for_testing" }, "product"),
       makeItem({ status: "worked_today" }, "product"),
     ];
-    expect(sectionStatusCounts(items, true)).toMatchObject({ inProgress: 1, testing: 1 });
+    expect(sectionStatusCounts(items, true)).toMatchObject({ inProgress: 2, testing: 1 });
   });
 
   it("folds ready_for_testing into in progress for non-product sections", () => {
