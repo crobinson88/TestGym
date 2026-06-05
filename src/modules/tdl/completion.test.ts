@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { v4 as uuid } from "uuid";
 import type { LocalTdlItem } from "@/lib/db";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
-import { dayCompletion } from "./hooks";
+import { dayCompletion, sectionStatusCounts } from "./hooks";
 import { isResettable } from "./snooze";
 
 const DATE = "2026-06-01";
@@ -59,6 +59,33 @@ describe("dayCompletion", () => {
     ]);
     expect(c.priorityTotal).toBe(1);
     expect(c.priorityActive).toBe(1);
+  });
+});
+
+describe("sectionStatusCounts", () => {
+  it("tallies each status, excluding snoozed items", () => {
+    const c = sectionStatusCounts([
+      makeItem({ status: "open" }),
+      makeItem({ status: "open" }),
+      makeItem({ status: "worked_today" }),
+      makeItem({ status: "done" }),
+      makeItem({ status: "cancelled" }),
+      makeItem({ status: "worked_today", snoozed_until: "2026-06-10" }),
+    ]);
+    expect(c).toEqual({ open: 2, inProgress: 1, testing: 0, done: 1, cancelled: 1 });
+  });
+
+  it("counts ready_for_testing as testing for the product section", () => {
+    const items = [
+      makeItem({ status: "ready_for_testing" }, "product"),
+      makeItem({ status: "worked_today" }, "product"),
+    ];
+    expect(sectionStatusCounts(items, true)).toMatchObject({ inProgress: 1, testing: 1 });
+  });
+
+  it("folds ready_for_testing into in progress for non-product sections", () => {
+    const items = [makeItem({ status: "ready_for_testing" })];
+    expect(sectionStatusCounts(items, false)).toMatchObject({ inProgress: 1, testing: 0 });
   });
 });
 
