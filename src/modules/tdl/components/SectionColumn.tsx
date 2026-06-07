@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import type { LocalTdlItem } from "../types";
 import type { SectionConfig } from "../sections";
 import { createItem } from "../repo";
-import { isSnoozed } from "../snooze";
+import { sectionStatusCounts } from "../hooks";
 import { ItemRow } from "./ItemRow";
 
 export function SectionColumn({
@@ -25,11 +26,23 @@ export function SectionColumn({
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
 
-  const openCount = dated.filter(
-    (i) =>
-      !isSnoozed(i) &&
-      (i.status === "open" || i.status === "worked_today" || i.status === "ready_for_testing"),
-  ).length;
+  const counts = sectionStatusCounts(dated, cfg.key === "product");
+  const chips = [
+    { key: "open", label: "open", n: counts.open, cls: "bg-surface2 text-muted" },
+    {
+      key: "worked_today",
+      label: "in progress",
+      n: counts.inProgress,
+      cls: "bg-accent/15 text-accent",
+    },
+    {
+      key: "ready_for_testing",
+      label: "testing",
+      n: counts.testing,
+      cls: "bg-sky-500/15 text-sky-400",
+    },
+    { key: "done", label: "done", n: counts.done, cls: "bg-success/15 text-success" },
+  ].filter((c) => c.key === "open" || c.n > 0);
 
   async function submit() {
     const title = draft.trim();
@@ -50,13 +63,21 @@ export function SectionColumn({
       className="flex flex-col rounded-2xl border border-line bg-surface"
       data-section-key={cfg.key}
     >
-      <header className="flex items-center justify-between border-b border-line px-3 py-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
+        <h2 className="mr-auto text-sm font-semibold uppercase tracking-wider text-muted">
           {cfg.label}
         </h2>
-        <span className="rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted">
-          {openCount} open
-        </span>
+        {chips.map((c) => (
+          <span
+            key={c.key}
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[11px] tabular-nums",
+              c.cls,
+            )}
+          >
+            {c.n} {c.label}
+          </span>
+        ))}
       </header>
 
       {recurring.length > 0 && (

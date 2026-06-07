@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { todayIsoDate } from "@/lib/utils";
 import { SECTIONS } from "./sections";
 import { isSnoozed } from "./snooze";
-import type { LocalTdlDay, LocalTdlItem } from "./types";
+import type { LocalTdlDay, LocalTdlItem, TdlStatus } from "./types";
 
 export interface DayBundle {
   items: LocalTdlItem[];
@@ -135,6 +135,48 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
     priorityTotal: priority.length,
     priorityActive: priority.filter(isActive).length,
   };
+}
+
+export interface SectionStatusCounts {
+  open: number;
+  inProgress: number;
+  testing: number;
+  done: number;
+  cancelled: number;
+}
+
+// Per-section status tally for the section header. Snoozed items are excluded to
+// match the board (they live on the snoozed list, not the day). `inProgress`
+// covers everything actively being worked but not done, so `ready_for_testing`
+// always counts toward it; in Product it is *also* surfaced as `testing`.
+export function sectionStatusCounts(
+  items: LocalTdlItem[],
+  isProduct = false,
+): SectionStatusCounts {
+  const counts: SectionStatusCounts = {
+    open: 0,
+    inProgress: 0,
+    testing: 0,
+    done: 0,
+    cancelled: 0,
+  };
+  for (const item of items) {
+    if (isSnoozed(item)) continue;
+    const status: TdlStatus = item.status;
+    if (status === "ready_for_testing") {
+      counts.inProgress += 1;
+      if (isProduct) counts.testing += 1;
+    } else if (status === "worked_today") {
+      counts.inProgress += 1;
+    } else if (status === "open") {
+      counts.open += 1;
+    } else if (status === "done") {
+      counts.done += 1;
+    } else if (status === "cancelled") {
+      counts.cancelled += 1;
+    }
+  }
+  return counts;
 }
 
 export interface HistoryPoint {
