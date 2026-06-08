@@ -15,6 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Calendar } from "@/components/ui/Calendar";
 import { Input } from "@/components/ui/Input";
 import { addDays, cn, dayMonth } from "@/lib/utils";
 import type { LocalTdlItem } from "../types";
@@ -168,21 +169,19 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
           )}
         </div>
         {snoozing && (
-          <Input
-            type="date"
-            autoFocus
-            min={addDays(item.snapshot_date, 1)}
-            defaultValue={item.snoozed_until ?? addDays(item.snapshot_date, 1)}
-            className="mt-1 h-8 w-[150px] px-2 text-xs"
-            onBlur={() => setSnoozing(false)}
-            onChange={(e) => {
-              const next = e.currentTarget.value;
-              if (next && next > item.snapshot_date) {
-                void snoozeItem(item.id, next);
-                setSnoozing(false);
-              }
-            }}
-          />
+          <div className="relative">
+            <div className="fixed inset-0 z-30" onClick={() => setSnoozing(false)} aria-hidden />
+            <div className="absolute left-0 top-1 z-40">
+              <Calendar
+                value={item.snoozed_until ?? null}
+                min={addDays(item.snapshot_date, 1)}
+                onSelect={(next) => {
+                  if (next > item.snapshot_date) void snoozeItem(item.id, next);
+                  setSnoozing(false);
+                }}
+              />
+            </div>
+          </div>
         )}
       </div>
       <StatusPill
