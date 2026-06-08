@@ -186,6 +186,17 @@ export async function moveItem(
   });
 }
 
+export async function moveItemToSection(
+  id: string,
+  toSection: TdlSection,
+): Promise<LocalTdlItem | null> {
+  const existing = await db.tdl_items.get(id);
+  if (!existing) return null;
+  if (existing.section === toSection) return existing;
+  const position = await nextPosition(existing.snapshot_date, toSection, existing.is_recurring);
+  return moveItem(id, toSection, position);
+}
+
 export async function reorderSection(
   snapshot_date: string,
   section: TdlSection,
