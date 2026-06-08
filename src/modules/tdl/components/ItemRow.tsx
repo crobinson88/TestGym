@@ -4,8 +4,11 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   BellOff,
+  Check,
+  ChevronRight,
   Clock,
   Flag,
+  FolderInput,
   GripVertical,
   MoreVertical,
   Pencil,
@@ -19,12 +22,13 @@ import {
   archiveItem,
   cycleStatus,
   deleteItem,
+  moveItemToSection,
   snoozeItem,
   togglePriority,
   unsnoozeItem,
   updateItem,
 } from "../repo";
-import { SECTION_BY_KEY } from "../sections";
+import { SECTIONS, SECTION_BY_KEY } from "../sections";
 import { isSnoozed } from "../snooze";
 import { StatusPill } from "./StatusPill";
 
@@ -42,6 +46,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
   const [editingTime, setEditingTime] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
   const cfg = SECTION_BY_KEY[item.section];
   const done = item.status === "done";
@@ -190,7 +195,12 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
       <div className="relative shrink-0">
         <button
           type="button"
-          onClick={() => setMenu((m) => !m)}
+          onClick={() =>
+            setMenu((m) => {
+              if (m) setMoving(false);
+              return !m;
+            })
+          }
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface2 hover:text-text"
           aria-label="More"
         >
@@ -208,6 +218,38 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
             >
               <Pencil className="h-4 w-4" /> Edit
             </button>
+            <button
+              type="button"
+              onClick={() => setMoving((v) => !v)}
+              aria-expanded={moving}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+            >
+              <FolderInput className="h-4 w-4" /> Move to
+              <ChevronRight className={cn("ml-auto h-4 w-4 transition-transform", moving && "rotate-90")} />
+            </button>
+            {moving &&
+              SECTIONS.map((s) => {
+                const current = s.key === item.section;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    disabled={current}
+                    onClick={() => {
+                      void moveItemToSection(item.id, s.key);
+                      setMoving(false);
+                      setMenu(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 py-2 pl-9 pr-3 text-left text-sm",
+                      current ? "text-muted" : "hover:bg-surface2",
+                    )}
+                  >
+                    {s.label}
+                    {current && <Check className="ml-auto h-4 w-4" />}
+                  </button>
+                );
+              })}
             {snoozed ? (
               <button
                 type="button"
