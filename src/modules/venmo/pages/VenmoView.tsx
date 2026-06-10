@@ -4,20 +4,11 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import {
-  evenSplit,
-  formatMoney,
-  weightedSplit,
-  type EvenParticipant,
-  type SplitCategory,
-} from "../calc";
+import { evenSplit, formatMoney, type EvenParticipant, type SplitCategory } from "../calc";
 import { scanReceipt, type ScannedReceipt } from "../receipt";
-
-type Mode = "even" | "weighted";
 
 type CatRow = { id: string; name: string; amount: string };
 type EvenRow = { id: string; name: string; joined: Record<string, boolean> };
-type WeightRow = { id: string; name: string; weight: string };
 
 const STORE_KEY = "venmo.v1";
 
@@ -33,29 +24,20 @@ function num(s: string): number {
 }
 
 interface Persisted {
-  mode: Mode;
   categories: CatRow[];
   evenPeople: EvenRow[];
   tip: string;
-  total: string;
-  weightPeople: WeightRow[];
 }
 
 function seed(): Persisted {
   const item = uid();
   return {
-    mode: "even",
     categories: [{ id: item, name: "", amount: "" }],
     evenPeople: [
       { id: uid(), name: "", joined: { [item]: true } },
       { id: uid(), name: "", joined: { [item]: true } },
     ],
     tip: "",
-    total: "",
-    weightPeople: [
-      { id: uid(), name: "", weight: "1" },
-      { id: uid(), name: "", weight: "1" },
-    ],
   };
 }
 
@@ -80,65 +62,25 @@ export default function VenmoView() {
     }
   }, [state]);
 
-  const { mode, categories, evenPeople, tip, total, weightPeople } = state;
+  const { categories, evenPeople, tip } = state;
   const set = (patch: Partial<Persisted>) => setState((s) => ({ ...s, ...patch }));
 
   return (
     <div className="mx-auto max-w-md px-4 py-5">
       <h1 className="mb-1 text-2xl font-semibold">Split the bill</h1>
-      <p className="mb-4 text-sm text-muted">
+      <p className="mb-5 text-sm text-muted">
         Scan a receipt, tag who shared each item, then Venmo away.
       </p>
 
-      <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface p-1">
-        <ModeTab active={mode === "even"} onClick={() => set({ mode: "even" })}>
-          By category
-        </ModeTab>
-        <ModeTab active={mode === "weighted"} onClick={() => set({ mode: "weighted" })}>
-          By weight
-        </ModeTab>
-      </div>
-
-      {mode === "even" ? (
-        <EvenSplitter
-          categories={categories}
-          people={evenPeople}
-          tip={tip}
-          onCategories={(categories) => set({ categories })}
-          onPeople={(evenPeople) => set({ evenPeople })}
-          onTip={(tip) => set({ tip })}
-        />
-      ) : (
-        <WeightedSplitter
-          total={total}
-          people={weightPeople}
-          onTotal={(total) => set({ total })}
-          onPeople={(weightPeople) => set({ weightPeople })}
-        />
-      )}
+      <EvenSplitter
+        categories={categories}
+        people={evenPeople}
+        tip={tip}
+        onCategories={(categories) => set({ categories })}
+        onPeople={(evenPeople) => set({ evenPeople })}
+        onTip={(tip) => set({ tip })}
+      />
     </div>
-  );
-}
-
-function ModeTab({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "h-10 rounded-lg text-sm font-medium transition",
-        active ? "bg-accent text-bg" : "text-muted hover:bg-surface2",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -291,12 +233,28 @@ function EvenSplitter({
     return p.name.trim() || `Person ${i + 1}`;
   }
 
+  function clearTags() {
+    onPeople(people.map((p) => ({ ...p, joined: {} })));
+  }
+
+  const anyTagged = people.some((p) => Object.values(p.joined).some(Boolean));
+
   return (
     <div className="space-y-6">
       <section>
         <div className="mb-2 flex items-center justify-between">
           <SectionLabel>Items</SectionLabel>
-          {merchant && <span className="text-xs text-muted">{merchant}</span>}
+          <div className="flex items-center gap-3">
+            {merchant && <span className="text-xs text-muted">{merchant}</span>}
+            {anyTagged && (
+              <button
+                onClick={clearTags}
+                className="text-xs font-medium text-accent hover:underline"
+              >
+                Clear tags
+              </button>
+            )}
+          </div>
         </div>
         <input
           ref={cameraRef}
@@ -500,129 +458,6 @@ function EvenSplitter({
             </span>
           </div>
         )}
-      </section>
-    </div>
-  );
-}
-
-function WeightedSplitter({
-  total,
-  people,
-  onTotal,
-  onPeople,
-}: {
-  total: string;
-  people: WeightRow[];
-  onTotal: (t: string) => void;
-  onPeople: (p: WeightRow[]) => void;
-}) {
-  const result = useMemo(
-    () =>
-      weightedSplit(
-        num(total),
-        people.map((p) => ({ id: p.id, name: p.name, weight: num(p.weight) })),
-      ),
-    [total, people],
-  );
-  const owedById = new Map(result.owed.map((o) => [o.id, o.amount]));
-
-  return (
-    <div className="space-y-6">
-      <section>
-        <SectionLabel>Total to split</SectionLabel>
-        <div className="relative">
-          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
-            $
-          </span>
-          <Input
-            value={total}
-            inputMode="decimal"
-            placeholder="0"
-            onChange={(e) => onTotal(e.target.value)}
-            className="pl-8 text-lg"
-          />
-        </div>
-        <p className="mt-2 text-xs text-muted">
-          One full share = {formatMoney(result.perShare)} · total weight {result.totalWeight}
-        </p>
-      </section>
-
-      <section>
-        <SectionLabel>People</SectionLabel>
-        <div className="space-y-3">
-          {people.map((p) => (
-            <div key={p.id} className="rounded-xl border border-line bg-surface p-3">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={p.name}
-                  placeholder="Name"
-                  onChange={(e) =>
-                    onPeople(
-                      people.map((x) => (x.id === p.id ? { ...x, name: e.target.value } : x)),
-                    )
-                  }
-                  className="flex-1"
-                />
-                <span className="w-20 text-right text-base font-semibold tabular-nums">
-                  {formatMoney(owedById.get(p.id) ?? 0)}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Remove person"
-                  onClick={() => onPeople(people.filter((x) => x.id !== p.id))}
-                >
-                  <Trash2 className="h-5 w-5 text-muted" />
-                </Button>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-xs text-muted">Weight</span>
-                {["0.5", "0.75", "1"].map((w) => (
-                  <button
-                    key={w}
-                    onClick={() =>
-                      onPeople(people.map((x) => (x.id === p.id ? { ...x, weight: w } : x)))
-                    }
-                    className={cn(
-                      "min-h-tap rounded-lg border px-3 py-1 text-sm transition",
-                      p.weight === w
-                        ? "border-accent bg-accent/15 text-accent"
-                        : "border-line bg-surface2 text-muted",
-                    )}
-                  >
-                    {w}
-                  </button>
-                ))}
-                <Input
-                  value={p.weight}
-                  inputMode="decimal"
-                  onChange={(e) =>
-                    onPeople(
-                      people.map((x) => (x.id === p.id ? { ...x, weight: e.target.value } : x)),
-                    )
-                  }
-                  className="h-10 w-20 text-right"
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="mt-3 w-full"
-          onClick={() => onPeople([...people, { id: uid(), name: "", weight: "1" }])}
-        >
-          <Plus className="mr-1 h-4 w-4" /> Add person
-        </Button>
-      </section>
-
-      <section className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3">
-        <div>
-          <div className="text-sm text-muted">Charged</div>
-          <div className="text-xl font-semibold tabular-nums">{formatMoney(result.charged)}</div>
-        </div>
-        <ReconcileBadge ok={result.reconciles} />
       </section>
     </div>
   );
