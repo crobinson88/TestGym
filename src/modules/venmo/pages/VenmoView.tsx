@@ -279,6 +279,18 @@ function EvenSplitter({
     onPeople([...people, { id: uid(), name: "", joined }]);
   }
 
+  function toggleShare(personId: string, itemId: string) {
+    onPeople(
+      people.map((p) =>
+        p.id === personId ? { ...p, joined: { ...p.joined, [itemId]: !p.joined[itemId] } } : p,
+      ),
+    );
+  }
+
+  function personLabel(p: EvenRow, i: number) {
+    return p.name.trim() || `Person ${i + 1}`;
+  }
+
   return (
     <div className="space-y-6">
       <section>
@@ -324,57 +336,78 @@ function EvenSplitter({
           </Button>
         </div>
         {scanError && <p className="mb-3 text-xs text-danger">{scanError}</p>}
-        <div className="space-y-2">
-          {categories.map((c) => (
-            <div key={c.id} className="flex items-center gap-2">
-              <Input
-                value={c.name}
-                placeholder="Item"
-                onChange={(e) =>
-                  onCategories(
-                    categories.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)),
-                  )
-                }
-                className="flex-1"
-              />
-              <div className="relative w-28">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
-                  $
-                </span>
-                <Input
-                  value={c.amount}
-                  inputMode="decimal"
-                  placeholder="0"
-                  onChange={(e) =>
-                    onCategories(
-                      categories.map((x) =>
-                        x.id === c.id ? { ...x, amount: e.target.value } : x,
-                      ),
-                    )
-                  }
-                  className="pl-7 text-right"
-                />
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Remove item"
-                onClick={() => removeCategory(c.id)}
-              >
-                <Trash2 className="h-5 w-5 text-muted" />
-              </Button>
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+        <div className="space-y-3">
           {categories.map((c) => {
             const r = rateById.get(c.id);
-            if (!r) return null;
             return (
-              <span key={c.id}>
-                {c.name || "—"}: {formatMoney(r.rate)}/pp
-                <span className="text-muted/60"> ({r.count})</span>
-              </span>
+              <div key={c.id} className="rounded-xl border border-line bg-surface p-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={c.name}
+                    placeholder="Item"
+                    onChange={(e) =>
+                      onCategories(
+                        categories.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)),
+                      )
+                    }
+                    className="flex-1"
+                  />
+                  <div className="relative w-24">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+                      $
+                    </span>
+                    <Input
+                      value={c.amount}
+                      inputMode="decimal"
+                      placeholder="0"
+                      onChange={(e) =>
+                        onCategories(
+                          categories.map((x) =>
+                            x.id === c.id ? { ...x, amount: e.target.value } : x,
+                          ),
+                        )
+                      }
+                      className="pl-7 text-right"
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Remove item"
+                    onClick={() => removeCategory(c.id)}
+                  >
+                    <Trash2 className="h-5 w-5 text-muted" />
+                  </Button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {people.length === 0 ? (
+                    <span className="text-xs text-muted">Add people below, then tag who shared this.</span>
+                  ) : (
+                    people.map((p, i) => {
+                      const on = !!p.joined[c.id];
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => toggleShare(p.id, c.id)}
+                          className={cn(
+                            "min-h-tap rounded-lg border px-3 py-1.5 text-sm transition",
+                            on
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-line bg-surface2 text-muted",
+                          )}
+                        >
+                          {personLabel(p, i)}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                {r && r.count > 0 && (
+                  <p className="mt-2 text-xs text-muted">
+                    {formatMoney(r.rate)}/pp · split {r.count} {r.count === 1 ? "way" : "ways"}
+                  </p>
+                )}
+              </div>
             );
           })}
         </div>
@@ -385,59 +418,28 @@ function EvenSplitter({
 
       <section>
         <SectionLabel>People</SectionLabel>
-        <div className="space-y-3">
+        <div className="space-y-2">
           {people.map((p) => (
-            <div key={p.id} className="rounded-xl border border-line bg-surface p-3">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={p.name}
-                  placeholder="Name"
-                  onChange={(e) =>
-                    onPeople(
-                      people.map((x) => (x.id === p.id ? { ...x, name: e.target.value } : x)),
-                    )
-                  }
-                  className="flex-1"
-                />
-                <span className="w-20 text-right text-base font-semibold tabular-nums">
-                  {formatMoney(owedById.get(p.id) ?? 0)}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Remove person"
-                  onClick={() => onPeople(people.filter((x) => x.id !== p.id))}
-                >
-                  <Trash2 className="h-5 w-5 text-muted" />
-                </Button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {categories.map((c) => {
-                  const on = !!p.joined[c.id];
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() =>
-                        onPeople(
-                          people.map((x) =>
-                            x.id === p.id
-                              ? { ...x, joined: { ...x.joined, [c.id]: !on } }
-                              : x,
-                          ),
-                        )
-                      }
-                      className={cn(
-                        "min-h-tap rounded-lg border px-3 py-1.5 text-sm transition",
-                        on
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-line bg-surface2 text-muted",
-                      )}
-                    >
-                      {c.name || "—"}
-                    </button>
-                  );
-                })}
-              </div>
+            <div key={p.id} className="flex items-center gap-2">
+              <Input
+                value={p.name}
+                placeholder="Name"
+                onChange={(e) =>
+                  onPeople(people.map((x) => (x.id === p.id ? { ...x, name: e.target.value } : x)))
+                }
+                className="flex-1"
+              />
+              <span className="w-20 text-right text-base font-semibold tabular-nums">
+                {formatMoney(owedById.get(p.id) ?? 0)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Remove person"
+                onClick={() => onPeople(people.filter((x) => x.id !== p.id))}
+              >
+                <Trash2 className="h-5 w-5 text-muted" />
+              </Button>
             </div>
           ))}
         </div>
