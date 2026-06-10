@@ -36,6 +36,7 @@ interface Persisted {
   mode: Mode;
   categories: CatRow[];
   evenPeople: EvenRow[];
+  tip: string;
   total: string;
   weightPeople: WeightRow[];
 }
@@ -49,6 +50,7 @@ function seed(): Persisted {
       { id: uid(), name: "", joined: { [item]: true } },
       { id: uid(), name: "", joined: { [item]: true } },
     ],
+    tip: "",
     total: "",
     weightPeople: [
       { id: uid(), name: "", weight: "1" },
@@ -78,7 +80,7 @@ export default function VenmoView() {
     }
   }, [state]);
 
-  const { mode, categories, evenPeople, total, weightPeople } = state;
+  const { mode, categories, evenPeople, tip, total, weightPeople } = state;
   const set = (patch: Partial<Persisted>) => setState((s) => ({ ...s, ...patch }));
 
   return (
@@ -101,8 +103,10 @@ export default function VenmoView() {
         <EvenSplitter
           categories={categories}
           people={evenPeople}
+          tip={tip}
           onCategories={(categories) => set({ categories })}
           onPeople={(evenPeople) => set({ evenPeople })}
+          onTip={(tip) => set({ tip })}
         />
       ) : (
         <WeightedSplitter
@@ -159,16 +163,25 @@ function ReconcileBadge({ ok }: { ok: boolean }) {
   );
 }
 
+// Reserved id for the tip line synthesized into the split. Tip is split evenly
+// across everyone on the list (it isn't shown as a per-item toggle), so it gets
+// a stable id that won't collide with a real item's uuid.
+const TIP_ID = "__tip__";
+
 function EvenSplitter({
   categories,
   people,
+  tip,
   onCategories,
   onPeople,
+  onTip,
 }: {
   categories: CatRow[];
   people: EvenRow[];
+  tip: string;
   onCategories: (c: CatRow[]) => void;
   onPeople: (p: EvenRow[]) => void;
+  onTip: (t: string) => void;
 }) {
   const { session } = useAuth();
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -183,7 +196,6 @@ function EvenSplitter({
       .filter((it) => it.name.trim() || it.amount)
       .map((it) => ({ id: uid(), name: it.name.trim(), amount: String(it.amount) }));
     if (r.tax) rows.push({ id: uid(), name: "Tax", amount: String(r.tax) });
-    if (r.tip) rows.push({ id: uid(), name: "Tip", amount: String(r.tip) });
     if (rows.length === 0) {
       setScanError("No items found on that photo — try again or add them by hand.");
       return;
@@ -194,6 +206,9 @@ function EvenSplitter({
     for (const row of rows) joined[row.id] = true;
     setMerchant(r.merchant);
     setReceiptTotal(r.total);
+    // Tip rarely prints on the merchant copy; prefill it when the OCR found one,
+    // otherwise leave the field for manual entry.
+    onTip(r.tip ? String(r.tip) : "");
     onCategories(rows);
     onPeople(
       people.length > 0
@@ -223,16 +238,23 @@ function EvenSplitter({
       name: c.name,
       amount: num(c.amount),
     }));
+    const tipNum = num(tip);
     const ppl: EvenParticipant[] = people.map((p) => ({
       id: p.id,
       name: p.name,
-      joined: p.joined,
+      // Everyone chips in for the tip, so join them all to the synthesized line.
+      joined: tipNum ? { ...p.joined, [TIP_ID]: true } : p.joined,
     }));
+    if (tipNum) cats.push({ id: TIP_ID, name: "Tip", amount: tipNum });
     return evenSplit(cats, ppl);
-  }, [categories, people]);
+  }, [categories, people, tip]);
 
   const rateById = new Map(result.rates.map((r) => [r.categoryId, r]));
   const owedById = new Map(result.owed.map((o) => [o.id, o.amount]));
+  // The receipt total covers items + tax but not the (often hand-written) tip,
+  // so cross-check against the pre-tip subtotal.
+  const subtotal = result.total - num(tip);
+  const receiptDelta = receiptTotal == null ? 0 : subtotal - receiptTotal;
 
   function addCategory() {
     const id = uid();
@@ -424,6 +446,25 @@ function EvenSplitter({
         </Button>
       </section>
 
+      <section>
+        <SectionLabel>Tip</SectionLabel>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
+            $
+          </span>
+          <Input
+            value={tip}
+            inputMode="decimal"
+            placeholder="0"
+            onChange={(e) => onTip(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          Added on top of the items and split evenly across everyone.
+        </p>
+      </section>
+
       <section className="rounded-xl border border-line bg-surface px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
@@ -444,14 +485,14 @@ function EvenSplitter({
             <span className="text-muted">Receipt total</span>
             <span className="flex items-center gap-2">
               <span className="tabular-nums">{formatMoney(receiptTotal)}</span>
-              {Math.abs(result.total - receiptTotal) < 0.005 ? (
+              {Math.abs(receiptDelta) < 0.005 ? (
                 <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
                   Matches
                 </span>
               ) : (
                 <span className="rounded-full bg-warn/15 px-2 py-0.5 text-xs font-medium text-warn">
-                  {result.total > receiptTotal ? "+" : "−"}
-                  {formatMoney(Math.abs(result.total - receiptTotal))}
+                  {receiptDelta > 0 ? "+" : "−"}
+                  {formatMoney(Math.abs(receiptDelta))}
                 </span>
               )}
             </span>
