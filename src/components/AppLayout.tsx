@@ -10,6 +10,7 @@ import {
   ListChecks,
   LogOut,
   Plus,
+  Receipt,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ const tabs: readonly Tab[] = [
   { to: "/history", label: "History", icon: History },
   { to: "/dashboard", label: "Stats", icon: BarChart3 },
   { to: "/time", label: "Time", icon: Clock },
+  { to: "/venmo", label: "Split", icon: Receipt },
 ];
 
 export function AppLayout() {
@@ -105,7 +107,7 @@ export function AppLayout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 backdrop-blur">
-        <div className="mx-auto grid max-w-md grid-cols-5 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto grid max-w-md grid-cols-6 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {tabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

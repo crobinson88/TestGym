@@ -11,6 +11,7 @@ import { AddCardio } from "@/routes/AddCardio";
 import { History } from "@/routes/History";
 import { TimeTracking } from "@/routes/TimeTracking";
 import { tdlRoutes } from "@/modules/tdl/routes";
+import { venmoRoutes } from "@/modules/venmo/routes";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
 const Dashboard = lazy(() => import("@/routes/Dashboard"));
@@ -66,6 +67,7 @@ export function App() {
                 }
               />
               {tdlRoutes()}
+              {venmoRoutes()}
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
