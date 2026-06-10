@@ -175,6 +175,7 @@ function EvenSplitter({
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [merchant, setMerchant] = useState<string | null>(null);
+  const [receiptTotal, setReceiptTotal] = useState<number | null>(null);
 
   function applyReceipt(r: ScannedReceipt) {
     const rows: CatRow[] = r.items
@@ -191,6 +192,7 @@ function EvenSplitter({
     const joined: Record<string, boolean> = {};
     for (const row of rows) joined[row.id] = true;
     setMerchant(r.merchant);
+    setReceiptTotal(r.total);
     onCategories(rows);
     onPeople(
       people.length > 0
@@ -402,19 +404,39 @@ function EvenSplitter({
         </Button>
       </section>
 
-      <section className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3">
-        <div>
-          <div className="text-sm text-muted">Bill total</div>
-          <div className="text-xl font-semibold tabular-nums">{formatMoney(result.total)}</div>
+      <section className="rounded-xl border border-line bg-surface px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-muted">Bill total</div>
+            <div className="text-xl font-semibold tabular-nums">{formatMoney(result.total)}</div>
+          </div>
+          <div className="text-right">
+            <ReconcileBadge ok={result.reconciles} />
+            {!result.reconciles && (
+              <div className="mt-1 text-xs text-muted">
+                {formatMoney(result.allocated)} assigned
+              </div>
+            )}
+          </div>
         </div>
-        <div className="text-right">
-          <ReconcileBadge ok={result.reconciles} />
-          {!result.reconciles && (
-            <div className="mt-1 text-xs text-muted">
-              {formatMoney(result.allocated)} assigned
-            </div>
-          )}
-        </div>
+        {receiptTotal != null && (
+          <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
+            <span className="text-muted">Receipt total</span>
+            <span className="flex items-center gap-2">
+              <span className="tabular-nums">{formatMoney(receiptTotal)}</span>
+              {Math.abs(result.total - receiptTotal) < 0.005 ? (
+                <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
+                  Matches
+                </span>
+              ) : (
+                <span className="rounded-full bg-warn/15 px-2 py-0.5 text-xs font-medium text-warn">
+                  {result.total > receiptTotal ? "+" : "−"}
+                  {formatMoney(Math.abs(result.total - receiptTotal))}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
       </section>
     </div>
   );
