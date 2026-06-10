@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import {
   evenSplit,
@@ -10,6 +11,7 @@ import {
   type EvenParticipant,
   type SplitCategory,
 } from "../calc";
+import { scanReceipt, type ScannedReceipt } from "../receipt";
 
 type Mode = "even" | "weighted";
 
@@ -39,17 +41,13 @@ interface Persisted {
 }
 
 function seed(): Persisted {
-  const food = uid();
-  const booze = uid();
+  const item = uid();
   return {
     mode: "even",
-    categories: [
-      { id: food, name: "Food", amount: "" },
-      { id: booze, name: "Booze", amount: "" },
-    ],
+    categories: [{ id: item, name: "", amount: "" }],
     evenPeople: [
-      { id: uid(), name: "", joined: { [food]: true, [booze]: true } },
-      { id: uid(), name: "", joined: { [food]: true, [booze]: true } },
+      { id: uid(), name: "", joined: { [item]: true } },
+      { id: uid(), name: "", joined: { [item]: true } },
     ],
     total: "",
     weightPeople: [
@@ -86,7 +84,9 @@ export default function VenmoView() {
   return (
     <div className="mx-auto max-w-md px-4 py-5">
       <h1 className="mb-1 text-2xl font-semibold">Split the bill</h1>
-      <p className="mb-4 text-sm text-muted">Work out who owes what, then Venmo away.</p>
+      <p className="mb-4 text-sm text-muted">
+        Scan a receipt, tag who shared each item, then Venmo away.
+      </p>
 
       <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface p-1">
         <ModeTab active={mode === "even"} onClick={() => set({ mode: "even" })}>
@@ -170,6 +170,50 @@ function EvenSplitter({
   onCategories: (c: CatRow[]) => void;
   onPeople: (p: EvenRow[]) => void;
 }) {
+  const { session } = useAuth();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [merchant, setMerchant] = useState<string | null>(null);
+
+  function applyReceipt(r: ScannedReceipt) {
+    const rows: CatRow[] = r.items
+      .filter((it) => it.name.trim() || it.amount)
+      .map((it) => ({ id: uid(), name: it.name.trim(), amount: String(it.amount) }));
+    if (r.tax) rows.push({ id: uid(), name: "Tax", amount: String(r.tax) });
+    if (r.tip) rows.push({ id: uid(), name: "Tip", amount: String(r.tip) });
+    if (rows.length === 0) {
+      setScanError("No items found on that photo — try again or add them by hand.");
+      return;
+    }
+    // Everyone on the list shares every scanned item by default; untoggle the
+    // ones a given person didn't have.
+    const joined: Record<string, boolean> = {};
+    for (const row of rows) joined[row.id] = true;
+    setMerchant(r.merchant);
+    onCategories(rows);
+    onPeople(
+      people.length > 0
+        ? people.map((p) => ({ ...p, joined: { ...joined } }))
+        : [{ id: uid(), name: "", joined: { ...joined } }],
+    );
+  }
+
+  async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file || !session) return;
+    setScanning(true);
+    setScanError(null);
+    try {
+      applyReceipt(await scanReceipt(file, session.access_token));
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Scan failed");
+    } finally {
+      setScanning(false);
+    }
+  }
+
   const result = useMemo(() => {
     const cats: SplitCategory[] = categories.map((c) => ({
       id: c.id,
@@ -213,13 +257,35 @@ function EvenSplitter({
   return (
     <div className="space-y-6">
       <section>
-        <SectionLabel>Categories</SectionLabel>
+        <div className="mb-2 flex items-center justify-between">
+          <SectionLabel>Items</SectionLabel>
+          {merchant && <span className="text-xs text-muted">{merchant}</span>}
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={onPhoto}
+        />
+        <Button
+          variant="primary"
+          size="md"
+          className="mb-3 w-full"
+          disabled={scanning || !session}
+          onClick={() => fileRef.current?.click()}
+        >
+          <Camera className="mr-2 h-5 w-5" />
+          {scanning ? "Reading receipt..." : "Scan receipt"}
+        </Button>
+        {scanError && <p className="mb-3 text-xs text-danger">{scanError}</p>}
         <div className="space-y-2">
           {categories.map((c) => (
             <div key={c.id} className="flex items-center gap-2">
               <Input
                 value={c.name}
-                placeholder="Category"
+                placeholder="Item"
                 onChange={(e) =>
                   onCategories(
                     categories.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)),
@@ -248,7 +314,7 @@ function EvenSplitter({
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Remove category"
+                aria-label="Remove item"
                 onClick={() => removeCategory(c.id)}
               >
                 <Trash2 className="h-5 w-5 text-muted" />
@@ -269,7 +335,7 @@ function EvenSplitter({
           })}
         </div>
         <Button variant="secondary" size="sm" className="mt-3 w-full" onClick={addCategory}>
-          <Plus className="mr-1 h-4 w-4" /> Add category
+          <Plus className="mr-1 h-4 w-4" /> Add item
         </Button>
       </section>
 
