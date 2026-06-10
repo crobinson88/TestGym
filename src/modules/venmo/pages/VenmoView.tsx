@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Plus, Trash2 } from "lucide-react";
+import { Camera, ImagePlus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
@@ -171,7 +171,8 @@ function EvenSplitter({
   onPeople: (p: EvenRow[]) => void;
 }) {
   const { session } = useAuth();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [merchant, setMerchant] = useState<string | null>(null);
@@ -264,23 +265,42 @@ function EvenSplitter({
           {merchant && <span className="text-xs text-muted">{merchant}</span>}
         </div>
         <input
-          ref={fileRef}
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
           className="hidden"
           onChange={onPhoto}
         />
-        <Button
-          variant="primary"
-          size="md"
-          className="mb-3 w-full"
-          disabled={scanning || !session}
-          onClick={() => fileRef.current?.click()}
-        >
-          <Camera className="mr-2 h-5 w-5" />
-          {scanning ? "Reading receipt..." : "Scan receipt"}
-        </Button>
+        <input
+          ref={libraryRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onPhoto}
+        />
+        <div className="mb-3 flex gap-2">
+          <Button
+            variant="primary"
+            size="md"
+            className="flex-1"
+            disabled={scanning || !session}
+            onClick={() => cameraRef.current?.click()}
+          >
+            <Camera className="mr-2 h-5 w-5" />
+            {scanning ? "Reading..." : "Scan receipt"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            className="flex-1"
+            disabled={scanning || !session}
+            onClick={() => libraryRef.current?.click()}
+          >
+            <ImagePlus className="mr-2 h-5 w-5" />
+            Upload photo
+          </Button>
+        </div>
         {scanError && <p className="mb-3 text-xs text-danger">{scanError}</p>}
         <div className="space-y-2">
           {categories.map((c) => (
