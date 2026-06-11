@@ -17,6 +17,8 @@ function TargetPie({
   const filled = Math.max(0, Math.min(value, target));
   const remaining = Math.max(0, target - filled);
   const pct = target === 0 ? 0 : Math.round((value / target) * 100);
+  const met = value >= target;
+  const ringColor = met ? "#10b981" : color;
   const data = [
     { name: "engaged", value: filled },
     { name: "remaining", value: remaining },
@@ -37,20 +39,22 @@ function TargetPie({
               stroke="none"
               isAnimationActive={false}
             >
-              <Cell fill={color} />
+              <Cell fill={ringColor} />
               <Cell fill="#222222" />
             </Pie>
           </PieChart>
         </ResponsiveContainer>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-sm font-bold leading-none tabular-nums">
-            {value}/{target}
-          </span>
-          <span className="mt-0.5 text-[9px] leading-none text-muted">{pct}%</span>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="text-[10px] leading-none text-muted">{pct}%</span>
         </div>
       </div>
       <span className="mt-1 text-center text-[10px] uppercase leading-tight tracking-wider text-muted">
         {label}
+      </span>
+      <span
+        className={`text-sm font-bold leading-none tabular-nums ${met ? "text-success" : ""}`}
+      >
+        {value}/{target}
       </span>
     </div>
   );
