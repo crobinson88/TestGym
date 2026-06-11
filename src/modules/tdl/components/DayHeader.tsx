@@ -8,6 +8,7 @@ import { SECTIONS } from "../sections";
 import { isSnoozed } from "../snooze";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 import { ResetStatusesButton } from "./ResetStatusesButton";
+import { TargetPies } from "./TargetPies";
 
 export function DayHeader({
   snapshot_date,
@@ -35,6 +36,9 @@ export function DayHeader({
 
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-bg/95 px-4 py-3 backdrop-blur">
+      <div className="mb-3">
+        <TargetPies engaged={c.active} priorityEngaged={c.priorityActive} />
+      </div>
       <div className="flex items-center gap-1">
         <Button
           size="icon"
