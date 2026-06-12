@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -27,9 +27,20 @@ export function SectionColumn({
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  // Mobile-only collapse: sections start collapsed so the single-column phone
+  // view shows just category names + active counts. The `sm:` classes below
+  // force the full view open from the tablet breakpoint up, so this state is
+  // inert on larger screens.
+  const [collapsed, setCollapsed] = useState(true);
   const canAdd = cfg.key !== UNCATEGORISED_KEY;
 
   const counts = sectionStatusCounts(dated, cfg.key === "product");
+  const activeTotal = [...recurring, ...dated].filter(
+    (i) =>
+      i.status === "open" ||
+      i.status === "worked_today" ||
+      i.status === "ready_for_testing",
+  ).length;
   const chips = [
     { key: "open", label: "open", n: counts.open, cls: "bg-surface2 text-muted" },
     {
@@ -67,24 +78,50 @@ export function SectionColumn({
       data-section-key={cfg.key}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? `Expand ${cfg.label}` : `Collapse ${cfg.label}`}
+          className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:text-text sm:hidden"
+        >
+          <ChevronRight
+            className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-90")}
+          />
+        </button>
         <h2 className="mr-auto text-sm font-semibold uppercase tracking-wider text-muted">
           {cfg.label}
         </h2>
-        {chips.map((c) => (
-          <span
-            key={c.key}
-            className={cn(
-              "rounded-full px-2 py-0.5 text-[11px] tabular-nums",
-              c.cls,
-            )}
-          >
-            {c.n} {c.label}
-          </span>
-        ))}
+        <span
+          className={cn(
+            "rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted sm:hidden",
+            !collapsed && "hidden",
+          )}
+        >
+          {activeTotal} active
+        </span>
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-1",
+            collapsed && "hidden sm:flex",
+          )}
+        >
+          {chips.map((c) => (
+            <span
+              key={c.key}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[11px] tabular-nums",
+                c.cls,
+              )}
+            >
+              {c.n} {c.label}
+            </span>
+          ))}
+        </div>
       </header>
 
       {recurring.length > 0 && (
-        <div className="border-b border-line/50">
+        <div className={cn("border-b border-line/50", collapsed && "hidden sm:block")}>
           <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted/70">
             Recurring
           </div>
@@ -104,7 +141,10 @@ export function SectionColumn({
       )}
 
       <SortableContext items={datedIds} strategy={verticalListSortingStrategy}>
-        <ul data-dated-section={cfg.key} className="min-h-[40px]">
+        <ul
+          data-dated-section={cfg.key}
+          className={cn("min-h-[40px]", collapsed && "hidden sm:block")}
+        >
           {dated.map((item) => (
             <ItemRow
               key={item.id}
@@ -117,7 +157,7 @@ export function SectionColumn({
       </SortableContext>
 
       {canAdd && (
-      <div className="border-t border-line/50 p-2">
+      <div className={cn("border-t border-line/50 p-2", collapsed && "hidden sm:block")}>
         {adding ? (
           <div className="flex gap-2">
             <Input
