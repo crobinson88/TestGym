@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useArchivedItems } from "../hooks";
-import { SECTION_BY_KEY } from "../sections";
+import { useCategories } from "../categories";
 import { unarchiveItem } from "../repo";
 
 export default function ArchiveView() {
   const navigate = useNavigate();
   const items = useArchivedItems();
+  const categories = useCategories();
+  const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
 
   return (
     <div className="flex min-h-full flex-col">
@@ -43,7 +45,7 @@ export default function ArchiveView() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{item.title}</div>
                   <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
-                    <span>{SECTION_BY_KEY[item.section]?.label ?? item.section}</span>
+                    <span>{labelByKey.get(item.section) ?? item.section}</span>
                     <span>·</span>
                     <span>{dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
                   </div>

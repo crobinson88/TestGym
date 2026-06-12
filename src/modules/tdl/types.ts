@@ -3,6 +3,7 @@ export type {
   TdlStatus,
   TdlItemRow,
   TdlDayRow,
+  TdlCategoryRow,
 } from "@/lib/database.types";
 
-export type { LocalTdlItem, LocalTdlDay } from "@/lib/db";
+export type { LocalTdlItem, LocalTdlDay, LocalTdlCategory } from "@/lib/db";

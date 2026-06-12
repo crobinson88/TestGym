@@ -6,6 +6,7 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
   TimeAllocationRow,
@@ -46,6 +47,10 @@ export interface LocalTdlDay extends TdlDayRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalTdlCategory extends TdlCategoryRow {
+  sync_status: SyncStatus;
+}
+
 export interface MetaRow {
   key: string;
   value: string;
@@ -72,6 +77,7 @@ export class GymDB extends Dexie {
   timeAllocations!: Table<LocalTimeAllocation, string>;
   tdl_items!: Table<LocalTdlItem, string>;
   tdl_days!: Table<LocalTdlDay, string>;
+  tdl_categories!: Table<LocalTdlCategory, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -147,6 +153,9 @@ export class GymDB extends Dexie {
             if (row.deleted_at === undefined) row.deleted_at = null;
           });
       });
+    this.version(7).stores({
+      tdl_categories: "id, key, sort_order, updated_at, sync_status, deleted_at",
+    });
   }
 }
 

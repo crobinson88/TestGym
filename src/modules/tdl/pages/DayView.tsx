@@ -10,7 +10,9 @@ import {
 } from "@dnd-kit/core";
 import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
-import { SECTIONS } from "../sections";
+import { useCategories } from "../categories";
+import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
+import type { LocalTdlItem } from "../types";
 import {
   cycleStatus,
   deleteItem,
@@ -29,6 +31,7 @@ export default function DayView() {
   const date = params.date ?? todayIsoDate();
   const bundle = useDay(date);
   const prev = usePrevDateWithItems(date);
+  const categories = useCategories();
 
   const allIds = useMemo(() => bundle?.items.map((i) => i.id) ?? [], [bundle]);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -69,11 +72,15 @@ export default function DayView() {
       } else if (e.key === "n") {
         e.preventDefault();
         const focusedItem = bundle.items.find((i) => i.id === focusedId);
-        const section = focusedItem?.section ?? SECTIONS[0].key;
+        const section =
+          focusedItem && focusedItem.section !== UNCATEGORISED_KEY
+            ? focusedItem.section
+            : categories[0]?.key;
+        if (!section) return;
         void createItem({ snapshot_date: date, section, title: "New task" });
       }
     },
-    [allIds, bundle, focusedId, date],
+    [allIds, bundle, focusedId, date, categories],
   );
 
   useEffect(() => {
@@ -118,6 +125,28 @@ export default function DayView() {
 
   const empty = bundle.items.length === 0;
 
+  const liveKeys = new Set(categories.map((c) => c.key));
+  const orphanSections = Object.keys(bundle.bySection).filter(
+    (key) =>
+      !liveKeys.has(key) &&
+      ((bundle.bySection[key]?.recurring.length ?? 0) > 0 ||
+        (bundle.bySection[key]?.dated.length ?? 0) > 0),
+  );
+  const columns = orphanSections.length > 0 ? [...categories, UNCATEGORISED] : categories;
+
+  function listsFor(key: string): { recurring: LocalTdlItem[]; dated: LocalTdlItem[] } {
+    if (key !== UNCATEGORISED_KEY) {
+      return bundle!.bySection[key] ?? { recurring: [], dated: [] };
+    }
+    const recurring: LocalTdlItem[] = [];
+    const dated: LocalTdlItem[] = [];
+    for (const k of orphanSections) {
+      recurring.push(...(bundle!.bySection[k]?.recurring ?? []));
+      dated.push(...(bundle!.bySection[k]?.dated ?? []));
+    }
+    return { recurring, dated };
+  }
+
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
       <DayHeader
@@ -135,16 +164,20 @@ export default function DayView() {
         )}
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {SECTIONS.map((cfg) => (
-              <SectionColumn
-                key={cfg.key}
-                cfg={cfg}
-                snapshot_date={date}
-                recurring={bundle.bySection[cfg.key]?.recurring ?? []}
-                dated={bundle.bySection[cfg.key]?.dated ?? []}
-                focusedId={focusedId}
-              />
-            ))}
+            {columns.map((cfg) => {
+              const lists = listsFor(cfg.key);
+              return (
+                <SectionColumn
+                  key={cfg.key}
+                  cfg={cfg}
+                  categories={categories}
+                  snapshot_date={date}
+                  recurring={lists.recurring}
+                  dated={lists.dated}
+                  focusedId={focusedId}
+                />
+              );
+            })}
           </div>
         </DndContext>
       </div>

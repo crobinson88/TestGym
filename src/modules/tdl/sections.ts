@@ -1,3 +1,4 @@
+import type { LocalTdlCategory } from "@/lib/db";
 import type { TdlSection } from "./types";
 
 export interface SectionConfig {
@@ -6,6 +7,28 @@ export interface SectionConfig {
   hasDueDate: boolean;
   hasTimeEstimate: boolean;
   recurringSeeds: string[];
+}
+
+// Items whose section no longer matches a live category fall into this virtual
+// group. Its key is reserved and never stored on an item.
+export const UNCATEGORISED_KEY = "__uncategorised__";
+
+export const UNCATEGORISED: SectionConfig = {
+  key: UNCATEGORISED_KEY,
+  label: "Uncategorised",
+  hasDueDate: true,
+  hasTimeEstimate: true,
+  recurringSeeds: [],
+};
+
+export function toSectionConfig(cat: LocalTdlCategory): SectionConfig {
+  return {
+    key: cat.key,
+    label: cat.label,
+    hasDueDate: cat.has_due_date,
+    hasTimeEstimate: cat.has_time_estimate,
+    recurringSeeds: [],
+  };
 }
 
 export const SECTIONS: readonly SectionConfig[] = [

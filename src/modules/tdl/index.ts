@@ -1,6 +1,22 @@
 export { tdlRoutes } from "./routes";
 export { rollForward } from "./rollForward";
-export { SECTIONS, SECTION_BY_KEY } from "./sections";
+export {
+  SECTIONS,
+  SECTION_BY_KEY,
+  UNCATEGORISED,
+  UNCATEGORISED_KEY,
+  toSectionConfig,
+} from "./sections";
+export type { SectionConfig } from "./sections";
+export {
+  useCategories,
+  useCategoryRows,
+  useBlockingCounts,
+  blockingItemCount,
+  createCategory,
+  renameCategory,
+  deleteCategory,
+} from "./categories";
 export {
   createItem,
   updateItem,

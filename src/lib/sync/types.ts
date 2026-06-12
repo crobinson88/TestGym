@@ -21,6 +21,7 @@ export type SyncTable =
   | "cardio_sessions"
   | "tdl_items"
   | "tdl_days"
+  | "tdl_categories"
   | "time_tasks"
   | "time_allocations";
 
@@ -30,6 +31,7 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   "met_activities",
   "sets",
   "cardio_sessions",
+  "tdl_categories",
   "tdl_items",
   "tdl_days",
   "time_tasks",
@@ -46,6 +48,7 @@ export const DEXIE_TABLE: Record<SyncTable, string> = {
   cardio_sessions: "cardio_sessions",
   tdl_items: "tdl_items",
   tdl_days: "tdl_days",
+  tdl_categories: "tdl_categories",
   time_tasks: "timeTasks",
   time_allocations: "timeAllocations",
 };

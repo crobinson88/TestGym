@@ -5,6 +5,7 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
   TimeAllocationRow,
@@ -133,6 +134,18 @@ async function mergeTdlDays(db: GymDB, rows: TdlDayRow[]) {
   });
 }
 
+async function mergeTdlCategories(db: GymDB, rows: TdlCategoryRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.tdl_categories, async () => {
+    for (const remote of rows) {
+      const local = await db.tdl_categories.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.tdl_categories.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 async function mergeTimeTasks(db: GymDB, rows: TimeTaskRow[]) {
   if (rows.length === 0) return;
   await db.transaction("rw", db.timeTasks, async () => {
@@ -171,6 +184,7 @@ const META_KEYS: Record<SyncTable, string> = {
   cardio_sessions: "last_pull_cardio_sessions",
   tdl_items: "last_pull_tdl_items",
   tdl_days: "last_pull_tdl_days",
+  tdl_categories: "last_pull_tdl_categories",
   time_tasks: "last_pull_time_tasks",
   time_allocations: "last_pull_time_allocations",
 };
@@ -194,6 +208,7 @@ export function createPull({ client, db, log }: PullDeps) {
       cardio_sessions: 0,
       tdl_items: 0,
       tdl_days: 0,
+      tdl_categories: 0,
       time_tasks: 0,
       time_allocations: 0,
     };
@@ -237,6 +252,11 @@ export function createPull({ client, db, log }: PullDeps) {
           await mergeTdlDays(db, rows);
           fetched.tdl_days = rows.length;
           if (rows.length > 0) await writeMark("tdl_days", rows[rows.length - 1].updated_at);
+        } else if (table === "tdl_categories") {
+          const rows = await fetchSince<TdlCategoryRow>(client, "tdl_categories", since);
+          await mergeTdlCategories(db, rows);
+          fetched.tdl_categories = rows.length;
+          if (rows.length > 0) await writeMark("tdl_categories", rows[rows.length - 1].updated_at);
         } else if (table === "time_tasks") {
           const rows = await fetchSince<TimeTaskRow>(client, "time_tasks", since);
           await mergeTimeTasks(db, rows);

@@ -77,13 +77,30 @@ export interface CardioSessionRow {
   deleted_at: string | null;
 }
 
+// Categories are user-managed rows (see tdl_categories); a section is just the
+// category `key` an item belongs to. The strings below are the seeded defaults;
+// `(string & {})` keeps the literals as autocomplete hints while allowing any
+// user-created key.
 export type TdlSection =
   | "weekly_goals"
   | "follow_ups"
   | "product"
   | "tgm_tasks"
   | "meeting_action_items"
-  | "personal_other";
+  | "personal_other"
+  | (string & {});
+
+export interface TdlCategoryRow {
+  id: string;
+  key: string;
+  label: string;
+  sort_order: number;
+  has_due_date: boolean;
+  has_time_estimate: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
 
 export type TdlStatus =
   | "open"
@@ -201,6 +218,11 @@ export type Database = {
         Row: TdlDayRow;
         Insert: Partial<TdlDayRow> & { snapshot_date: string };
         Update: Partial<TdlDayRow>;
+      };
+      tdl_categories: {
+        Row: TdlCategoryRow;
+        Insert: Partial<TdlCategoryRow> & { id: string; key: string; label: string };
+        Update: Partial<TdlCategoryRow>;
       };
       time_tasks: {
         Row: TimeTaskRow;

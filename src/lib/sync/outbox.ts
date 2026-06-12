@@ -5,6 +5,7 @@ import type {
   LocalExercise,
   LocalMetActivity,
   LocalSet,
+  LocalTdlCategory,
   LocalTdlDay,
   LocalTdlItem,
   LocalTimeAllocation,
@@ -21,6 +22,7 @@ type PendingRow =
   | LocalCardioSession
   | LocalTdlItem
   | LocalTdlDay
+  | LocalTdlCategory
   | LocalTimeTask
   | LocalTimeAllocation;
 
@@ -42,6 +44,7 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   cardio_sessions: "id",
   tdl_items: "id",
   tdl_days: "snapshot_date",
+  tdl_categories: "id",
   time_tasks: "id",
   time_allocations: "id",
 };
@@ -79,6 +82,9 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   }
   if (table === "tdl_days") {
     return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "tdl_categories") {
+    return db.tdl_categories.where("sync_status").equals("pending").limit(limit).toArray();
   }
   if (table === "time_tasks") {
     return db.timeTasks.where("sync_status").equals("pending").limit(limit).toArray();
