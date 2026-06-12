@@ -6,6 +6,7 @@ import type {
   ExerciseRow,
   MetActivityRow,
   SetRow,
+  TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
   TimeAllocationRow,
@@ -22,6 +23,7 @@ type AnyRow =
   | CardioSessionRow
   | TdlItemRow
   | TdlDayRow
+  | TdlCategoryRow
   | TimeTaskRow
   | TimeAllocationRow;
 

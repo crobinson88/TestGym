@@ -3,20 +3,28 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useSnoozedItems } from "../hooks";
-import { SECTIONS, SECTION_BY_KEY } from "../sections";
+import { useCategories } from "../categories";
+import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { unsnoozeItem } from "../repo";
 import type { LocalTdlItem } from "../types";
 
 export default function SnoozedView() {
   const navigate = useNavigate();
   const items = useSnoozedItems();
+  const categories = useCategories();
 
+  const liveKeys = new Set(categories.map((c) => c.key));
+  const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
   const bySection = new Map<string, LocalTdlItem[]>();
   for (const item of items ?? []) {
-    const arr = bySection.get(item.section) ?? [];
+    const key = liveKeys.has(item.section) ? item.section : UNCATEGORISED_KEY;
+    const arr = bySection.get(key) ?? [];
     arr.push(item);
-    bySection.set(item.section, arr);
+    bySection.set(key, arr);
   }
+  const groups = [...categories, UNCATEGORISED].filter(
+    (s) => (bySection.get(s.key)?.length ?? 0) > 0,
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -42,7 +50,7 @@ export default function SnoozedView() {
         ) : items.length === 0 ? (
           <div className="p-6 text-center text-muted">Nothing snoozed.</div>
         ) : (
-          SECTIONS.filter((s) => (bySection.get(s.key)?.length ?? 0) > 0).map((s) => (
+          groups.map((s) => (
             <div key={s.key}>
               <h2 className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
                 {s.label}
@@ -60,7 +68,7 @@ export default function SnoozedView() {
                           snoozed until {item.snoozed_until ? dayMonth(item.snoozed_until) : "—"}
                         </span>
                         <span>·</span>
-                        <span>{SECTION_BY_KEY[item.section]?.label ?? item.section}</span>
+                        <span>{labelByKey.get(item.section) ?? item.section}</span>
                       </div>
                     </div>
                     <Button

@@ -1,10 +1,11 @@
-import { Archive, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, Clock, Tags } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { addDays, prettyDate, todayIsoDate } from "@/lib/utils";
 import type { LocalTdlDay, LocalTdlItem } from "../types";
 import { dayCompletion } from "../hooks";
-import { SECTIONS } from "../sections";
+import { useCategories } from "../categories";
+import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { isSnoozed } from "../snooze";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 import { ResetStatusesButton } from "./ResetStatusesButton";
@@ -24,15 +25,20 @@ export function DayHeader({
 }) {
   const c = dayCompletion(completionItems);
   const today = todayIsoDate();
+  const categories = useCategories();
 
+  const liveKeys = new Set(categories.map((s) => s.key));
   const openBySection = new Map<string, number>();
-  for (const s of SECTIONS) openBySection.set(s.key, 0);
+  for (const s of categories) openBySection.set(s.key, 0);
   for (const i of items) {
     if (i.is_recurring || isSnoozed(i)) continue;
     if (i.status === "open" || i.status === "worked_today" || i.status === "ready_for_testing") {
-      openBySection.set(i.section, (openBySection.get(i.section) ?? 0) + 1);
+      const key = liveKeys.has(i.section) ? i.section : UNCATEGORISED_KEY;
+      openBySection.set(key, (openBySection.get(key) ?? 0) + 1);
     }
   }
+  const chipCategories =
+    (openBySection.get(UNCATEGORISED_KEY) ?? 0) > 0 ? [...categories, UNCATEGORISED] : categories;
 
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-bg/95 px-4 py-3 backdrop-blur">
@@ -88,6 +94,15 @@ export function DayHeader({
           >
             <Archive className="h-5 w-5" />
           </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onNavigate("categories")}
+            aria-label="Manage categories"
+            className="h-10 w-10 shrink-0"
+          >
+            <Tags className="h-5 w-5" />
+          </Button>
         </div>
         <div className="shrink-0 text-right">
           <div className="text-[11px] uppercase tracking-wider text-muted">Active</div>
@@ -107,7 +122,7 @@ export function DayHeader({
         <ResetStatusesButton snapshot_date={snapshot_date} items={items} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        {SECTIONS.map((s) => (
+        {chipCategories.map((s) => (
           <span
             key={s.key}
             className="rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted"

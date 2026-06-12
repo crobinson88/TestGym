@@ -2,7 +2,6 @@ import { v4 as uuid } from "uuid";
 import { db } from "@/lib/db";
 import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
-import { SECTION_BY_KEY } from "./sections";
 import { isResettable } from "./snooze";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
 
@@ -119,17 +118,17 @@ export async function deleteItem(id: string): Promise<void> {
   pokeOutbox();
 }
 
-export const STATUS_CYCLE: Record<TdlSection, TdlStatus[]> = {
-  weekly_goals: ["open", "worked_today", "done"],
-  follow_ups: ["open", "worked_today", "done"],
-  product: ["open", "worked_today", "ready_for_testing", "done"],
-  tgm_tasks: ["open", "worked_today", "done"],
-  meeting_action_items: ["open", "worked_today", "done"],
-  personal_other: ["open", "worked_today", "done"],
-};
+const STANDARD_CYCLE: TdlStatus[] = ["open", "worked_today", "done"];
+const PRODUCT_CYCLE: TdlStatus[] = ["open", "worked_today", "ready_for_testing", "done"];
+
+// Only the Product category exposes the "ready for testing" step; every other
+// category (including user-created ones) uses the standard cycle.
+export function statusCycleFor(section: TdlSection): TdlStatus[] {
+  return section === "product" ? PRODUCT_CYCLE : STANDARD_CYCLE;
+}
 
 export function nextStatus(section: TdlSection, current: TdlStatus): TdlStatus {
-  const cycle = STATUS_CYCLE[section];
+  const cycle = statusCycleFor(section);
   if (current === "cancelled") return "open";
   const i = cycle.indexOf(current);
   if (i === -1) return "open";
@@ -266,5 +265,5 @@ export async function resetDayStatuses(snapshot_date: string): Promise<number> {
 }
 
 export function isValidSection(s: string): s is TdlSection {
-  return s in SECTION_BY_KEY;
+  return s.trim().length > 0;
 }

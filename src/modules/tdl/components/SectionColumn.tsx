@@ -5,19 +5,21 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import type { LocalTdlItem } from "../types";
-import type { SectionConfig } from "../sections";
+import { UNCATEGORISED_KEY, type SectionConfig } from "../sections";
 import { createItem } from "../repo";
 import { sectionStatusCounts } from "../hooks";
 import { ItemRow } from "./ItemRow";
 
 export function SectionColumn({
   cfg,
+  categories,
   snapshot_date,
   recurring,
   dated,
   focusedId,
 }: {
   cfg: SectionConfig;
+  categories: SectionConfig[];
   snapshot_date: string;
   recurring: LocalTdlItem[];
   dated: LocalTdlItem[];
@@ -25,6 +27,7 @@ export function SectionColumn({
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const canAdd = cfg.key !== UNCATEGORISED_KEY;
 
   const counts = sectionStatusCounts(dated, cfg.key === "product");
   const chips = [
@@ -91,6 +94,7 @@ export function SectionColumn({
                 <ItemRow
                   key={item.id}
                   item={item}
+                  categories={categories}
                   focused={focusedId === item.id}
                 />
               ))}
@@ -102,11 +106,17 @@ export function SectionColumn({
       <SortableContext items={datedIds} strategy={verticalListSortingStrategy}>
         <ul data-dated-section={cfg.key} className="min-h-[40px]">
           {dated.map((item) => (
-            <ItemRow key={item.id} item={item} focused={focusedId === item.id} />
+            <ItemRow
+              key={item.id}
+              item={item}
+              categories={categories}
+              focused={focusedId === item.id}
+            />
           ))}
         </ul>
       </SortableContext>
 
+      {canAdd && (
       <div className="border-t border-line/50 p-2">
         {adding ? (
           <div className="flex gap-2">
@@ -139,6 +149,7 @@ export function SectionColumn({
           </Button>
         )}
       </div>
+      )}
     </section>
   );
 }

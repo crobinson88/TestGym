@@ -29,11 +29,19 @@ import {
   unsnoozeItem,
   updateItem,
 } from "../repo";
-import { SECTIONS, SECTION_BY_KEY } from "../sections";
+import type { SectionConfig } from "../sections";
 import { isSnoozed } from "../snooze";
 import { StatusPill } from "./StatusPill";
 
-export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boolean }) {
+export function ItemRow({
+  item,
+  categories,
+  focused,
+}: {
+  item: LocalTdlItem;
+  categories: SectionConfig[];
+  focused?: boolean;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
     data: { section: item.section, isRecurring: item.is_recurring },
@@ -49,7 +57,8 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
-  const cfg = SECTION_BY_KEY[item.section];
+  const cfg = categories.find((c) => c.key === item.section);
+  const hasDueDate = cfg?.hasDueDate ?? true;
   const done = item.status === "done";
   const cancelled = item.status === "cancelled";
   const snoozed = isSnoozed(item);
@@ -161,7 +170,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
         )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
           <span>added {dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
-          {cfg.hasDueDate && item.due_date && <span>due {item.due_date}</span>}
+          {hasDueDate && item.due_date && <span>due {item.due_date}</span>}
           {snoozed && item.snoozed_until && (
             <span className="inline-flex items-center gap-1 text-accent">
               <Clock className="h-3 w-3" /> snoozed until {dayMonth(item.snoozed_until)}
@@ -227,7 +236,7 @@ export function ItemRow({ item, focused }: { item: LocalTdlItem; focused?: boole
               <ChevronRight className={cn("ml-auto h-4 w-4 transition-transform", moving && "rotate-90")} />
             </button>
             {moving &&
-              SECTIONS.map((s) => {
+              categories.map((s) => {
                 const current = s.key === item.section;
                 return (
                   <button

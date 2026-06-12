@@ -1,16 +1,7 @@
 import { v4 as uuid } from "uuid";
 import type { GymDB, LocalTdlItem, LocalTdlDay } from "@/lib/db";
 import { db as defaultDb } from "@/lib/db";
-import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
-
-const SECTION_ORDER: TdlSection[] = [
-  "weekly_goals",
-  "follow_ups",
-  "product",
-  "tgm_tasks",
-  "meeting_action_items",
-  "personal_other",
-];
+import type { TdlItemRow, TdlStatus } from "./types";
 
 export interface RollForwardResult {
   created: number;
@@ -126,6 +117,10 @@ export async function rollForward(
 }
 
 function renumber(rows: ReadonlyArray<LocalTdlItem>): LocalTdlItem[] {
+  // Positions are scoped to each (section, recurring) bucket, so the order in
+  // which buckets are visited does not affect correctness — only the order
+  // within a bucket does. Iterate over every bucket present so items in any
+  // category (including user-created ones) are renumbered.
   const live = rows.filter((r) => !r.deleted_at);
   const buckets = new Map<string, LocalTdlItem[]>();
   for (const r of live) {
@@ -135,16 +130,11 @@ function renumber(rows: ReadonlyArray<LocalTdlItem>): LocalTdlItem[] {
     buckets.set(k, arr);
   }
   const out: LocalTdlItem[] = [];
-  for (const section of SECTION_ORDER) {
-    for (const flag of ["r", "d"] as const) {
-      const k = `${section}|${flag}`;
-      const arr = buckets.get(k);
-      if (!arr) continue;
-      arr.sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
-      arr.forEach((row, idx) => {
-        out.push({ ...row, position: idx });
-      });
-    }
+  for (const arr of buckets.values()) {
+    arr.sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
+    arr.forEach((row, idx) => {
+      out.push({ ...row, position: idx });
+    });
   }
   return out;
 }
