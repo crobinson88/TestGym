@@ -22,6 +22,20 @@ export default function CategoriesView() {
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [confirmStage, setConfirmStage] = useState<1 | 2>(1);
+
+  function startDelete(id: string) {
+    setError(null);
+    setEditingId(null);
+    setConfirmId(id);
+    setConfirmStage(1);
+  }
+
+  function cancelDelete() {
+    setConfirmId(null);
+    setConfirmStage(1);
+  }
 
   async function commitRename(id: string) {
     const label = draftLabel.trim();
@@ -50,6 +64,8 @@ export default function CategoriesView() {
       await deleteCategory(id);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      cancelDelete();
     }
   }
 
@@ -85,39 +101,48 @@ export default function CategoriesView() {
             {rows.map((cat) => {
               const blockingCount = blocking?.get(cat.key) ?? 0;
               const editing = editingId === cat.id;
+              const confirming = confirmId === cat.id;
               return (
                 <li
                   key={cat.id}
                   className="flex items-center gap-2 border-b border-line/50 px-3 py-2 last:border-b-0"
                 >
                   <GripVertical className="h-4 w-4 shrink-0 text-muted/40" />
-                  {editing ? (
-                    <Input
-                      autoFocus
-                      value={draftLabel}
-                      onChange={(e) => setDraftLabel(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void commitRename(cat.id);
-                        if (e.key === "Escape") {
-                          setEditingId(null);
-                          setDraftLabel("");
-                        }
-                      }}
-                      className="h-9 flex-1 text-sm"
-                    />
-                  ) : (
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm">{cat.label}</div>
-                      {blockingCount > 0 && (
-                        <div className="text-[11px] text-muted">
-                          {blockingCount} active or snoozed
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {editing ? (
+                  {confirming ? (
                     <>
+                      <div className="min-w-0 flex-1 text-sm text-danger">
+                        {confirmStage === 1
+                          ? `Delete “${cat.label}”?`
+                          : "Are you sure? This can’t be undone."}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() =>
+                          confirmStage === 1 ? setConfirmStage(2) : void onDelete(cat.id)
+                        }
+                      >
+                        {confirmStage === 1 ? "Delete" : "Confirm"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={cancelDelete}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : editing ? (
+                    <>
+                      <Input
+                        autoFocus
+                        value={draftLabel}
+                        onChange={(e) => setDraftLabel(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void commitRename(cat.id);
+                          if (e.key === "Escape") {
+                            setEditingId(null);
+                            setDraftLabel("");
+                          }
+                        }}
+                        className="h-9 flex-1 text-sm"
+                      />
                       <Button
                         size="icon"
                         variant="ghost"
@@ -142,11 +167,20 @@ export default function CategoriesView() {
                     </>
                   ) : (
                     <>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm">{cat.label}</div>
+                        {blockingCount > 0 && (
+                          <div className="text-[11px] text-muted">
+                            {blockingCount} active or snoozed
+                          </div>
+                        )}
+                      </div>
                       <Button
                         size="icon"
                         variant="ghost"
                         onClick={() => {
                           setError(null);
+                          cancelDelete();
                           setEditingId(cat.id);
                           setDraftLabel(cat.label);
                         }}
@@ -159,7 +193,7 @@ export default function CategoriesView() {
                         size="icon"
                         variant="ghost"
                         disabled={blockingCount > 0}
-                        onClick={() => void onDelete(cat.id)}
+                        onClick={() => startDelete(cat.id)}
                         aria-label={`Delete ${cat.label}`}
                         title={
                           blockingCount > 0
