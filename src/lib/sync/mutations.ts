@@ -205,6 +205,24 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return local;
   }
 
+  async function setExerciseActive(
+    id: string,
+    active: boolean,
+  ): Promise<LocalExercise | null> {
+    const existing = await db.exercises.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalExercise = {
+      ...existing,
+      is_archived: !active,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.exercises.put(updated);
+    notify();
+    return updated;
+  }
+
   async function addCategory(input: AddCategoryInput): Promise<LocalCategory> {
     const id = uuid();
     const ts = now();
@@ -411,6 +429,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     updateSet,
     deleteSet,
     addExercise,
+    setExerciseActive,
     addCategory,
     addCardioSession,
     deleteCardioSession,
