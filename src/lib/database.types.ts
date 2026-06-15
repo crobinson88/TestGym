@@ -162,11 +162,19 @@ export interface TimeAllocationRow {
 export type TradeSide = "buy" | "sell";
 export type TradeCurrency = "USD" | "GBP" | "EUR" | "AUD";
 
+export interface StockDocument {
+  path: string;
+  name: string;
+  mediaType: string;
+}
+
 export interface StockRow {
   id: string;
   ticker: string;
   name: string | null;
   notes: string | null;
+  links: string[];
+  documents: StockDocument[];
   client_id: string | null;
   user_id: string | null;
   created_at: string;

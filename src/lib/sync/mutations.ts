@@ -323,6 +323,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       ticker: t,
       name: name ?? null,
       notes: null,
+      links: [],
+      documents: [],
       client_id: id,
       user_id: null,
       ...baseRowDefaults(ts),
@@ -335,7 +337,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
 
   async function updateStock(
     id: string,
-    patch: Partial<Pick<StockRow, "name" | "notes">>,
+    patch: Partial<Pick<StockRow, "name" | "notes" | "links" | "documents">>,
   ): Promise<LocalStock | null> {
     const existing = await db.stocks.get(id);
     if (!existing) return null;

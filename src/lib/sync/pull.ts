@@ -200,7 +200,12 @@ async function mergeStocks(db: GymDB, rows: StockRow[]) {
     for (const remote of rows) {
       const local = await db.stocks.get(remote.id);
       if (!local || remote.updated_at > local.updated_at) {
-        await db.stocks.put({ ...remote, sync_status: "synced" });
+        await db.stocks.put({
+          ...remote,
+          links: remote.links ?? [],
+          documents: remote.documents ?? [],
+          sync_status: "synced",
+        });
       }
     }
   });
