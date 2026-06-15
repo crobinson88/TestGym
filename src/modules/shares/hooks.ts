@@ -32,3 +32,21 @@ export function usePositions() {
     return computePositions(all.filter((t) => !t.deleted_at));
   }, []);
 }
+
+export function useTradesForTicker(ticker?: string) {
+  return useLiveQuery(async () => {
+    if (!ticker) return [];
+    const all = await db.share_trades.where("ticker").equals(ticker).toArray();
+    return all
+      .filter((t) => !t.deleted_at)
+      .sort((a, b) => (a.traded_at < b.traded_at ? 1 : a.traded_at > b.traded_at ? -1 : 0));
+  }, [ticker]);
+}
+
+export function useStockByTicker(ticker?: string) {
+  return useLiveQuery(async () => {
+    if (!ticker) return undefined;
+    const all = await db.stocks.toArray();
+    return all.find((s) => s.ticker === ticker && !s.deleted_at) ?? null;
+  }, [ticker]);
+}

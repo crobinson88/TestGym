@@ -6,6 +6,7 @@ import type {
   LocalExercise,
   LocalSet,
   LocalShareTrade,
+  LocalStock,
 } from "../db";
 import type {
   CardioSessionRow,
@@ -13,6 +14,7 @@ import type {
   ExerciseRow,
   SetRow,
   ShareTradeRow,
+  StockRow,
   TradeCurrency,
   TradeSide,
   WeightUnit,
@@ -90,6 +92,12 @@ function pendingCardio(row: CardioSessionRow): LocalCardioSession {
 function pendingShareTrade(row: ShareTradeRow): LocalShareTrade {
   return { ...row, sync_status: "pending", sync_attempts: 0, sync_last_error: null };
 }
+
+function pendingStock(row: StockRow): LocalStock {
+  return { ...row, sync_status: "pending" };
+}
+
+const normaliseTicker = (t: string) => t.trim().toUpperCase();
 
 export interface MutationDeps {
   db: GymDB;
@@ -296,6 +304,53 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     notify();
   }
 
+  // Stocks are keyed by ticker in the UI but by uuid in the DB. Find the live
+  // row for a ticker or create one, so "general notes of the stock" has a home.
+  async function ensureStock(ticker: string, name?: string | null): Promise<LocalStock> {
+    const t = normaliseTicker(ticker);
+    const all = await db.stocks.toArray();
+    const existing = all.find((s) => s.ticker === t && !s.deleted_at);
+    if (existing) {
+      if (name && !existing.name) {
+        return (await updateStock(existing.id, { name })) ?? existing;
+      }
+      return existing;
+    }
+    const id = uuid();
+    const ts = now();
+    const row: StockRow = {
+      id,
+      ticker: t,
+      name: name ?? null,
+      notes: null,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingStock(row);
+    await db.stocks.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateStock(
+    id: string,
+    patch: Partial<Pick<StockRow, "name" | "notes">>,
+  ): Promise<LocalStock | null> {
+    const existing = await db.stocks.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalStock = {
+      ...existing,
+      ...patch,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.stocks.put(updated);
+    notify();
+    return updated;
+  }
+
   return {
     addSet,
     updateSet,
@@ -307,6 +362,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addShareTrade,
     updateShareTrade,
     deleteShareTrade,
+    ensureStock,
+    updateStock,
   };
 }
 

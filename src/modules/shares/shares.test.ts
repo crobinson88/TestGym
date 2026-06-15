@@ -100,6 +100,50 @@ describe("shares outbox", () => {
   });
 });
 
+describe("stock mutations", () => {
+  it("ensureStock creates a pending row, upcases ticker, and dedupes by ticker", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const a = await m.ensureStock(" nvda ", "NVIDIA");
+    expect(a.ticker).toBe("NVDA");
+    expect(a.name).toBe("NVIDIA");
+    expect(a.sync_status).toBe("pending");
+
+    const b = await m.ensureStock("NVDA");
+    expect(b.id).toBe(a.id); // same ticker → same row, not a duplicate
+    expect(await db.stocks.count()).toBe(1);
+  });
+
+  it("updateStock writes notes and re-pends sync", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    const s = await m.ensureStock("AAPL");
+    await db.stocks.update(s.id, { sync_status: "synced" });
+
+    const updated = await m.updateStock(s.id, { notes: "Strong services growth" });
+    expect(updated?.notes).toBe("Strong services growth");
+    expect(updated?.sync_status).toBe("pending");
+  });
+
+  it("outbox drains pending stocks and strips local fields", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    await m.ensureStock("MSFT");
+
+    const { client, calls } = makeMockClient();
+    const outbox = createOutbox({ client: client as never, db });
+    const result = await outbox.drain();
+
+    expect(result.pushed).toBeGreaterThanOrEqual(1);
+    const call = calls.find((c) => c.table === "stocks");
+    const payload = call?.payload[0] as Record<string, unknown>;
+    expect(payload.ticker).toBe("MSFT");
+    expect(payload.sync_status).toBeUndefined();
+    expect(await db.stocks.where("sync_status").equals("pending").count()).toBe(0);
+  });
+});
+
 describe("computePositions", () => {
   it("nets buys against sells per ticker", () => {
     const positions = computePositions([

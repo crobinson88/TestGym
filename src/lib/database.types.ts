@@ -162,6 +162,18 @@ export interface TimeAllocationRow {
 export type TradeSide = "buy" | "sell";
 export type TradeCurrency = "USD" | "GBP" | "EUR";
 
+export interface StockRow {
+  id: string;
+  ticker: string;
+  name: string | null;
+  notes: string | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface ShareTradeRow {
   id: string;
   ticker: string;
@@ -268,6 +280,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<Omit<ShareTradeRow, "total">>;
+      };
+      stocks: {
+        Row: StockRow;
+        Insert: Omit<StockRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<StockRow>;
       };
     };
   };

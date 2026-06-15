@@ -7,6 +7,7 @@ import type {
   MetActivityRow,
   SetRow,
   ShareTradeRow,
+  StockRow,
   TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
@@ -72,6 +73,10 @@ export interface LocalShareTrade extends ShareTradeRow {
   sync_last_error: string | null;
 }
 
+export interface LocalStock extends StockRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -86,6 +91,7 @@ export class GymDB extends Dexie {
   tdl_days!: Table<LocalTdlDay, string>;
   tdl_categories!: Table<LocalTdlCategory, string>;
   share_trades!: Table<LocalShareTrade, string>;
+  stocks!: Table<LocalStock, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -167,6 +173,9 @@ export class GymDB extends Dexie {
     this.version(8).stores({
       share_trades:
         "id, ticker, side, traded_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(9).stores({
+      stocks: "id, ticker, updated_at, sync_status, deleted_at",
     });
   }
 }

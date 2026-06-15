@@ -6,6 +6,7 @@ import type {
   MetActivityRow,
   SetRow,
   ShareTradeRow,
+  StockRow,
   TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
@@ -193,6 +194,18 @@ async function mergeShareTrades(db: GymDB, rows: ShareTradeRow[]) {
   });
 }
 
+async function mergeStocks(db: GymDB, rows: StockRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.stocks, async () => {
+    for (const remote of rows) {
+      const local = await db.stocks.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.stocks.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -211,6 +224,7 @@ const META_KEYS: Record<SyncTable, string> = {
   time_tasks: "last_pull_time_tasks",
   time_allocations: "last_pull_time_allocations",
   share_trades: "last_pull_share_trades",
+  stocks: "last_pull_stocks",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -236,6 +250,7 @@ export function createPull({ client, db, log }: PullDeps) {
       time_tasks: 0,
       time_allocations: 0,
       share_trades: 0,
+      stocks: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -294,12 +309,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("time_allocations", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "share_trades") {
           const rows = await fetchSince<ShareTradeRow>(client, "share_trades", since);
           await mergeShareTrades(db, rows);
           fetched.share_trades = rows.length;
           if (rows.length > 0) {
             await writeMark("share_trades", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<StockRow>(client, "stocks", since);
+          await mergeStocks(db, rows);
+          fetched.stocks = rows.length;
+          if (rows.length > 0) {
+            await writeMark("stocks", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

@@ -39,28 +39,30 @@ export default function SharesView() {
           <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Holdings</h2>
           <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
             {openPositions.map((p) => (
-              <li
-                key={p.ticker}
-                className="flex items-center justify-between border-b border-line/50 px-4 py-3 last:border-b-0"
-              >
-                <div>
-                  <div className="text-base font-semibold">{p.ticker}</div>
-                  <div className="text-xs text-muted">
-                    {formatQty(p.netShares)} sh · avg {formatMoney(p.avgBuyPrice, p.currency)}
+              <li key={p.ticker} className="border-b border-line/50 last:border-b-0">
+                <Link
+                  to={`/shares/stock/${p.ticker}`}
+                  className="flex items-center justify-between px-4 py-3 active:bg-surface2"
+                >
+                  <div>
+                    <div className="text-base font-semibold">{p.ticker}</div>
+                    <div className="text-xs text-muted">
+                      {formatQty(p.netShares)} sh · avg {formatMoney(p.avgBuyPrice, p.currency)}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div
-                    className={cn(
-                      "text-sm font-semibold tabular-nums",
-                      p.netCash >= 0 ? "text-success" : "text-text",
-                    )}
-                  >
-                    {p.netCash >= 0 ? "+" : ""}
-                    {formatMoney(p.netCash, p.currency)}
+                  <div className="text-right">
+                    <div
+                      className={cn(
+                        "text-sm font-semibold tabular-nums",
+                        p.netCash >= 0 ? "text-success" : "text-text",
+                      )}
+                    >
+                      {p.netCash >= 0 ? "+" : ""}
+                      {formatMoney(p.netCash, p.currency)}
+                    </div>
+                    <div className="text-xs text-muted">net cash</div>
                   </div>
-                  <div className="text-xs text-muted">net cash</div>
-                </div>
+                </Link>
               </li>
             ))}
           </ul>

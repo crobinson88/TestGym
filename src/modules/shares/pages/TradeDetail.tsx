@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ChevronLeft, ExternalLink, Trash2 } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Check, ChevronLeft, ExternalLink, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { syncEngine } from "@/lib/sync";
 import { cn, prettyDate } from "@/lib/utils";
@@ -14,6 +14,9 @@ export default function TradeDetail() {
   const trade = useShareTrade(id);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -49,6 +52,24 @@ export default function TradeDetail() {
     navigate("/shares");
   }
 
+  function startEditNotes() {
+    setNotesDraft(trade && trade.notes ? trade.notes : "");
+    setEditingNotes(true);
+  }
+
+  async function saveNotes() {
+    if (!id) return;
+    setSavingNotes(true);
+    try {
+      await syncEngine.mutations.updateShareTrade(id, {
+        notes: notesDraft.trim() === "" ? null : notesDraft,
+      });
+      setEditingNotes(false);
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-line px-2 py-3">
@@ -65,7 +86,9 @@ export default function TradeDetail() {
       <div className="flex-1 space-y-5 overflow-y-auto p-4 pb-24">
         <div className="flex items-baseline justify-between">
           <div>
-            <h1 className="text-3xl font-bold">{trade.ticker}</h1>
+            <Link to={`/shares/stock/${trade.ticker}`} className="text-3xl font-bold underline-offset-4 hover:underline">
+              {trade.ticker}
+            </Link>
             <span
               className={cn(
                 "mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase",
@@ -91,14 +114,61 @@ export default function TradeDetail() {
           <Stat label="Currency" value={trade.currency} />
         </div>
 
-        {trade.notes && (
-          <section className="space-y-2">
-            <h2 className="px-1 text-xs uppercase tracking-wider text-muted">Notes</h2>
+        <section className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs uppercase tracking-wider text-muted">Notes</h2>
+            {!editingNotes && (
+              <button
+                onClick={startEditNotes}
+                className="flex items-center gap-1 text-xs text-accent"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </button>
+            )}
+          </div>
+          {editingNotes ? (
+            <div className="space-y-2">
+              <textarea
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                rows={6}
+                placeholder="Why this trade? Paste a research summary here…"
+                className="w-full rounded-2xl border border-line bg-surface px-4 py-3 text-base text-text placeholder:text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setEditingNotes(false)}
+                  disabled={savingNotes}
+                >
+                  <X className="mr-1 h-4 w-4" /> Cancel
+                </Button>
+                <Button size="sm" className="flex-1" onClick={saveNotes} disabled={savingNotes}>
+                  <Check className="mr-1 h-4 w-4" /> {savingNotes ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </div>
+          ) : trade.notes ? (
             <p className="whitespace-pre-wrap rounded-2xl border border-line bg-surface px-4 py-3 text-base">
               {trade.notes}
             </p>
-          </section>
-        )}
+          ) : (
+            <button
+              onClick={startEditNotes}
+              className="w-full rounded-2xl border border-dashed border-line bg-surface px-4 py-3 text-left text-sm text-muted"
+            >
+              Add notes…
+            </button>
+          )}
+          <Link
+            to={`/shares/stock/${trade.ticker}`}
+            className="flex items-center gap-1 px-1 text-sm text-accent"
+          >
+            <Sparkles className="h-4 w-4" /> Research {trade.ticker} with Claude
+          </Link>
+        </section>
 
         {trade.links.length > 0 && (
           <section className="space-y-2">
