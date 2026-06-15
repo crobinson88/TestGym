@@ -38,6 +38,7 @@ Snapshot at project start (2026-05-18):
 - `exercises(id uuid pk, name text, category_id → categories, is_archived bool, …)` — 26 rows. Unique on `(name, category_id)`.
 - `sets(id uuid pk, exercise_id, category_id, weight numeric(7,2), reps int check >= 0, weight_unit text check in (lbs, kg) default 'lbs', performed_at date, target_weight numeric, target_reps int, notes text, volume numeric generated always as (weight * reps) stored, client_id uuid, user_id uuid default auth.uid(), created_at, updated_at, deleted_at)` — 1,456 rows, 2025-11-23 → 2026-04-29.
 - `conflicts(id, table_name, row_id, local_row jsonb, remote_row jsonb, resolved_to text check in (local, remote), created_at)`.
+- `share_trades(id uuid pk, ticker text, side text check in (buy, sell) default 'buy', quantity numeric(16,6) check > 0, price numeric(16,4) check >= 0, currency text check in (USD, GBP, EUR) default 'USD', traded_at date, notes text, links jsonb default '[]', images jsonb default '[]', total numeric generated always as (quantity * price) stored, client_id uuid, user_id uuid default auth.uid(), created_at, updated_at, deleted_at)` — share-trading log, one row per buy/sell decision. Same RLS / Realtime / offline-sync rules as `sets`. **Never write `total`** (Postgres maintains it from `quantity * price`). Trade images live in the private `share-images` Storage bucket; the row stores object paths in `images`, links are a `jsonb` array of URLs.
 
 Volume by category at start: Back 572 sets / 1,247,882 lb, Chest 444 / 495,291, Legs 314 / 818,284, Shoulder 126 / 80,668.
 

@@ -159,6 +159,28 @@ export interface TimeAllocationRow {
   deleted_at: string | null;
 }
 
+export type TradeSide = "buy" | "sell";
+export type TradeCurrency = "USD" | "GBP" | "EUR";
+
+export interface ShareTradeRow {
+  id: string;
+  ticker: string;
+  side: TradeSide;
+  quantity: number;
+  price: number;
+  currency: TradeCurrency;
+  traded_at: string;
+  notes: string | null;
+  links: string[];
+  images: string[];
+  total: number | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -238,6 +260,14 @@ export type Database = {
           task_id: string;
         };
         Update: Partial<TimeAllocationRow>;
+      };
+      share_trades: {
+        Row: ShareTradeRow;
+        Insert: Omit<ShareTradeRow, "total" | "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<Omit<ShareTradeRow, "total">>;
       };
     };
   };
