@@ -165,6 +165,56 @@ describe("stock mutations", () => {
   });
 });
 
+describe("forecast mutations", () => {
+  it("addForecast writes a pending row with upcased ticker and a made_on date", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    const f = await m.addForecast({
+      ticker: "nvda",
+      base_price: 100,
+      target_price: 150,
+      target_date: "2027-06-15",
+    });
+    expect(f.ticker).toBe("NVDA");
+    expect(f.sync_status).toBe("pending");
+    expect(f.made_on).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(f.currency).toBe("USD");
+  });
+
+  it("deleteForecast soft-deletes and re-pends", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    const f = await m.addForecast({
+      ticker: "MSFT",
+      base_price: 400,
+      target_price: 500,
+      target_date: "2027-01-01",
+    });
+    await m.deleteForecast(f.id);
+    const after = await db.forecasts.get(f.id);
+    expect(after?.deleted_at).not.toBeNull();
+    expect(after?.sync_status).toBe("pending");
+  });
+
+  it("outbox drains pending forecasts", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    await m.addForecast({
+      ticker: "AAPL",
+      base_price: 200,
+      target_price: 260,
+      target_date: "2027-03-01",
+    });
+    const { client, calls } = makeMockClient();
+    const outbox = createOutbox({ client: client as never, db });
+    const result = await outbox.drain();
+    expect(result.pushed).toBeGreaterThanOrEqual(1);
+    const call = calls.find((c) => c.table === "forecasts");
+    expect((call?.payload[0] as Record<string, unknown>).ticker).toBe("AAPL");
+    expect(await db.forecasts.where("sync_status").equals("pending").count()).toBe(0);
+  });
+});
+
 describe("impliedCagr", () => {
   it("computes the annualised rate from buy price to target over the horizon", () => {
     // Double in exactly one year => 100% CAGR.

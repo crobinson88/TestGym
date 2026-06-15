@@ -109,7 +109,7 @@ export default function StockView() {
           )}
         </Button>
 
-        <StockForecasts trades={trades} />
+        <StockForecasts ticker={ticker} trades={trades} />
 
         <ResearchLibrary ticker={ticker} stock={stock} trades={trades} />
 

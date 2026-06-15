@@ -4,6 +4,7 @@ import type {
   CategoryRow,
   ExerciseRow,
   MetActivityRow,
+  ForecastRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -213,6 +214,23 @@ async function mergeStocks(db: GymDB, rows: StockRow[]) {
   });
 }
 
+async function mergeForecasts(db: GymDB, rows: ForecastRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.forecasts, async () => {
+    for (const remote of rows) {
+      const local = await db.forecasts.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.forecasts.put({
+          ...remote,
+          base_price: Number(remote.base_price),
+          target_price: Number(remote.target_price),
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -232,6 +250,7 @@ const META_KEYS: Record<SyncTable, string> = {
   time_allocations: "last_pull_time_allocations",
   share_trades: "last_pull_share_trades",
   stocks: "last_pull_stocks",
+  forecasts: "last_pull_forecasts",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -258,6 +277,7 @@ export function createPull({ client, db, log }: PullDeps) {
       time_allocations: 0,
       share_trades: 0,
       stocks: 0,
+      forecasts: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -323,12 +343,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("share_trades", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "stocks") {
           const rows = await fetchSince<StockRow>(client, "stocks", since);
           await mergeStocks(db, rows);
           fetched.stocks = rows.length;
           if (rows.length > 0) {
             await writeMark("stocks", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<ForecastRow>(client, "forecasts", since);
+          await mergeForecasts(db, rows);
+          fetched.forecasts = rows.length;
+          if (rows.length > 0) {
+            await writeMark("forecasts", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

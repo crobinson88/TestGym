@@ -4,6 +4,7 @@ import type {
   LocalCardioSession,
   LocalCategory,
   LocalExercise,
+  LocalForecast,
   LocalSet,
   LocalShareTrade,
   LocalStock,
@@ -12,6 +13,7 @@ import type {
   CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  ForecastRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -69,6 +71,16 @@ export interface AddShareTradeInput {
 
 export type UpdateShareTradeInput = Partial<AddShareTradeInput>;
 
+export interface AddForecastInput {
+  ticker: string;
+  base_price: number;
+  target_price: number;
+  target_date: string;
+  made_on?: string;
+  currency?: TradeCurrency;
+  notes?: string | null;
+}
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -98,6 +110,10 @@ function pendingShareTrade(row: ShareTradeRow): LocalShareTrade {
 }
 
 function pendingStock(row: StockRow): LocalStock {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingForecast(row: ForecastRow): LocalForecast {
   return { ...row, sync_status: "pending" };
 }
 
@@ -360,6 +376,36 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return updated;
   }
 
+  async function addForecast(input: AddForecastInput): Promise<LocalForecast> {
+    const id = uuid();
+    const ts = now();
+    const row: ForecastRow = {
+      id,
+      ticker: normaliseTicker(input.ticker),
+      base_price: input.base_price,
+      target_price: input.target_price,
+      target_date: input.target_date,
+      made_on: input.made_on ?? todayIsoDate(),
+      currency: input.currency ?? "USD",
+      notes: input.notes ?? null,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingForecast(row);
+    await db.forecasts.put(local);
+    notify();
+    return local;
+  }
+
+  async function deleteForecast(id: string): Promise<void> {
+    const existing = await db.forecasts.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.forecasts.put({ ...existing, deleted_at: ts, updated_at: ts, sync_status: "pending" });
+    notify();
+  }
+
   return {
     addSet,
     updateSet,
@@ -373,6 +419,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     deleteShareTrade,
     ensureStock,
     updateStock,
+    addForecast,
+    deleteForecast,
   };
 }
 

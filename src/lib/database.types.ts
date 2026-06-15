@@ -222,6 +222,25 @@ export interface ShareTradeRow {
   deleted_at: string | null;
 }
 
+// A standalone price forecast, not tied to a buy/sell. `base_price` is the
+// reference price when the call was made; implied CAGR is derived client-side
+// from base -> target over made_on -> target_date.
+export interface ForecastRow {
+  id: string;
+  ticker: string;
+  base_price: number;
+  target_price: number;
+  target_date: string;
+  made_on: string;
+  currency: TradeCurrency;
+  notes: string | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -317,6 +336,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<StockRow>;
+      };
+      forecasts: {
+        Row: ForecastRow;
+        Insert: Omit<ForecastRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<ForecastRow>;
       };
     };
   };

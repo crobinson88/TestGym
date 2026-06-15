@@ -1,7 +1,7 @@
 import type { LocalShareTrade } from "@/lib/db";
 import type { TradeCurrency, TradeSide } from "@/lib/database.types";
 
-export type { ShareTradeRow, TradeCurrency, TradeModel, TradeSide } from "@/lib/database.types";
+export type { ForecastRow, ShareTradeRow, TradeCurrency, TradeModel, TradeSide } from "@/lib/database.types";
 export type { LocalShareTrade } from "@/lib/db";
 
 export const CURRENCIES: readonly TradeCurrency[] = ["USD", "GBP", "EUR", "AUD"];

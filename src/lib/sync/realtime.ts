@@ -5,6 +5,7 @@ import type {
   CategoryRow,
   ExerciseRow,
   MetActivityRow,
+  ForecastRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -29,7 +30,8 @@ type AnyRow =
   | TimeTaskRow
   | TimeAllocationRow
   | ShareTradeRow
-  | StockRow;
+  | StockRow
+  | ForecastRow;
 
 export interface MergeResult {
   applied: boolean;

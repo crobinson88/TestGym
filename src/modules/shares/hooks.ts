@@ -50,3 +50,11 @@ export function useStockByTicker(ticker?: string) {
     return all.find((s) => s.ticker === ticker && !s.deleted_at) ?? null;
   }, [ticker]);
 }
+
+export function useForecastsForTicker(ticker?: string) {
+  return useLiveQuery(async () => {
+    if (!ticker) return [];
+    const all = await db.forecasts.where("ticker").equals(ticker).toArray();
+    return all.filter((f) => !f.deleted_at);
+  }, [ticker]);
+}
