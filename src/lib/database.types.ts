@@ -166,6 +166,14 @@ export interface StockDocument {
   path: string;
   name: string;
   mediaType: string;
+  addedAt: string;
+  addedBy: string | null;
+}
+
+export interface StockLink {
+  url: string;
+  addedAt: string;
+  addedBy: string | null;
 }
 
 export interface StockRow {
@@ -173,7 +181,7 @@ export interface StockRow {
   ticker: string;
   name: string | null;
   notes: string | null;
-  links: string[];
+  links: StockLink[];
   documents: StockDocument[];
   client_id: string | null;
   user_id: string | null;

@@ -6,10 +6,30 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import type { LocalShareTrade, LocalStock } from "@/lib/db";
-import type { StockDocument } from "@/lib/database.types";
+import type { StockDocument, StockLink } from "@/lib/database.types";
 import { removeStorageObject, signedUrlMap, uploadStockDocuments } from "../storage";
 
 type StockPatch = Partial<Pick<LocalStock, "links" | "documents">>;
+
+// Tolerate rows written before links/documents carried provenance (plain URL
+// strings / docs without addedAt/addedBy); any write upgrades them to the
+// richer shape.
+function normLink(l: unknown): StockLink {
+  if (typeof l === "string") return { url: l, addedAt: "", addedBy: null };
+  const o = (l ?? {}) as Partial<StockLink>;
+  return { url: o.url ?? "", addedAt: o.addedAt ?? "", addedBy: o.addedBy ?? null };
+}
+
+function normDoc(d: unknown): StockDocument {
+  const o = (d ?? {}) as Partial<StockDocument>;
+  return {
+    path: o.path ?? "",
+    name: o.name ?? "Document",
+    mediaType: o.mediaType ?? "application/octet-stream",
+    addedAt: o.addedAt ?? "",
+    addedBy: o.addedBy ?? null,
+  };
+}
 
 export function ResearchLibrary({
   ticker,
@@ -28,8 +48,8 @@ export function ResearchLibrary({
   const [error, setError] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
 
-  const links = stock?.links ?? [];
-  const documents = stock?.documents ?? [];
+  const links = (stock?.links ?? []).map(normLink);
+  const documents = (stock?.documents ?? []).map(normDoc);
 
   const tradeLinks = useMemo(() => {
     const out: { url: string; trade: LocalShareTrade }[] = [];
@@ -77,7 +97,8 @@ export function ResearchLibrary({
   async function addLink() {
     const url = newLink.trim();
     if (!url) return;
-    await persist({ links: [...links, url] });
+    const entry: StockLink = { url, addedAt: new Date().toISOString(), addedBy: uploadedBy || null };
+    await persist({ links: [...links, entry] });
     setNewLink("");
   }
 
@@ -90,7 +111,7 @@ export function ResearchLibrary({
     setUploading(true);
     setError(null);
     try {
-      const uploaded = await uploadStockDocuments(Array.from(files));
+      const uploaded = await uploadStockDocuments(Array.from(files), uploadedBy || null);
       await persist({ documents: [...documents, ...uploaded] });
     } catch {
       setError("Upload failed — documents need a connection.");
@@ -116,17 +137,20 @@ export function ResearchLibrary({
 
       <div className="space-y-2">
         <span className="text-xs uppercase tracking-wide text-muted">General notes · links</span>
-        {links.map((url, i) => (
-          <Row key={`${url}-${i}`} onRemove={() => removeLink(i)} disabled={busy}>
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="flex min-w-0 items-center gap-2 text-accent"
-            >
-              <Link2 className="h-4 w-4 shrink-0" />
-              <span className="truncate">{url}</span>
-            </a>
+        {links.map((link, i) => (
+          <Row key={`${link.url}-${i}`} onRemove={() => removeLink(i)} disabled={busy}>
+            <div className="flex items-center justify-between gap-2">
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 items-center gap-2 text-accent"
+              >
+                <Link2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{link.url}</span>
+              </a>
+              <Provenance at={link.addedAt} by={link.addedBy} />
+            </div>
           </Row>
         ))}
         <div className="flex items-center gap-2">
@@ -150,16 +174,19 @@ export function ResearchLibrary({
         <span className="text-xs uppercase tracking-wide text-muted">General notes · documents</span>
         {documents.map((doc) => (
           <Row key={doc.path} onRemove={() => removeDoc(doc)} disabled={busy}>
-            <a
-              href={urls[doc.path]}
-              target="_blank"
-              rel="noreferrer"
-              className="flex min-w-0 items-center gap-2"
-              aria-disabled={!urls[doc.path]}
-            >
-              <FileText className="h-4 w-4 shrink-0 text-muted" />
-              <span className="truncate">{doc.name}</span>
-            </a>
+            <div className="flex items-center justify-between gap-2">
+              <a
+                href={urls[doc.path]}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 items-center gap-2"
+                aria-disabled={!urls[doc.path]}
+              >
+                <FileText className="h-4 w-4 shrink-0 text-muted" />
+                <span className="truncate">{doc.name}</span>
+              </a>
+              <Provenance at={doc.addedAt} by={doc.addedBy} />
+            </div>
           </Row>
         ))}
         <label className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-surface2 text-sm font-medium text-text transition active:scale-[0.98]">
@@ -266,6 +293,16 @@ function uploadDate(iso: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function Provenance({ at, by }: { at: string; by: string | null }) {
+  if (!at && !by) return null;
+  return (
+    <div className="flex shrink-0 flex-col items-end text-right text-[11px] text-muted/80">
+      {at && <span className="whitespace-nowrap">{uploadDate(at)}</span>}
+      {by && <span className="max-w-[140px] truncate">{by}</span>}
+    </div>
+  );
 }
 
 function TradeTag({ trade, who }: { trade: LocalShareTrade; who: string }) {

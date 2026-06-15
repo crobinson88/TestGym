@@ -50,8 +50,12 @@ export async function signedUrlMap(paths: string[]): Promise<Record<string, stri
 // Research documents (PDF/text/etc.) attached to a stock's general notes. Same
 // private bucket as trade images; kept under a docs/ prefix with the original
 // filename retained on the row so the library can show it.
-export async function uploadStockDocuments(files: File[]): Promise<StockDocument[]> {
+export async function uploadStockDocuments(
+  files: File[],
+  addedBy: string | null,
+): Promise<StockDocument[]> {
   const out: StockDocument[] = [];
+  const addedAt = new Date().toISOString();
   for (const file of files) {
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
     const path = `docs/${uuid()}.${ext}`;
@@ -59,7 +63,13 @@ export async function uploadStockDocuments(files: File[]): Promise<StockDocument
       .from(BUCKET)
       .upload(path, file, { contentType: file.type || undefined, upsert: false });
     if (error) throw error;
-    out.push({ path, name: file.name, mediaType: file.type || "application/octet-stream" });
+    out.push({
+      path,
+      name: file.name,
+      mediaType: file.type || "application/octet-stream",
+      addedAt,
+      addedBy,
+    });
   }
   return out;
 }
