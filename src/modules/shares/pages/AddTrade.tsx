@@ -1,13 +1,24 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, ChevronLeft, ImagePlus, Link2, Plus, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  FileSpreadsheet,
+  ImagePlus,
+  Link2,
+  Plus,
+  Sheet,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { syncEngine } from "@/lib/sync";
 import { cn, todayIsoDate } from "@/lib/utils";
-import type { TradeCurrency, TradeSide } from "../types";
+import type { TradeCurrency, TradeModel, TradeSide } from "../types";
 import { CURRENCIES, formatMoney } from "../types";
-import { uploadTradeImages } from "../storage";
+import { uploadModelFiles, uploadTradeImages } from "../storage";
 
 export default function AddTrade() {
   const navigate = useNavigate();
@@ -20,6 +31,9 @@ export default function AddTrade() {
   const [notes, setNotes] = useState("");
   const [links, setLinks] = useState<string[]>([]);
   const [images, setImages] = useState<File[]>([]);
+  const [modelSheets, setModelSheets] = useState<string[]>([]);
+  const [newSheet, setNewSheet] = useState("");
+  const [modelFiles, setModelFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,14 +61,34 @@ export default function AddTrade() {
     setImages((prev) => [...prev, ...Array.from(files)]);
   }
 
+  function addModelFiles(files: FileList | null) {
+    if (!files) return;
+    setModelFiles((prev) => [...prev, ...Array.from(files)]);
+  }
+
+  function addSheet() {
+    const url = newSheet.trim();
+    if (!url) return;
+    setModelSheets((prev) => [...prev, url]);
+    setNewSheet("");
+  }
+
   async function save() {
     if (!valid || saving) return;
     setSaving(true);
     setError(null);
     try {
-      // Images upload to Storage at save time; text syncs offline but images
-      // need a connection. Upload first so a failure aborts before we persist.
+      // Images + model files upload to Storage at save time; text syncs offline
+      // but uploads need a connection. Upload first so a failure aborts before
+      // we persist.
       const imagePaths = images.length > 0 ? await uploadTradeImages(images) : [];
+      const fileModels = modelFiles.length > 0 ? await uploadModelFiles(modelFiles) : [];
+      const sheetModels: TradeModel[] = modelSheets.map((url) => ({
+        kind: "sheet",
+        name: url,
+        url,
+        path: null,
+      }));
       await syncEngine.mutations.addShareTrade({
         ticker,
         side,
@@ -65,12 +99,14 @@ export default function AddTrade() {
         notes: notes.trim() === "" ? null : notes.trim(),
         links: links.map((l) => l.trim()).filter(Boolean),
         images: imagePaths,
+        models: [...sheetModels, ...fileModels],
       });
       navigate("/shares");
     } catch (err) {
+      const hadUploads = images.length > 0 || modelFiles.length > 0;
       setError(
-        images.length > 0
-          ? "Couldn't upload images — check your connection, or remove images to save the trade offline."
+        hadUploads
+          ? "Couldn't upload attachments — check your connection, or remove files to save the trade offline."
           : (err as Error).message,
       );
     } finally {
@@ -253,6 +289,84 @@ export default function AddTrade() {
                 className="hidden"
                 onChange={(e) => {
                   addImages(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </Field>
+
+        <Field label="Model — Excel upload or Google Sheet">
+          <div className="space-y-2">
+            {modelSheets.map((url, i) => (
+              <div
+                key={`${url}-${i}`}
+                className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface2 px-3 py-2 text-sm"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Sheet className="h-4 w-4 shrink-0 text-success" />
+                  <span className="truncate">{url}</span>
+                </span>
+                <button
+                  onClick={() => setModelSheets((prev) => prev.filter((_, j) => j !== i))}
+                  className="shrink-0 text-muted hover:text-text"
+                  aria-label="Remove sheet"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <Input
+                type="url"
+                inputMode="url"
+                value={newSheet}
+                onChange={(e) => setNewSheet(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addSheet();
+                  }
+                }}
+                placeholder="Google Sheet link"
+              />
+              <Button size="sm" onClick={addSheet} disabled={!newSheet.trim()}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {modelFiles.length > 0 && (
+              <ul className="space-y-1">
+                {modelFiles.map((f, i) => (
+                  <li
+                    key={`${f.name}-${i}`}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface2 px-3 py-2 text-sm"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4 shrink-0 text-accent" />
+                      <span className="truncate">{f.name}</span>
+                    </span>
+                    <button
+                      onClick={() => setModelFiles((prev) => prev.filter((_, j) => j !== i))}
+                      className="shrink-0 text-muted hover:text-text"
+                      aria-label="Remove file"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <label className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-surface2 text-base font-medium text-text transition active:scale-[0.98]">
+              <Upload className="h-5 w-5 text-accent" />
+              Upload Excel model
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addModelFiles(e.target.files);
                   e.target.value = "";
                 }}
               />

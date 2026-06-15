@@ -161,6 +161,16 @@ export interface TimeAllocationRow {
 
 export type TradeSide = "buy" | "sell";
 export type TradeCurrency = "USD" | "GBP" | "EUR" | "AUD";
+export type TradeModelKind = "sheet" | "file";
+
+// A financial model attached to a trade: an uploaded spreadsheet (file, stored
+// in the share-images bucket) or a linked Google Sheet (sheet).
+export interface TradeModel {
+  kind: TradeModelKind;
+  name: string;
+  url: string | null;
+  path: string | null;
+}
 
 export interface StockDocument {
   path: string;
@@ -201,6 +211,7 @@ export interface ShareTradeRow {
   notes: string | null;
   links: string[];
   images: string[];
+  models: TradeModel[];
   total: number | null;
   client_id: string | null;
   user_id: string | null;

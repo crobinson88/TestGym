@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { supabase } from "@/lib/supabase";
-import type { StockDocument } from "@/lib/database.types";
+import type { StockDocument, TradeModel } from "@/lib/database.types";
 
 const BUCKET = "share-images";
 
@@ -76,4 +76,20 @@ export async function uploadStockDocuments(
 
 export async function removeStorageObject(path: string): Promise<void> {
   await supabase.storage.from(BUCKET).remove([path]);
+}
+
+// Uploaded spreadsheet models (.xlsx/.xls/.csv) attached to a trade. Same
+// private bucket, under a models/ prefix; original filename kept on the row.
+export async function uploadModelFiles(files: File[]): Promise<TradeModel[]> {
+  const out: TradeModel[] = [];
+  for (const file of files) {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "xlsx";
+    const path = `models/${uuid()}.${ext}`;
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, file, { contentType: file.type || undefined, upsert: false });
+    if (error) throw error;
+    out.push({ kind: "file", name: file.name, url: null, path });
+  }
+  return out;
 }

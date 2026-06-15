@@ -9,6 +9,7 @@ import { useStockByTicker, useTradesForTicker } from "../hooks";
 import { formatMoney, formatQty } from "../types";
 import { ResearchLibrary } from "../components/ResearchLibrary";
 import { ResearchPanel } from "../components/ResearchPanel";
+import { StockModels } from "../components/StockModels";
 
 export default function StockView() {
   const { ticker: rawTicker } = useParams();
@@ -108,6 +109,8 @@ export default function StockView() {
         </Button>
 
         <ResearchLibrary ticker={ticker} stock={stock} trades={trades} />
+
+        <StockModels trades={trades} />
 
         <ResearchPanel ticker={ticker} onInsert={insertSummary} />
 

@@ -25,6 +25,7 @@ function makeLocalTrade(over: Partial<LocalShareTrade> = {}): LocalShareTrade {
     notes: null,
     links: [],
     images: [],
+    models: [],
     total: 1000,
     client_id: id,
     user_id: null,
@@ -61,6 +62,24 @@ describe("shares mutations", () => {
 
     const stored = await db.share_trades.get(trade.id);
     expect(stored?.quantity).toBe(5);
+  });
+
+  it("addShareTrade stores attached models (sheet + file)", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    const trade = await m.addShareTrade({
+      ticker: "TSLA",
+      side: "buy",
+      quantity: 1,
+      price: 250,
+      models: [
+        { kind: "sheet", name: "https://docs.google.com/x", url: "https://docs.google.com/x", path: null },
+        { kind: "file", name: "model.xlsx", url: null, path: "models/abc.xlsx" },
+      ],
+    });
+    expect(trade.models).toHaveLength(2);
+    expect(trade.models[0].kind).toBe("sheet");
+    expect(trade.models[1].path).toBe("models/abc.xlsx");
   });
 
   it("deleteShareTrade soft-deletes and re-pends", async () => {

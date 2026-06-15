@@ -1,18 +1,29 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Check, ChevronLeft, ExternalLink, Pencil, Sparkles, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ExternalLink,
+  FileSpreadsheet,
+  Pencil,
+  Sheet,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { syncEngine } from "@/lib/sync";
 import { cn, prettyDate } from "@/lib/utils";
 import { useShareTrade } from "../hooks";
 import { formatMoney, formatQty } from "../types";
-import { signedImageUrls } from "../storage";
+import { signedImageUrls, signedUrlMap } from "../storage";
 
 export default function TradeDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const trade = useShareTrade(id);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [modelUrls, setModelUrls] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
@@ -31,6 +42,23 @@ export default function TradeDetail() {
       active = false;
     };
   }, [trade?.id, trade?.images]);
+
+  useEffect(() => {
+    let active = true;
+    const paths = (trade?.models ?? [])
+      .filter((m) => m.kind === "file" && m.path)
+      .map((m) => m.path as string);
+    if (paths.length === 0) {
+      setModelUrls({});
+      return;
+    }
+    void signedUrlMap(paths).then((m) => {
+      if (active) setModelUrls(m);
+    });
+    return () => {
+      active = false;
+    };
+  }, [trade?.id, trade?.models]);
 
   if (trade === undefined) {
     return <div className="p-6 text-center text-muted">Loading…</div>;
@@ -187,6 +215,34 @@ export default function TradeDetail() {
                   </a>
                 </li>
               ))}
+            </ul>
+          </section>
+        )}
+
+        {trade.models.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="px-1 text-xs uppercase tracking-wider text-muted">Models</h2>
+            <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
+              {trade.models.map((model, i) => {
+                const href =
+                  model.kind === "sheet" ? model.url ?? undefined : modelUrls[model.path ?? ""];
+                const Icon = model.kind === "sheet" ? Sheet : FileSpreadsheet;
+                return (
+                  <li key={`${model.name}-${i}`} className="border-b border-line/50 last:border-b-0">
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 px-4 py-3 active:bg-surface2"
+                      aria-disabled={!href}
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-accent" />
+                      <span className="truncate">{model.name}</span>
+                      {href && <ExternalLink className="ml-auto h-4 w-4 shrink-0 text-muted" />}
+                    </a>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}

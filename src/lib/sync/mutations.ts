@@ -16,6 +16,7 @@ import type {
   ShareTradeRow,
   StockRow,
   TradeCurrency,
+  TradeModel,
   TradeSide,
   WeightUnit,
 } from "../database.types";
@@ -61,6 +62,7 @@ export interface AddShareTradeInput {
   notes?: string | null;
   links?: string[];
   images?: string[];
+  models?: TradeModel[];
 }
 
 export type UpdateShareTradeInput = Partial<AddShareTradeInput>;
@@ -256,6 +258,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       notes: input.notes ?? null,
       links: input.links ?? [],
       images: input.images ?? [],
+      models: input.models ?? [],
       total: null,
       client_id: id,
       user_id: null,
