@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/Input";
 import { syncEngine } from "@/lib/sync";
 import { cn, todayIsoDate } from "@/lib/utils";
 import type { TradeCurrency, TradeModel, TradeSide } from "../types";
-import { CURRENCIES, formatMoney } from "../types";
+import { CURRENCIES, formatCagr, formatMoney, impliedCagr } from "../types";
 import { uploadModelFiles, uploadTradeImages } from "../storage";
 
 export default function AddTrade() {
@@ -28,6 +28,8 @@ export default function AddTrade() {
   const [price, setPrice] = useState("");
   const [currency, setCurrency] = useState<TradeCurrency>("USD");
   const [tradedAt, setTradedAt] = useState(todayIsoDate());
+  const [targetPrice, setTargetPrice] = useState("");
+  const [targetDate, setTargetDate] = useState("");
   const [notes, setNotes] = useState("");
   const [links, setLinks] = useState<string[]>([]);
   const [images, setImages] = useState<File[]>([]);
@@ -39,17 +41,31 @@ export default function AddTrade() {
 
   const qtyNum = Number(quantity);
   const priceNum = Number(price);
+  const targetNum = Number(targetPrice);
+  const isBuy = side === "buy";
+
+  // A buy is a thesis: require a target price + a future date so the implied
+  // return is always captured. Sells don't carry a target.
+  const targetOk =
+    !isBuy || (Number.isFinite(targetNum) && targetNum > 0 && !!targetDate && targetDate > tradedAt);
+
   const valid =
     ticker.trim().length > 0 &&
     Number.isFinite(qtyNum) &&
     qtyNum > 0 &&
     Number.isFinite(priceNum) &&
-    priceNum >= 0;
+    priceNum >= 0 &&
+    targetOk;
 
   const total = useMemo(
-    () => (valid ? qtyNum * priceNum : 0),
-    [valid, qtyNum, priceNum],
+    () => (Number.isFinite(qtyNum) && Number.isFinite(priceNum) ? qtyNum * priceNum : 0),
+    [qtyNum, priceNum],
   );
+
+  const cagr = useMemo(() => {
+    if (!isBuy || !(priceNum > 0) || !(targetNum > 0) || !targetDate) return null;
+    return impliedCagr(priceNum, targetNum, tradedAt, targetDate);
+  }, [isBuy, priceNum, targetNum, targetDate, tradedAt]);
 
   const previews = useMemo(
     () => images.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })),
@@ -97,6 +113,8 @@ export default function AddTrade() {
         currency,
         traded_at: tradedAt,
         notes: notes.trim() === "" ? null : notes.trim(),
+        target_price: isBuy && Number.isFinite(targetNum) ? targetNum : null,
+        target_date: isBuy && targetDate ? targetDate : null,
         links: links.map((l) => l.trim()).filter(Boolean),
         images: imagePaths,
         models: [...sheetModels, ...fileModels],
@@ -212,6 +230,44 @@ export default function AddTrade() {
             {formatMoney(total, currency)}
           </div>
         </div>
+
+        {isBuy && (
+          <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Target price">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={targetPrice}
+                  onChange={(e) => setTargetPrice(e.target.value)}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Target by">
+                <Input
+                  type="date"
+                  value={targetDate}
+                  min={tradedAt}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-surface2 px-4 py-3">
+              <span className="text-xs uppercase tracking-wide text-muted">Implied CAGR</span>
+              <span
+                className={cn(
+                  "text-2xl font-bold tabular-nums",
+                  cagr == null ? "text-muted" : cagr >= 0 ? "text-success" : "text-warn",
+                )}
+              >
+                {cagr == null ? "—" : formatCagr(cagr)}
+              </span>
+            </div>
+            {targetDate && targetDate <= tradedAt && (
+              <p className="text-xs text-warn">Target date must be after the trade date.</p>
+            )}
+          </div>
+        )}
 
         <Field label="Notes — why this trade?">
           <textarea

@@ -209,6 +209,8 @@ export interface ShareTradeRow {
   currency: TradeCurrency;
   traded_at: string;
   notes: string | null;
+  target_price: number | null;
+  target_date: string | null;
   links: string[];
   images: string[];
   models: TradeModel[];

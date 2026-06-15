@@ -60,6 +60,8 @@ export interface AddShareTradeInput {
   currency?: TradeCurrency;
   traded_at?: string;
   notes?: string | null;
+  target_price?: number | null;
+  target_date?: string | null;
   links?: string[];
   images?: string[];
   models?: TradeModel[];
@@ -256,6 +258,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       currency: input.currency ?? "USD",
       traded_at: input.traded_at ?? todayIsoDate(),
       notes: input.notes ?? null,
+      target_price: input.target_price ?? null,
+      target_date: input.target_date ?? null,
       links: input.links ?? [],
       images: input.images ?? [],
       models: input.models ?? [],

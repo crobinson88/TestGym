@@ -20,6 +20,25 @@ export function formatQty(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
+// Compound annual growth rate implied by reaching `targetPrice` from `buyPrice`
+// over the span [fromIso, toIso]. Returns null when inputs can't yield a rate.
+export function impliedCagr(
+  buyPrice: number,
+  targetPrice: number,
+  fromIso: string,
+  toIso: string,
+): number | null {
+  if (!(buyPrice > 0) || !(targetPrice > 0)) return null;
+  const days = (new Date(toIso).getTime() - new Date(fromIso).getTime()) / 86_400_000;
+  if (!(days > 0)) return null;
+  return Math.pow(targetPrice / buyPrice, 365.25 / days) - 1;
+}
+
+export function formatCagr(cagr: number): string {
+  const pct = cagr * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
 export interface Position {
   ticker: string;
   currency: TradeCurrency;

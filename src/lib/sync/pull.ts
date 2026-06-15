@@ -183,6 +183,7 @@ async function mergeShareTrades(db: GymDB, rows: ShareTradeRow[]) {
           quantity: Number(remote.quantity),
           price: Number(remote.price),
           total: remote.total === null ? null : Number(remote.total),
+          target_price: remote.target_price == null ? null : Number(remote.target_price),
           links: remote.links ?? [],
           images: remote.images ?? [],
           models: remote.models ?? [],

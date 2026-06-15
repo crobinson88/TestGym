@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { syncEngine } from "@/lib/sync";
 import { cn, prettyDate } from "@/lib/utils";
 import { useShareTrade } from "../hooks";
-import { formatMoney, formatQty } from "../types";
+import { formatCagr, formatMoney, formatQty, impliedCagr } from "../types";
 import { signedImageUrls, signedUrlMap } from "../storage";
 
 export default function TradeDetail() {
@@ -73,6 +73,11 @@ export default function TradeDetail() {
       </div>
     );
   }
+
+  const targetCagr =
+    trade.target_price != null && trade.target_date
+      ? impliedCagr(trade.price, trade.target_price, trade.traded_at, trade.target_date)
+      : null;
 
   async function remove() {
     if (!id) return;
@@ -141,6 +146,28 @@ export default function TradeDetail() {
           <Stat label="Price" value={formatMoney(trade.price, trade.currency)} />
           <Stat label="Currency" value={trade.currency} />
         </div>
+
+        {trade.target_price != null && trade.target_date && (
+          <div className="flex items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted">Target</div>
+              <div className="mt-1 text-base font-semibold">
+                {formatMoney(trade.target_price, trade.currency)} by {prettyDate(trade.target_date)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs uppercase tracking-wide text-muted">Implied CAGR</div>
+              <div
+                className={cn(
+                  "text-xl font-bold tabular-nums",
+                  targetCagr == null ? "text-muted" : targetCagr >= 0 ? "text-success" : "text-warn",
+                )}
+              >
+                {targetCagr == null ? "—" : formatCagr(targetCagr)}
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="space-y-2">
           <div className="flex items-center justify-between px-1">

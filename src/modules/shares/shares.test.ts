@@ -4,7 +4,7 @@ import type { GymDB, LocalShareTrade } from "@/lib/db";
 import { createMutations } from "@/lib/sync/mutations";
 import { createOutbox } from "@/lib/sync/outbox";
 import { makeMockClient, newTestDb } from "@/lib/sync/test-helpers";
-import { computePositions } from "./types";
+import { computePositions, impliedCagr } from "./types";
 
 let db: GymDB;
 afterEach(async () => {
@@ -23,6 +23,8 @@ function makeLocalTrade(over: Partial<LocalShareTrade> = {}): LocalShareTrade {
     currency: "USD",
     traded_at: "2026-06-01",
     notes: null,
+    target_price: null,
+    target_date: null,
     links: [],
     images: [],
     models: [],
@@ -160,6 +162,20 @@ describe("stock mutations", () => {
     expect(payload.ticker).toBe("MSFT");
     expect(payload.sync_status).toBeUndefined();
     expect(await db.stocks.where("sync_status").equals("pending").count()).toBe(0);
+  });
+});
+
+describe("impliedCagr", () => {
+  it("computes the annualised rate from buy price to target over the horizon", () => {
+    // Double in exactly one year => 100% CAGR.
+    expect(impliedCagr(100, 200, "2026-01-01", "2027-01-01")).toBeCloseTo(1, 2);
+    // +21% over two years => ~10% CAGR.
+    expect(impliedCagr(100, 121, "2026-01-01", "2028-01-01")).toBeCloseTo(0.1, 2);
+  });
+
+  it("returns null for non-positive horizons or prices", () => {
+    expect(impliedCagr(100, 150, "2026-06-01", "2026-06-01")).toBeNull();
+    expect(impliedCagr(0, 150, "2026-01-01", "2027-01-01")).toBeNull();
   });
 });
 
