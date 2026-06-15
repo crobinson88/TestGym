@@ -160,7 +160,7 @@ export interface TimeAllocationRow {
 }
 
 export type TradeSide = "buy" | "sell";
-export type TradeCurrency = "USD" | "GBP" | "EUR";
+export type TradeCurrency = "USD" | "GBP" | "EUR" | "AUD";
 
 export interface StockRow {
   id: string;

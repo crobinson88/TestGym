@@ -4,10 +4,10 @@ import type { TradeCurrency, TradeSide } from "@/lib/database.types";
 export type { ShareTradeRow, TradeCurrency, TradeSide } from "@/lib/database.types";
 export type { LocalShareTrade } from "@/lib/db";
 
-export const CURRENCIES: readonly TradeCurrency[] = ["USD", "GBP", "EUR"];
+export const CURRENCIES: readonly TradeCurrency[] = ["USD", "GBP", "EUR", "AUD"];
 export const SIDES: readonly TradeSide[] = ["buy", "sell"];
 
-const SYMBOL: Record<TradeCurrency, string> = { USD: "$", GBP: "£", EUR: "€" };
+const SYMBOL: Record<TradeCurrency, string> = { USD: "$", GBP: "£", EUR: "€", AUD: "A$" };
 
 export function formatMoney(amount: number, currency: TradeCurrency): string {
   return `${SYMBOL[currency]}${amount.toLocaleString(undefined, {

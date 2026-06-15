@@ -143,33 +143,32 @@ export default function AddTrade() {
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Currency">
-            <div className="grid grid-cols-3 gap-1">
-              {CURRENCIES.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setCurrency(c)}
-                  className={cn(
-                    "h-12 rounded-xl border text-sm font-semibold transition active:scale-[0.98]",
-                    currency === c
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-line bg-surface text-muted",
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Date">
-            <Input
-              type="date"
-              value={tradedAt}
-              onChange={(e) => setTradedAt(e.target.value)}
-            />
-          </Field>
-        </div>
+        <Field label="Currency">
+          <div className="grid grid-cols-4 gap-2">
+            {CURRENCIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCurrency(c)}
+                className={cn(
+                  "h-12 rounded-xl border text-sm font-semibold transition active:scale-[0.98]",
+                  currency === c
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Date">
+          <Input
+            type="date"
+            value={tradedAt}
+            onChange={(e) => setTradedAt(e.target.value)}
+          />
+        </Field>
 
         <div className="rounded-2xl border border-line bg-surface px-4 py-3 text-center">
           <div className="text-xs uppercase tracking-wide text-muted">Total</div>
