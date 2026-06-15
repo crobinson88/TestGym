@@ -3,8 +3,8 @@ import { Link } from "react-router-dom";
 import { ExternalLink, FileText, ImageIcon, Library, Link2, Plus, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
-import { relativeDay } from "@/lib/utils";
 import type { LocalShareTrade, LocalStock } from "@/lib/db";
 import type { StockDocument } from "@/lib/database.types";
 import { removeStorageObject, signedUrlMap, uploadStockDocuments } from "../storage";
@@ -20,6 +20,8 @@ export function ResearchLibrary({
   stock: LocalStock | null | undefined;
   trades: LocalShareTrade[] | undefined;
 }) {
+  const { session } = useAuth();
+  const uploadedBy = session?.user?.email ?? "";
   const [newLink, setNewLink] = useState("");
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -194,7 +196,7 @@ export function ResearchLibrary({
                 <Link2 className="h-4 w-4 shrink-0" />
                 <span className="truncate">{url}</span>
               </a>
-              <TradeTag trade={trade} />
+              <TradeTag trade={trade} who={uploadedBy} />
             </div>
           ))}
           {tradeImages.map(({ path, trade }, i) => (
@@ -213,7 +215,7 @@ export function ResearchLibrary({
                 <span className="truncate">Image</span>
                 {urls[path] && <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted" />}
               </a>
-              <TradeTag trade={trade} />
+              <TradeTag trade={trade} who={uploadedBy} />
             </div>
           ))}
         </div>
@@ -258,13 +260,24 @@ function Row({
   );
 }
 
-function TradeTag({ trade }: { trade: LocalShareTrade }) {
+function uploadDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function TradeTag({ trade, who }: { trade: LocalShareTrade; who: string }) {
   return (
     <Link
       to={`/shares/${trade.id}`}
-      className="shrink-0 whitespace-nowrap rounded-full bg-surface px-2 py-0.5 text-xs capitalize text-muted"
+      className="flex max-w-[42%] shrink-0 flex-col items-end text-right text-xs"
     >
-      {trade.side} · {relativeDay(trade.traded_at)}
+      <span className="whitespace-nowrap rounded-full bg-surface px-2 py-0.5 capitalize text-muted">
+        {trade.side} · {uploadDate(trade.created_at)}
+      </span>
+      {who && <span className="mt-0.5 truncate text-[11px] text-muted/80">{who}</span>}
     </Link>
   );
 }
