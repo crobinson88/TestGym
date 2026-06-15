@@ -18,5 +18,8 @@ export type {
   AddCategoryInput,
   AddExerciseInput,
   AddSetInput,
+  AddShareTradeInput,
+  UpdateShareTradeInput,
+  AddForecastInput,
 } from "./mutations";
 export type { SyncStatusEvent } from "./types";

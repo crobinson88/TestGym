@@ -159,6 +159,88 @@ export interface TimeAllocationRow {
   deleted_at: string | null;
 }
 
+export type TradeSide = "buy" | "sell";
+export type TradeCurrency = "USD" | "GBP" | "EUR" | "AUD";
+export type TradeModelKind = "sheet" | "file";
+
+// A financial model attached to a trade: an uploaded spreadsheet (file, stored
+// in the share-images bucket) or a linked Google Sheet (sheet).
+export interface TradeModel {
+  kind: TradeModelKind;
+  name: string;
+  url: string | null;
+  path: string | null;
+}
+
+export interface StockDocument {
+  path: string;
+  name: string;
+  mediaType: string;
+  addedAt: string;
+  addedBy: string | null;
+}
+
+export interface StockLink {
+  url: string;
+  addedAt: string;
+  addedBy: string | null;
+}
+
+export interface StockRow {
+  id: string;
+  ticker: string;
+  name: string | null;
+  notes: string | null;
+  links: StockLink[];
+  documents: StockDocument[];
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface ShareTradeRow {
+  id: string;
+  ticker: string;
+  side: TradeSide;
+  quantity: number;
+  price: number;
+  currency: TradeCurrency;
+  traded_at: string;
+  notes: string | null;
+  target_price: number | null;
+  target_date: string | null;
+  links: string[];
+  images: string[];
+  models: TradeModel[];
+  total: number | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+// A standalone price forecast, not tied to a buy/sell. `base_price` is the
+// reference price when the call was made; implied CAGR is derived client-side
+// from base -> target over made_on -> target_date.
+export interface ForecastRow {
+  id: string;
+  ticker: string;
+  base_price: number;
+  target_price: number;
+  target_date: string;
+  made_on: string;
+  currency: TradeCurrency;
+  notes: string | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -238,6 +320,30 @@ export type Database = {
           task_id: string;
         };
         Update: Partial<TimeAllocationRow>;
+      };
+      share_trades: {
+        Row: ShareTradeRow;
+        Insert: Omit<ShareTradeRow, "total" | "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<Omit<ShareTradeRow, "total">>;
+      };
+      stocks: {
+        Row: StockRow;
+        Insert: Omit<StockRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<StockRow>;
+      };
+      forecasts: {
+        Row: ForecastRow;
+        Insert: Omit<ForecastRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<ForecastRow>;
       };
     };
   };

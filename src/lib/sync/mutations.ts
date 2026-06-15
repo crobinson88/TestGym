@@ -4,13 +4,22 @@ import type {
   LocalCardioSession,
   LocalCategory,
   LocalExercise,
+  LocalForecast,
   LocalSet,
+  LocalShareTrade,
+  LocalStock,
 } from "../db";
 import type {
   CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  ForecastRow,
   SetRow,
+  ShareTradeRow,
+  StockRow,
+  TradeCurrency,
+  TradeModel,
+  TradeSide,
   WeightUnit,
 } from "../database.types";
 import { todayIsoDate } from "../utils";
@@ -45,6 +54,33 @@ export interface AddCardioSessionInput {
   notes?: string | null;
 }
 
+export interface AddShareTradeInput {
+  ticker: string;
+  side: TradeSide;
+  quantity: number;
+  price: number;
+  currency?: TradeCurrency;
+  traded_at?: string;
+  notes?: string | null;
+  target_price?: number | null;
+  target_date?: string | null;
+  links?: string[];
+  images?: string[];
+  models?: TradeModel[];
+}
+
+export type UpdateShareTradeInput = Partial<AddShareTradeInput>;
+
+export interface AddForecastInput {
+  ticker: string;
+  base_price: number;
+  target_price: number;
+  target_date: string;
+  made_on?: string;
+  currency?: TradeCurrency;
+  notes?: string | null;
+}
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -68,6 +104,20 @@ function pendingCategory(row: CategoryRow): LocalCategory {
 function pendingCardio(row: CardioSessionRow): LocalCardioSession {
   return { ...row, sync_status: "pending", sync_attempts: 0, sync_last_error: null };
 }
+
+function pendingShareTrade(row: ShareTradeRow): LocalShareTrade {
+  return { ...row, sync_status: "pending", sync_attempts: 0, sync_last_error: null };
+}
+
+function pendingStock(row: StockRow): LocalStock {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingForecast(row: ForecastRow): LocalForecast {
+  return { ...row, sync_status: "pending" };
+}
+
+const normaliseTicker = (t: string) => t.trim().toUpperCase();
 
 export interface MutationDeps {
   db: GymDB;
@@ -212,6 +262,150 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     notify();
   }
 
+  async function addShareTrade(input: AddShareTradeInput): Promise<LocalShareTrade> {
+    const id = uuid();
+    const ts = now();
+    const row: ShareTradeRow = {
+      id,
+      ticker: input.ticker.trim().toUpperCase(),
+      side: input.side,
+      quantity: input.quantity,
+      price: input.price,
+      currency: input.currency ?? "USD",
+      traded_at: input.traded_at ?? todayIsoDate(),
+      notes: input.notes ?? null,
+      target_price: input.target_price ?? null,
+      target_date: input.target_date ?? null,
+      links: input.links ?? [],
+      images: input.images ?? [],
+      models: input.models ?? [],
+      total: null,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingShareTrade(row);
+    await db.share_trades.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateShareTrade(
+    id: string,
+    patch: UpdateShareTradeInput,
+  ): Promise<LocalShareTrade | null> {
+    const existing = await db.share_trades.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalShareTrade = {
+      ...existing,
+      ...patch,
+      ticker: patch.ticker ? patch.ticker.trim().toUpperCase() : existing.ticker,
+      updated_at: ts,
+      sync_status: "pending",
+      sync_attempts: 0,
+      sync_last_error: null,
+    };
+    await db.share_trades.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function deleteShareTrade(id: string): Promise<void> {
+    const existing = await db.share_trades.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    const updated: LocalShareTrade = {
+      ...existing,
+      deleted_at: ts,
+      updated_at: ts,
+      sync_status: "pending",
+      sync_attempts: 0,
+      sync_last_error: null,
+    };
+    await db.share_trades.put(updated);
+    notify();
+  }
+
+  // Stocks are keyed by ticker in the UI but by uuid in the DB. Find the live
+  // row for a ticker or create one, so "general notes of the stock" has a home.
+  async function ensureStock(ticker: string, name?: string | null): Promise<LocalStock> {
+    const t = normaliseTicker(ticker);
+    const all = await db.stocks.toArray();
+    const existing = all.find((s) => s.ticker === t && !s.deleted_at);
+    if (existing) {
+      if (name && !existing.name) {
+        return (await updateStock(existing.id, { name })) ?? existing;
+      }
+      return existing;
+    }
+    const id = uuid();
+    const ts = now();
+    const row: StockRow = {
+      id,
+      ticker: t,
+      name: name ?? null,
+      notes: null,
+      links: [],
+      documents: [],
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingStock(row);
+    await db.stocks.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateStock(
+    id: string,
+    patch: Partial<Pick<StockRow, "name" | "notes" | "links" | "documents">>,
+  ): Promise<LocalStock | null> {
+    const existing = await db.stocks.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalStock = {
+      ...existing,
+      ...patch,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.stocks.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function addForecast(input: AddForecastInput): Promise<LocalForecast> {
+    const id = uuid();
+    const ts = now();
+    const row: ForecastRow = {
+      id,
+      ticker: normaliseTicker(input.ticker),
+      base_price: input.base_price,
+      target_price: input.target_price,
+      target_date: input.target_date,
+      made_on: input.made_on ?? todayIsoDate(),
+      currency: input.currency ?? "USD",
+      notes: input.notes ?? null,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingForecast(row);
+    await db.forecasts.put(local);
+    notify();
+    return local;
+  }
+
+  async function deleteForecast(id: string): Promise<void> {
+    const existing = await db.forecasts.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.forecasts.put({ ...existing, deleted_at: ts, updated_at: ts, sync_status: "pending" });
+    notify();
+  }
+
   return {
     addSet,
     updateSet,
@@ -220,6 +414,13 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addCategory,
     addCardioSession,
     deleteCardioSession,
+    addShareTrade,
+    updateShareTrade,
+    deleteShareTrade,
+    ensureStock,
+    updateStock,
+    addForecast,
+    deleteForecast,
   };
 }
 

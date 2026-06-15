@@ -4,7 +4,10 @@ import type {
   LocalCategory,
   LocalExercise,
   LocalMetActivity,
+  LocalForecast,
   LocalSet,
+  LocalShareTrade,
+  LocalStock,
   LocalTdlCategory,
   LocalTdlDay,
   LocalTdlItem,
@@ -24,7 +27,10 @@ type PendingRow =
   | LocalTdlDay
   | LocalTdlCategory
   | LocalTimeTask
-  | LocalTimeAllocation;
+  | LocalTimeAllocation
+  | LocalShareTrade
+  | LocalStock
+  | LocalForecast;
 
 const STRIP_KEYS = [
   "sync_status",
@@ -32,6 +38,7 @@ const STRIP_KEYS = [
   "sync_last_error",
   "volume",
   "met_minutes",
+  "total",
   "created_at",
   "user_id",
 ] as const;
@@ -47,6 +54,9 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   tdl_categories: "id",
   time_tasks: "id",
   time_allocations: "id",
+  share_trades: "id",
+  stocks: "id",
+  forecasts: "id",
 };
 
 function toPayload(row: PendingRow): Record<string, unknown> {
@@ -92,6 +102,15 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   if (table === "time_allocations") {
     return db.timeAllocations.where("sync_status").equals("pending").limit(limit).toArray();
   }
+  if (table === "share_trades") {
+    return db.share_trades.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "stocks") {
+    return db.stocks.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "forecasts") {
+    return db.forecasts.where("sync_status").equals("pending").limit(limit).toArray();
+  }
   return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
 }
 
@@ -126,6 +145,12 @@ async function markError(
     await db.cardio_sessions.update(pk, {
       sync_status: "error",
       sync_attempts: (row as LocalCardioSession).sync_attempts + 1,
+      sync_last_error: message,
+    });
+  } else if (table === "share_trades") {
+    await db.share_trades.update(pk, {
+      sync_status: "error",
+      sync_attempts: (row as LocalShareTrade).sync_attempts + 1,
       sync_last_error: message,
     });
   } else {

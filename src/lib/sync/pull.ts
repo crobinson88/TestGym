@@ -4,7 +4,10 @@ import type {
   CategoryRow,
   ExerciseRow,
   MetActivityRow,
+  ForecastRow,
   SetRow,
+  ShareTradeRow,
+  StockRow,
   TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
@@ -170,6 +173,64 @@ async function mergeTimeAllocations(db: GymDB, rows: TimeAllocationRow[]) {
   });
 }
 
+async function mergeShareTrades(db: GymDB, rows: ShareTradeRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.share_trades, async () => {
+    for (const remote of rows) {
+      const local = await db.share_trades.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.share_trades.put({
+          ...remote,
+          quantity: Number(remote.quantity),
+          price: Number(remote.price),
+          total: remote.total === null ? null : Number(remote.total),
+          target_price: remote.target_price == null ? null : Number(remote.target_price),
+          links: remote.links ?? [],
+          images: remote.images ?? [],
+          models: remote.models ?? [],
+          sync_status: "synced",
+          sync_attempts: 0,
+          sync_last_error: null,
+        });
+      }
+    }
+  });
+}
+
+async function mergeStocks(db: GymDB, rows: StockRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.stocks, async () => {
+    for (const remote of rows) {
+      const local = await db.stocks.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.stocks.put({
+          ...remote,
+          links: remote.links ?? [],
+          documents: remote.documents ?? [],
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
+async function mergeForecasts(db: GymDB, rows: ForecastRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.forecasts, async () => {
+    for (const remote of rows) {
+      const local = await db.forecasts.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.forecasts.put({
+          ...remote,
+          base_price: Number(remote.base_price),
+          target_price: Number(remote.target_price),
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -187,6 +248,9 @@ const META_KEYS: Record<SyncTable, string> = {
   tdl_categories: "last_pull_tdl_categories",
   time_tasks: "last_pull_time_tasks",
   time_allocations: "last_pull_time_allocations",
+  share_trades: "last_pull_share_trades",
+  stocks: "last_pull_stocks",
+  forecasts: "last_pull_forecasts",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -211,6 +275,9 @@ export function createPull({ client, db, log }: PullDeps) {
       tdl_categories: 0,
       time_tasks: 0,
       time_allocations: 0,
+      share_trades: 0,
+      stocks: 0,
+      forecasts: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -262,12 +329,33 @@ export function createPull({ client, db, log }: PullDeps) {
           await mergeTimeTasks(db, rows);
           fetched.time_tasks = rows.length;
           if (rows.length > 0) await writeMark("time_tasks", rows[rows.length - 1].updated_at);
-        } else {
+        } else if (table === "time_allocations") {
           const rows = await fetchSince<TimeAllocationRow>(client, "time_allocations", since);
           await mergeTimeAllocations(db, rows);
           fetched.time_allocations = rows.length;
           if (rows.length > 0) {
             await writeMark("time_allocations", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "share_trades") {
+          const rows = await fetchSince<ShareTradeRow>(client, "share_trades", since);
+          await mergeShareTrades(db, rows);
+          fetched.share_trades = rows.length;
+          if (rows.length > 0) {
+            await writeMark("share_trades", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "stocks") {
+          const rows = await fetchSince<StockRow>(client, "stocks", since);
+          await mergeStocks(db, rows);
+          fetched.stocks = rows.length;
+          if (rows.length > 0) {
+            await writeMark("stocks", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<ForecastRow>(client, "forecasts", since);
+          await mergeForecasts(db, rows);
+          fetched.forecasts = rows.length;
+          if (rows.length > 0) {
+            await writeMark("forecasts", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

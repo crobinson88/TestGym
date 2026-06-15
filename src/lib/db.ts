@@ -4,8 +4,11 @@ import type {
   CategoryRow,
   ConflictRow,
   ExerciseRow,
+  ForecastRow,
   MetActivityRow,
   SetRow,
+  ShareTradeRow,
+  StockRow,
   TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
@@ -65,6 +68,20 @@ export interface LocalTimeAllocation extends TimeAllocationRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalShareTrade extends ShareTradeRow {
+  sync_status: SyncStatus;
+  sync_attempts: number;
+  sync_last_error: string | null;
+}
+
+export interface LocalStock extends StockRow {
+  sync_status: SyncStatus;
+}
+
+export interface LocalForecast extends ForecastRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -78,6 +95,9 @@ export class GymDB extends Dexie {
   tdl_items!: Table<LocalTdlItem, string>;
   tdl_days!: Table<LocalTdlDay, string>;
   tdl_categories!: Table<LocalTdlCategory, string>;
+  share_trades!: Table<LocalShareTrade, string>;
+  stocks!: Table<LocalStock, string>;
+  forecasts!: Table<LocalForecast, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -155,6 +175,16 @@ export class GymDB extends Dexie {
       });
     this.version(7).stores({
       tdl_categories: "id, key, sort_order, updated_at, sync_status, deleted_at",
+    });
+    this.version(8).stores({
+      share_trades:
+        "id, ticker, side, traded_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(9).stores({
+      stocks: "id, ticker, updated_at, sync_status, deleted_at",
+    });
+    this.version(10).stores({
+      forecasts: "id, ticker, made_on, target_date, updated_at, sync_status, deleted_at",
     });
   }
 }
