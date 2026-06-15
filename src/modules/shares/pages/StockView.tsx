@@ -9,6 +9,7 @@ import { useStockByTicker, useTradesForTicker } from "../hooks";
 import { formatMoney, formatQty } from "../types";
 import { ResearchLibrary } from "../components/ResearchLibrary";
 import { ResearchPanel } from "../components/ResearchPanel";
+import { StockForecasts } from "../components/StockForecasts";
 import { StockModels } from "../components/StockModels";
 
 export default function StockView() {
@@ -107,6 +108,8 @@ export default function StockView() {
             "Save notes"
           )}
         </Button>
+
+        <StockForecasts trades={trades} />
 
         <ResearchLibrary ticker={ticker} stock={stock} trades={trades} />
 
