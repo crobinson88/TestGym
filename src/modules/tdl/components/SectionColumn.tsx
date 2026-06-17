@@ -8,6 +8,7 @@ import type { LocalTdlItem } from "../types";
 import { UNCATEGORISED_KEY, type SectionConfig } from "../sections";
 import { createItem } from "../repo";
 import { sectionStatusCounts } from "../hooks";
+import { ImageEditor } from "./ImageEditor";
 import { ItemRow } from "./ItemRow";
 
 export function SectionColumn({
@@ -27,6 +28,9 @@ export function SectionColumn({
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   // Mobile-only collapse: sections start collapsed so the single-column phone
   // view shows just category names + active counts. The `sm:` classes below
   // force the full view open from the tablet breakpoint up, so this state is
@@ -58,14 +62,32 @@ export function SectionColumn({
     { key: "done", label: "done", n: counts.done, cls: "bg-success/15 text-success" },
   ].filter((c) => c.key === "open" || c.n > 0);
 
+  function resetAdd() {
+    setAdding(false);
+    setShowDetails(false);
+    setDraft("");
+    setNotes("");
+    setImages([]);
+  }
+
   async function submit() {
     const title = draft.trim();
     if (!title) {
-      setAdding(false);
+      if (!showDetails) setAdding(false);
       return;
     }
-    await createItem({ snapshot_date, section: cfg.key, title });
+    await createItem({
+      snapshot_date,
+      section: cfg.key,
+      title,
+      notes: notes.trim() ? notes.trim() : null,
+      images,
+    });
+    // Keep the composer open for the next quick add, collapsing details again.
     setDraft("");
+    setNotes("");
+    setImages([]);
+    setShowDetails(false);
     setAdding(true);
   }
 
@@ -159,24 +181,50 @@ export function SectionColumn({
       {canAdd && (
       <div className={cn("border-t border-line/50 p-2", collapsed && "hidden sm:block")}>
         {adding ? (
-          <div className="flex gap-2">
+          <div className="space-y-2">
             <Input
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void submit();
-                if (e.key === "Escape") {
-                  setAdding(false);
-                  setDraft("");
-                }
+                if (e.key === "Escape") resetAdd();
               }}
               onBlur={() => {
-                if (!draft.trim()) setAdding(false);
+                if (!showDetails && !draft.trim()) setAdding(false);
               }}
               placeholder="New task..."
               className="h-9 text-sm"
             />
+            {showDetails ? (
+              <>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Details…"
+                  rows={3}
+                  className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm text-text placeholder:text-muted outline-none focus:border-accent"
+                />
+                <ImageEditor images={images} onChange={setImages} />
+                <div className="flex gap-2">
+                  <Button size="sm" variant="primary" onClick={() => void submit()}>
+                    Add task
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={resetAdd}>
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowDetails(true)}
+                className="text-xs text-muted hover:text-text"
+              >
+                + Add details
+              </button>
+            )}
           </div>
         ) : (
           <Button

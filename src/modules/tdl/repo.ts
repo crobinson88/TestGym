@@ -30,6 +30,7 @@ export interface CreateItemInput {
   is_archived?: boolean;
   snoozed_until?: string | null;
   notes?: string | null;
+  images?: string[];
   status?: TdlStatus;
   origin_item_id?: string | null;
   origin_snapshot_date?: string | null;
@@ -71,6 +72,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     is_archived: input.is_archived ?? false,
     snoozed_until: input.snoozed_until ?? null,
     notes: input.notes ?? null,
+    images: input.images ?? [],
     origin_item_id: input.origin_item_id ?? null,
     origin_snapshot_date: input.origin_snapshot_date ?? null,
     created_at: ts,

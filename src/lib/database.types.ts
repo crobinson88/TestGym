@@ -123,6 +123,9 @@ export interface TdlItemRow {
   is_archived: boolean;
   snoozed_until: string | null;
   notes: string | null;
+  // Object paths in the private `share-images` bucket (tdl/ prefix). The detail
+  // panel resolves them to signed URLs on demand.
+  images: string[];
   origin_item_id: string | null;
   origin_snapshot_date: string | null;
   created_at: string;

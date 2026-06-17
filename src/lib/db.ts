@@ -186,6 +186,14 @@ export class GymDB extends Dexie {
     this.version(10).stores({
       forecasts: "id, ticker, made_on, target_date, updated_at, sync_status, deleted_at",
     });
+    this.version(11).upgrade(async (tx) => {
+      await tx
+        .table("tdl_items")
+        .toCollection()
+        .modify((row: LocalTdlItem) => {
+          if (row.images === undefined) row.images = [];
+        });
+    });
   }
 }
 
