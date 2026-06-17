@@ -160,9 +160,9 @@ export function ItemRow({
         ) : (
           <button
             type="button"
-            onDoubleClick={() => setDetailOpen((v) => !v)}
+            onClick={() => setDetailOpen((v) => !v)}
             aria-expanded={detailOpen}
-            title="Double-click for details"
+            title="Click for details"
             className={cn(
               "flex w-full select-none items-center gap-1 text-left text-sm",
               done && "line-through text-muted",
