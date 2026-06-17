@@ -12,6 +12,7 @@ import {
   GripVertical,
   MoreVertical,
   Pencil,
+  StickyNote,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import {
 } from "../repo";
 import type { SectionConfig } from "../sections";
 import { isSnoozed } from "../snooze";
+import { ItemDetail } from "./ItemDetail";
 import { StatusPill } from "./StatusPill";
 
 export function ItemRow({
@@ -54,6 +56,7 @@ export function ItemRow({
   const [editing, setEditing] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
@@ -62,6 +65,7 @@ export function ItemRow({
   const done = item.status === "done";
   const cancelled = item.status === "cancelled";
   const snoozed = isSnoozed(item);
+  const hasDetail = !!item.notes?.trim() || (item.images?.length ?? 0) > 0;
 
   return (
     <li
@@ -69,12 +73,13 @@ export function ItemRow({
       style={style}
       data-item-id={item.id}
       className={cn(
-        "group relative flex w-full max-w-full min-w-0 items-center gap-1.5 border-b border-line/50 px-2 py-2 last:border-b-0",
+        "group relative block w-full max-w-full min-w-0 border-b border-line/50 px-2 py-2 last:border-b-0",
         focused && "bg-surface2/40",
         (cancelled || snoozed) && "opacity-50",
         menu && "z-30",
       )}
     >
+      <div className="flex w-full min-w-0 items-center gap-1.5">
       <button
         {...attributes}
         {...listeners}
@@ -157,15 +162,19 @@ export function ItemRow({
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
+            onDoubleClick={() => setDetailOpen((v) => !v)}
             aria-expanded={expanded}
+            title="Double-click for details"
             className={cn(
-              "block w-full text-left text-sm",
-              expanded ? "whitespace-normal break-words" : "truncate",
+              "flex w-full items-center gap-1 text-left text-sm",
               done && "line-through text-muted",
               cancelled && "line-through",
             )}
           >
-            {item.title}
+            <span className={cn("min-w-0", expanded ? "whitespace-normal break-words" : "truncate")}>
+              {item.title}
+            </span>
+            {hasDetail && <StickyNote className="h-3.5 w-3.5 shrink-0 text-muted" />}
           </button>
         )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
@@ -224,7 +233,17 @@ export function ItemRow({
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
             >
-              <Pencil className="h-4 w-4" /> Edit
+              <Pencil className="h-4 w-4" /> Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDetailOpen(true);
+                setMenu(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+            >
+              <StickyNote className="h-4 w-4" /> Details
             </button>
             <button
               type="button"
@@ -314,6 +333,8 @@ export function ItemRow({
           </div>
         )}
       </div>
+      </div>
+      {detailOpen && <ItemDetail item={item} />}
     </li>
   );
 }
