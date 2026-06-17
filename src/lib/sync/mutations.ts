@@ -196,7 +196,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       id,
       name: input.name,
       category_id: input.category_id,
-      is_archived: false,
+      is_archived: true,
       ...baseRowDefaults(ts),
     };
     const local = pendingExercise(row);
