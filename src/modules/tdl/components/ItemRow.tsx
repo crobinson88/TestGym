@@ -55,7 +55,6 @@ export function ItemRow({
   };
   const [editing, setEditing] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
@@ -161,17 +160,16 @@ export function ItemRow({
         ) : (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
             onDoubleClick={() => setDetailOpen((v) => !v)}
-            aria-expanded={expanded}
+            aria-expanded={detailOpen}
             title="Double-click for details"
             className={cn(
-              "flex w-full items-center gap-1 text-left text-sm",
+              "flex w-full select-none items-center gap-1 text-left text-sm",
               done && "line-through text-muted",
               cancelled && "line-through",
             )}
           >
-            <span className={cn("min-w-0", expanded ? "whitespace-normal break-words" : "truncate")}>
+            <span className={cn("min-w-0", detailOpen ? "whitespace-normal break-words" : "truncate")}>
               {item.title}
             </span>
             {hasDetail && <StickyNote className="h-3.5 w-3.5 shrink-0 text-muted" />}
