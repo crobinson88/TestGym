@@ -28,6 +28,29 @@ export function useExercises(categoryId?: string) {
   }, [categoryId]);
 }
 
+export function useExercisesWithArchived(categoryId?: string) {
+  return useLiveQuery(async () => {
+    const all = await db.exercises.toArray();
+    return all
+      .filter(
+        (e) => !e.deleted_at && (categoryId ? e.category_id === categoryId : true),
+      )
+      .sort((a, b) => {
+        if (a.is_archived !== b.is_archived) return a.is_archived ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [categoryId]);
+}
+
+export function useTodaySetCount(exerciseId?: string) {
+  return useLiveQuery(async () => {
+    if (!exerciseId) return 0;
+    const today = todayIsoDate();
+    const rows = await db.sets.where("exercise_id").equals(exerciseId).toArray();
+    return rows.filter((s) => !s.deleted_at && s.performed_at === today).length;
+  }, [exerciseId]);
+}
+
 export function useExercise(id?: string) {
   return useLiveQuery(async () => {
     if (!id) return undefined;

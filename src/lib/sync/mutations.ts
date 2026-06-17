@@ -196,13 +196,31 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       id,
       name: input.name,
       category_id: input.category_id,
-      is_archived: false,
+      is_archived: true,
       ...baseRowDefaults(ts),
     };
     const local = pendingExercise(row);
     await db.exercises.put(local);
     notify();
     return local;
+  }
+
+  async function setExerciseActive(
+    id: string,
+    active: boolean,
+  ): Promise<LocalExercise | null> {
+    const existing = await db.exercises.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalExercise = {
+      ...existing,
+      is_archived: !active,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.exercises.put(updated);
+    notify();
+    return updated;
   }
 
   async function addCategory(input: AddCategoryInput): Promise<LocalCategory> {
@@ -411,6 +429,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     updateSet,
     deleteSet,
     addExercise,
+    setExerciseActive,
     addCategory,
     addCardioSession,
     deleteCardioSession,

@@ -66,6 +66,26 @@ describe("mutations.addSet", () => {
     expect(after?.sync_status).toBe("pending");
   });
 
+  it("setExerciseActive toggles is_archived and marks pending", async () => {
+    db = await newTestDb();
+    const cat = makeCategory();
+    const ex = makeExercise(cat.id);
+    await db.categories.put({ ...cat, sync_status: "synced" });
+    await db.exercises.put({ ...ex, sync_status: "synced", is_archived: false });
+
+    const m = createMutations({ db });
+
+    const off = await m.setExerciseActive(ex.id, false);
+    expect(off?.is_archived).toBe(true);
+    expect(off?.sync_status).toBe("pending");
+
+    const on = await m.setExerciseActive(ex.id, true);
+    expect(on?.is_archived).toBe(false);
+    expect(on?.sync_status).toBe("pending");
+
+    expect(await m.setExerciseActive("missing", true)).toBeNull();
+  });
+
   it("addCardioSession snapshots met_value and computes met_minutes", async () => {
     db = await newTestDb();
     const act = makeMetActivity({ met_value: 9.8 });

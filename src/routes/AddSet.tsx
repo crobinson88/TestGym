@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Minus, Plus, Trash2, Trophy } from "lucide-react";
+import { ChevronLeft, Check, Minus, Plus, Power, Trash2, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RestTimer } from "@/components/RestTimer";
@@ -8,7 +8,9 @@ import { syncEngine } from "@/lib/sync";
 import {
   useCategories,
   useExercises,
+  useExercisesWithArchived,
   useLastSet,
+  useTodaySetCount,
   useTodaySetsForExercise,
   useExerciseStats,
 } from "@/lib/hooks";
@@ -243,7 +245,7 @@ function ExerciseStep({
   categoryId: string;
   onPick: (id: string) => void;
 }) {
-  const exercises = useExercises(categoryId);
+  const exercises = useExercisesWithArchived(categoryId);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -281,8 +283,20 @@ function ExerciseStep({
       )}
       <ul className="space-y-2">
         {exercises.map((e) => (
-          <li key={e.id}>
-            <ExerciseTile id={e.id} name={e.name} onPick={() => onPick(e.id)} />
+          <li key={e.id} className="flex items-stretch gap-2">
+            <ExerciseTile
+              id={e.id}
+              name={e.name}
+              active={!e.is_archived}
+              onPick={() => onPick(e.id)}
+            />
+            <ActiveToggle
+              active={!e.is_archived}
+              name={e.name}
+              onToggle={() =>
+                syncEngine.mutations.setExerciseActive(e.id, e.is_archived)
+              }
+            />
           </li>
         ))}
       </ul>
@@ -343,26 +357,73 @@ function ExerciseStep({
 function ExerciseTile({
   id,
   name,
+  active,
   onPick,
 }: {
   id: string;
   name: string;
+  active: boolean;
   onPick: () => void;
 }) {
   const last = useLastSet(id);
+  const todayCount = useTodaySetCount(id) ?? 0;
   const subline =
     last === undefined
       ? ""
       : last === null
         ? "no history"
         : `last: ${formatWeight(last.weight)} × ${last.reps}`;
+  const tone = !active
+    ? "border-line bg-surface opacity-50 hover:bg-surface2"
+    : todayCount >= 3
+      ? "border-success bg-success/30 hover:bg-success/40"
+      : todayCount >= 1
+        ? "border-success/50 bg-success/10 hover:bg-success/20"
+        : "border-line bg-surface hover:bg-surface2";
   return (
     <button
       onClick={onPick}
-      className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 text-left transition active:scale-[0.99] hover:bg-surface2"
+      className={cn(
+        "flex flex-1 items-center justify-between rounded-2xl border px-4 py-3 text-left transition active:scale-[0.99]",
+        tone,
+      )}
     >
-      <span className="text-base font-medium">{name}</span>
+      <span className="flex items-center gap-2 text-base font-medium">
+        {name}
+        {active && todayCount > 0 && (
+          <span className="text-xs font-semibold text-success">
+            {todayCount} today
+          </span>
+        )}
+      </span>
       <span className="text-sm text-muted">{subline}</span>
+    </button>
+  );
+}
+
+function ActiveToggle({
+  active,
+  name,
+  onToggle,
+}: {
+  active: boolean;
+  name: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-pressed={active}
+      aria-label={`Mark ${name} ${active ? "inactive" : "active"}`}
+      title={active ? "Active — tap to hide" : "Inactive — tap to activate"}
+      className={cn(
+        "flex w-12 shrink-0 items-center justify-center rounded-2xl border transition active:scale-[0.96]",
+        active
+          ? "border-success/50 bg-success/10 text-success"
+          : "border-line bg-surface text-muted hover:bg-surface2",
+      )}
+    >
+      <Power className="h-5 w-5" />
     </button>
   );
 }
