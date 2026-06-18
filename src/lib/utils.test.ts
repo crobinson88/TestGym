@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   cn,
+  formatFull,
   formatVolume,
   formatWeight,
   relativeDay,
@@ -51,6 +52,15 @@ describe("formatVolume", () => {
     expect(formatVolume(1_250)).toBe("1.3K");
     expect(formatVolume(12_500)).toBe("13K");
     expect(formatVolume(1_247_882)).toBe("1.25M");
+  });
+});
+
+describe("formatFull", () => {
+  it("shows the full value with separators, no abbreviation or rounding", () => {
+    expect(formatFull(450)).toBe("450");
+    expect(formatFull(1_247_882)).toBe("1,247,882");
+    expect(formatFull(12_500)).toBe("12,500");
+    expect(formatFull(1234.5)).toBe("1,234.5");
   });
 });
 

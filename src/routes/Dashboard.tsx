@@ -17,7 +17,7 @@ import { downloadSetsCsv } from "@/lib/csv";
 import { useDashboardStats, type WeekVolumePoint } from "@/lib/hooks";
 import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
-import { formatVolume, prettyDate } from "@/lib/utils";
+import { formatFull, formatVolume, prettyDate } from "@/lib/utils";
 
 const HOURS_COLOR = "#22d3ee";
 
@@ -63,17 +63,17 @@ export default function Dashboard() {
       <section className="grid grid-cols-3 gap-3">
         <StatTile
           label="Daily total"
-          value={formatVolume(stats.today.volume)}
+          value={formatFull(stats.today.volume)}
           sub={`${stats.today.sets} sets`}
         />
         <StatTile
           label="Last session"
-          value={stats.lastSession ? formatVolume(stats.lastSession.volume) : "—"}
+          value={stats.lastSession ? formatFull(stats.lastSession.volume) : "—"}
           sub={stats.lastSession ? prettyDate(stats.lastSession.date) : "no history"}
         />
         <StatTile
           label="Max session"
-          value={stats.maxSession ? formatVolume(stats.maxSession.volume) : "—"}
+          value={stats.maxSession ? formatFull(stats.maxSession.volume) : "—"}
           sub={
             stats.maxSession && lastSessionDelta !== null
               ? `last @ ${lastSessionDelta}%`
@@ -95,14 +95,14 @@ export default function Dashboard() {
           </div>
           <div className="text-right text-sm text-muted">
             <div className="font-semibold text-text">
-              {formatVolume(stats.thisWeek.volume)} lb
+              {formatFull(stats.thisWeek.volume)} lb
             </div>
             <div>volume</div>
           </div>
         </div>
         <div className="mt-3 border-t border-line/70 pt-3 text-sm text-muted">
           Last week: {stats.lastWeek.days}{" "}
-          {stats.lastWeek.days === 1 ? "day" : "days"} · {formatVolume(stats.lastWeek.volume)} lb
+          {stats.lastWeek.days === 1 ? "day" : "days"} · {formatFull(stats.lastWeek.volume)} lb
         </div>
       </section>
 
@@ -141,7 +141,7 @@ export default function Dashboard() {
         <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">All-time</h2>
         <div className="grid grid-cols-3 gap-3">
           <StatTile label="Sets" value={stats.allTime.sets.toLocaleString()} />
-          <StatTile label="Volume" value={`${formatVolume(stats.allTime.volume)} lb`} />
+          <StatTile label="Volume" value={`${formatFull(stats.allTime.volume)} lb`} />
           <StatTile label="Days" value={stats.allTime.days.toString()} />
         </div>
       </section>
@@ -211,7 +211,7 @@ function WeeklyChart({
         <Tooltip
           contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
           labelStyle={{ color: "#8a8a8a" }}
-          formatter={(value, name) => [formatVolume(value as number), name as string]}
+          formatter={(value, name) => [formatFull(value as number), name as string]}
           labelFormatter={(label) => `Week of ${prettyDate(label as string)}`}
         />
         <Legend
