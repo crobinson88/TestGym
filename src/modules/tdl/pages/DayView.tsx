@@ -8,6 +8,8 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { Search } from "lucide-react";
+import { Input } from "@/components/ui/Input";
 import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
 import { useCategories } from "../categories";
@@ -32,6 +34,8 @@ export default function DayView() {
   const bundle = useDay(date);
   const prev = usePrevDateWithItems(date);
   const categories = useCategories();
+
+  const [query, setQuery] = useState("");
 
   const allIds = useMemo(() => bundle?.items.map((i) => i.id) ?? [], [bundle]);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -134,18 +138,38 @@ export default function DayView() {
   );
   const columns = orphanSections.length > 0 ? [...categories, UNCATEGORISED] : categories;
 
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const matchesQuery = (i: LocalTdlItem) =>
+    !searching ||
+    i.title.toLowerCase().includes(q) ||
+    (i.notes ?? "").toLowerCase().includes(q);
+
   function listsFor(key: string): { recurring: LocalTdlItem[]; dated: LocalTdlItem[] } {
+    let recurring: LocalTdlItem[];
+    let dated: LocalTdlItem[];
     if (key !== UNCATEGORISED_KEY) {
-      return bundle!.bySection[key] ?? { recurring: [], dated: [] };
+      const lists = bundle!.bySection[key] ?? { recurring: [], dated: [] };
+      recurring = lists.recurring;
+      dated = lists.dated;
+    } else {
+      recurring = [];
+      dated = [];
+      for (const k of orphanSections) {
+        recurring.push(...(bundle!.bySection[k]?.recurring ?? []));
+        dated.push(...(bundle!.bySection[k]?.dated ?? []));
+      }
     }
-    const recurring: LocalTdlItem[] = [];
-    const dated: LocalTdlItem[] = [];
-    for (const k of orphanSections) {
-      recurring.push(...(bundle!.bySection[k]?.recurring ?? []));
-      dated.push(...(bundle!.bySection[k]?.dated ?? []));
-    }
-    return { recurring, dated };
+    if (!searching) return { recurring, dated };
+    return { recurring: recurring.filter(matchesQuery), dated: dated.filter(matchesQuery) };
   }
+
+  const visibleColumns = searching
+    ? columns.filter((cfg) => {
+        const lists = listsFor(cfg.key);
+        return lists.recurring.length + lists.dated.length > 0;
+      })
+    : columns;
 
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
@@ -157,29 +181,47 @@ export default function DayView() {
         onNavigate={(d) => navigate(`/tdl/${d}`)}
       />
       <div className="p-3">
+        {!empty && (
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search tasks…"
+              aria-label="Search tasks"
+              className="h-10 pl-9 text-sm"
+            />
+          </div>
+        )}
         {empty && prev && (
           <div className="mb-4">
             <RollForwardButton fromDate={prev} toDate={date} />
           </div>
         )}
-        <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {columns.map((cfg) => {
-              const lists = listsFor(cfg.key);
-              return (
-                <SectionColumn
-                  key={cfg.key}
-                  cfg={cfg}
-                  categories={categories}
-                  snapshot_date={date}
-                  recurring={lists.recurring}
-                  dated={lists.dated}
-                  focusedId={focusedId}
-                />
-              );
-            })}
-          </div>
-        </DndContext>
+        {searching && visibleColumns.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted">No tasks match “{query.trim()}”.</div>
+        ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleColumns.map((cfg) => {
+                const lists = listsFor(cfg.key);
+                return (
+                  <SectionColumn
+                    key={cfg.key}
+                    cfg={cfg}
+                    categories={categories}
+                    snapshot_date={date}
+                    recurring={lists.recurring}
+                    dated={lists.dated}
+                    focusedId={focusedId}
+                    forceExpanded={searching}
+                  />
+                );
+              })}
+            </div>
+          </DndContext>
+        )}
       </div>
     </div>
   );
