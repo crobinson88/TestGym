@@ -70,6 +70,15 @@ export function DayHeader({
         >
           <ChevronRight className="h-5 w-5" />
         </Button>
+        <Button
+          variant="ghost"
+          onClick={() => onNavigate(today)}
+          disabled={snapshot_date === today}
+          aria-label="Go to today"
+          className="h-10 shrink-0 px-3 text-sm"
+        >
+          Today
+        </Button>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
