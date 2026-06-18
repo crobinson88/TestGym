@@ -28,6 +28,11 @@ export function formatVolume(n: number): string {
   return String(Math.round(n));
 }
 
+// Full value with thousands separators, no K/M abbreviation and no rounding.
+export function formatFull(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
 const PRETTY_DATE = new Intl.DateTimeFormat(undefined, {
   weekday: "short",
   month: "short",
