@@ -18,6 +18,7 @@ export function SectionColumn({
   recurring,
   dated,
   focusedId,
+  forceExpanded = false,
 }: {
   cfg: SectionConfig;
   categories: SectionConfig[];
@@ -25,6 +26,7 @@ export function SectionColumn({
   recurring: LocalTdlItem[];
   dated: LocalTdlItem[];
   focusedId?: string;
+  forceExpanded?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -36,6 +38,7 @@ export function SectionColumn({
   // force the full view open from the tablet breakpoint up, so this state is
   // inert on larger screens.
   const [collapsed, setCollapsed] = useState(true);
+  const isCollapsed = forceExpanded ? false : collapsed;
   const canAdd = cfg.key !== UNCATEGORISED_KEY;
 
   const counts = sectionStatusCounts(dated, cfg.key === "product");
@@ -103,12 +106,12 @@ export function SectionColumn({
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? `Expand ${cfg.label}` : `Collapse ${cfg.label}`}
+          aria-expanded={!isCollapsed}
+          aria-label={isCollapsed ? `Expand ${cfg.label}` : `Collapse ${cfg.label}`}
           className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:text-text sm:hidden"
         >
           <ChevronRight
-            className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-90")}
+            className={cn("h-4 w-4 transition-transform", !isCollapsed && "rotate-90")}
           />
         </button>
         <h2 className="mr-auto text-sm font-semibold uppercase tracking-wider text-muted">
@@ -117,7 +120,7 @@ export function SectionColumn({
         <span
           className={cn(
             "rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted sm:hidden",
-            !collapsed && "hidden",
+            !isCollapsed && "hidden",
           )}
         >
           {activeTotal} active
@@ -125,7 +128,7 @@ export function SectionColumn({
         <div
           className={cn(
             "flex flex-wrap items-center gap-x-2 gap-y-1",
-            collapsed && "hidden sm:flex",
+            isCollapsed && "hidden sm:flex",
           )}
         >
           {chips.map((c) => (
@@ -143,7 +146,7 @@ export function SectionColumn({
       </header>
 
       {recurring.length > 0 && (
-        <div className={cn("border-b border-line/50", collapsed && "hidden sm:block")}>
+        <div className={cn("border-b border-line/50", isCollapsed && "hidden sm:block")}>
           <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted/70">
             Recurring
           </div>
@@ -165,7 +168,7 @@ export function SectionColumn({
       <SortableContext items={datedIds} strategy={verticalListSortingStrategy}>
         <ul
           data-dated-section={cfg.key}
-          className={cn("min-h-[40px]", collapsed && "hidden sm:block")}
+          className={cn("min-h-[40px]", isCollapsed && "hidden sm:block")}
         >
           {dated.map((item) => (
             <ItemRow
@@ -179,7 +182,7 @@ export function SectionColumn({
       </SortableContext>
 
       {canAdd && (
-      <div className={cn("border-t border-line/50 p-2", collapsed && "hidden sm:block")}>
+      <div className={cn("border-t border-line/50 p-2", isCollapsed && "hidden sm:block")}>
         {adding ? (
           <div className="space-y-2">
             <Input
