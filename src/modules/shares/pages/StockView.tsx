@@ -7,6 +7,7 @@ import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay } from "@/lib/utils";
 import { useStockByTicker, useTradesForTicker } from "../hooks";
 import { formatMoney, formatQty } from "../types";
+import { CompanyForecasts } from "../components/CompanyForecasts";
 import { ResearchLibrary } from "../components/ResearchLibrary";
 import { ResearchPanel } from "../components/ResearchPanel";
 import { StockForecasts } from "../components/StockForecasts";
@@ -110,6 +111,8 @@ export default function StockView() {
         </Button>
 
         <StockForecasts ticker={ticker} trades={trades} />
+
+        <CompanyForecasts ticker={ticker} trades={trades} />
 
         <ResearchLibrary ticker={ticker} stock={stock} trades={trades} />
 

@@ -32,6 +32,7 @@ import {
   type ModelAssumptions,
 } from "../model/engine";
 import { buildWorkbookBlob, downloadBlob, modelFileName } from "../model/excel";
+import { withAssumptions } from "../model/saved";
 
 interface SegDraft {
   name: string;
@@ -259,8 +260,10 @@ export default function ModelBuilder() {
       const blob = await buildWorkbookBlob(ticker, assumptions);
       const file = new File([blob], modelFileName(ticker), { type: blob.type });
       const uploaded = await uploadModelFiles([file]);
+      const createdAt = new Date().toISOString();
+      const withMeta = uploaded.map((m) => withAssumptions(m, assumptions, createdAt));
       await syncEngine.mutations.updateShareTrade(latest.id, {
-        models: [...(latest.models ?? []), ...uploaded],
+        models: [...(latest.models ?? []), ...withMeta],
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
