@@ -42,6 +42,8 @@ export interface SeededAssumptions {
   baseRevenue: number | null;
   revenueGrowth: number | null;
   grossMargin: number | null;
+  ebitMargin: number | null;
+  ebitdaMargin: number | null;
   opexPctRevenue: number | null;
   daPctRevenue: number | null;
   taxRate: number | null;

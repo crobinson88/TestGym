@@ -1,10 +1,18 @@
-// Render a model into a live .xlsx: assumptions are editable input cells and the
-// three statements are real Excel formulas referencing them, so the downloaded
-// workbook recalculates when you change an input. Cell `result` values are
-// pre-filled from the engine so the file shows numbers before Excel recalcs.
+// Render a model into a live .xlsx: assumptions (scalars + a segment table) are
+// editable input cells and the three statements are real Excel formulas
+// referencing them, so the workbook recalculates when you change an input. Cell
+// `result` values are pre-filled from the engine so the file shows numbers
+// before Excel recalcs. Layout is dynamic: one row per segment, and the income
+// statement varies with the chosen basis.
 //
 // exceljs is dynamically imported so it only loads when a model is generated.
-import { buildModel, type ModelAssumptions, type ModelOutput } from "./engine";
+import {
+  basisLabel,
+  buildModel,
+  defaultSegment,
+  type ModelAssumptions,
+  type ModelOutput,
+} from "./engine";
 
 function col(index: number): string {
   // 1 -> A, 2 -> B, … (model data starts at column B).
@@ -18,148 +26,216 @@ function col(index: number): string {
   return s;
 }
 
-// Assumptions sheet: each input on its own row, value in column B.
-const A = (row: number) => `Assumptions!$B$${row}`;
-const ASSUMPTIONS: { label: string; value: (a: ModelAssumptions) => number; pct?: boolean }[] = [
-  { label: "Start year", value: (a) => a.startYear }, // row 1
-  { label: "Base revenue", value: (a) => a.baseRevenue }, // 2
-  { label: "Revenue growth", value: (a) => a.revenueGrowth, pct: true }, // 3
-  { label: "Gross margin", value: (a) => a.grossMargin, pct: true }, // 4
-  { label: "Operating expenses % of revenue", value: (a) => a.opexPctRevenue, pct: true }, // 5
-  { label: "D&A % of revenue", value: (a) => a.daPctRevenue, pct: true }, // 6
-  { label: "Tax rate", value: (a) => a.taxRate, pct: true }, // 7
-  { label: "Capex % of revenue", value: (a) => a.capexPctRevenue, pct: true }, // 8
-  { label: "Receivable days (DSO)", value: (a) => a.dso }, // 9
-  { label: "Inventory days (DIO)", value: (a) => a.dio }, // 10
-  { label: "Payable days (DPO)", value: (a) => a.dpo }, // 11
-  { label: "Interest rate on debt", value: (a) => a.interestRate, pct: true }, // 12
-  { label: "Dividend payout", value: (a) => a.dividendPayout, pct: true }, // 13
-  { label: "Starting cash", value: (a) => a.startingCash }, // 14
-  { label: "Starting PP&E", value: (a) => a.startingPpe }, // 15
-  { label: "Starting debt", value: (a) => a.startingDebt }, // 16
-];
-
-// Model sheet row numbers.
-const R = {
-  revenue: 4,
-  cogs: 5,
-  gross: 6,
-  opex: 7,
-  da: 8,
-  ebit: 9,
+// Assumptions sheet scalar rows (value in column B).
+const SC = {
+  startYear: 1,
+  basis: 2,
+  opex: 3,
+  da: 4,
+  tax: 5,
+  capex: 6,
+  dso: 7,
+  dio: 8,
+  dpo: 9,
   interest: 10,
-  pretax: 11,
-  tax: 12,
-  ni: 13,
-  cash: 15,
-  ar: 16,
-  inv: 17,
-  ppe: 18,
-  totalAssets: 19,
-  ap: 20,
-  debt: 21,
-  totalLiab: 22,
-  equity: 23,
-  totalLE: 24,
-  check: 25,
-  cfNi: 27,
-  cfDa: 28,
-  cfNwc: 29,
-  cfo: 30,
-  capex: 31,
-  cfi: 32,
-  div: 33,
-  cff: 34,
-  netChange: 35,
-  endCash: 36,
+  dividend: 11,
+  cash0: 12,
+  ppe0: 13,
+  debt0: 14,
 } as const;
+const SEG_HEADER_ROW = 16;
+const SEG_FIRST_ROW = 17;
 
-interface RowDef {
-  r: number;
-  results: (m: ModelOutput) => number[];
-  cf?: boolean; // cash-flow rows have no base-year column
-  base?: (L: string) => string;
-  fc: (L: string, P: string) => string;
+const S = (row: number) => `Assumptions!$B$${row}`;
+const segBaseRev = (i: number) => `Assumptions!$B$${SEG_FIRST_ROW + i}`;
+const segGrowth = (i: number) => `Assumptions!$C$${SEG_FIRST_ROW + i}`;
+const segMargin = (i: number) => `Assumptions!$D$${SEG_FIRST_ROW + i}`;
+
+interface Line {
+  id: string;
+  label: string;
+  results: number[];
+  emphasis?: boolean;
+  cf?: boolean; // no base-year column
+  check?: boolean;
+}
+type Item = { header: string } | { line: Line };
+
+function isHeader(it: Item): it is { header: string } {
+  return "header" in it;
 }
 
-const ROWS: RowDef[] = [
-  { r: R.revenue, results: (m) => m.revenue, base: () => `=${A(2)}`, fc: (_L, P) => `=${P}${R.revenue}*(1+${A(3)})` },
-  { r: R.cogs, results: (m) => m.cogs, base: (L) => `=${L}${R.revenue}*(1-${A(4)})`, fc: (L) => `=${L}${R.revenue}*(1-${A(4)})` },
-  { r: R.gross, results: (m) => m.grossProfit, base: (L) => `=${L}${R.revenue}-${L}${R.cogs}`, fc: (L) => `=${L}${R.revenue}-${L}${R.cogs}` },
-  { r: R.opex, results: (m) => m.opex, base: (L) => `=${L}${R.revenue}*${A(5)}`, fc: (L) => `=${L}${R.revenue}*${A(5)}` },
-  { r: R.da, results: (m) => m.da, base: (L) => `=${L}${R.revenue}*${A(6)}`, fc: (L) => `=${L}${R.revenue}*${A(6)}` },
-  { r: R.ebit, results: (m) => m.ebit, base: (L) => `=${L}${R.gross}-${L}${R.opex}-${L}${R.da}`, fc: (L) => `=${L}${R.gross}-${L}${R.opex}-${L}${R.da}` },
-  { r: R.interest, results: (m) => m.interest, base: () => `=0`, fc: (_L, P) => `=${P}${R.debt}*${A(12)}` },
-  { r: R.pretax, results: (m) => m.pretax, base: (L) => `=${L}${R.ebit}-${L}${R.interest}`, fc: (L) => `=${L}${R.ebit}-${L}${R.interest}` },
-  { r: R.tax, results: (m) => m.tax, base: (L) => `=MAX(0,${L}${R.pretax}*${A(7)})`, fc: (L) => `=MAX(0,${L}${R.pretax}*${A(7)})` },
-  { r: R.ni, results: (m) => m.netIncome, base: (L) => `=${L}${R.pretax}-${L}${R.tax}`, fc: (L) => `=${L}${R.pretax}-${L}${R.tax}` },
+function layout(a: ModelAssumptions, m: ModelOutput): Item[] {
+  const segs = a.segments.length > 0 ? a.segments : [defaultSegment()];
+  const label = basisLabel(m.basis);
+  const items: Item[] = [];
 
-  { r: R.cash, results: (m) => m.cash, base: () => `=${A(14)}`, fc: (L, P) => `=${P}${R.cash}+${L}${R.netChange}` },
-  { r: R.ar, results: (m) => m.receivables, base: (L) => `=${A(9)}/365*${L}${R.revenue}`, fc: (L) => `=${A(9)}/365*${L}${R.revenue}` },
-  { r: R.inv, results: (m) => m.inventory, base: (L) => `=${A(10)}/365*${L}${R.cogs}`, fc: (L) => `=${A(10)}/365*${L}${R.cogs}` },
-  { r: R.ppe, results: (m) => m.ppe, base: () => `=${A(15)}`, fc: (L, P) => `=${P}${R.ppe}-${L}${R.capex}-${L}${R.da}` },
-  { r: R.totalAssets, results: (m) => m.totalAssets, base: (L) => `=SUM(${L}${R.cash}:${L}${R.ppe})`, fc: (L) => `=SUM(${L}${R.cash}:${L}${R.ppe})` },
-  { r: R.ap, results: (m) => m.payables, base: (L) => `=${A(11)}/365*${L}${R.cogs}`, fc: (L) => `=${A(11)}/365*${L}${R.cogs}` },
-  { r: R.debt, results: (m) => m.debt, base: () => `=${A(16)}`, fc: (_L, P) => `=${P}${R.debt}` },
-  { r: R.totalLiab, results: (m) => m.totalLiabilities, base: (L) => `=${L}${R.ap}+${L}${R.debt}`, fc: (L) => `=${L}${R.ap}+${L}${R.debt}` },
-  { r: R.equity, results: (m) => m.equity, base: (L) => `=${L}${R.totalAssets}-${L}${R.totalLiab}`, fc: (L, P) => `=${P}${R.equity}+${L}${R.ni}+${L}${R.div}` },
-  { r: R.totalLE, results: (m) => m.totalLiabEquity, base: (L) => `=${L}${R.totalLiab}+${L}${R.equity}`, fc: (L) => `=${L}${R.totalLiab}+${L}${R.equity}` },
-  { r: R.check, results: (m) => m.balanceCheck, base: (L) => `=${L}${R.totalAssets}-${L}${R.totalLE}`, fc: (L) => `=${L}${R.totalAssets}-${L}${R.totalLE}` },
+  items.push({ header: "REVENUE BY SEGMENT" });
+  segs.forEach((s, i) => items.push({ line: { id: `seg-rev-${i}`, label: s.name, results: m.segmentRevenue[i] } }));
+  items.push({ line: { id: "total-revenue", label: "Total revenue", results: m.revenue, emphasis: true } });
 
-  { r: R.cfNi, results: (m) => m.netIncome, cf: true, fc: (L) => `=${L}${R.ni}` },
-  { r: R.cfDa, results: (m) => m.da, cf: true, fc: (L) => `=${L}${R.da}` },
-  { r: R.cfNwc, results: (m) => m.changeInNwc.map((v) => -v), cf: true, fc: (L, P) => `=-((${L}${R.ar}+${L}${R.inv}-${L}${R.ap})-(${P}${R.ar}+${P}${R.inv}-${P}${R.ap}))` },
-  { r: R.cfo, results: (m) => m.cfo, cf: true, fc: (L) => `=${L}${R.cfNi}+${L}${R.cfDa}+${L}${R.cfNwc}` },
-  { r: R.capex, results: (m) => m.capex.map((v) => -v), cf: true, fc: (L) => `=-(${L}${R.revenue}*${A(8)})` },
-  { r: R.cfi, results: (m) => m.cfi, cf: true, fc: (L) => `=${L}${R.capex}` },
-  { r: R.div, results: (m) => m.dividends.map((v) => -v), cf: true, fc: (L) => `=-MAX(0,${L}${R.ni})*${A(13)}` },
-  { r: R.cff, results: (m) => m.cff, cf: true, fc: (L) => `=${L}${R.div}` },
-  { r: R.netChange, results: (m) => m.netChangeInCash, cf: true, fc: (L) => `=${L}${R.cfo}+${L}${R.cfi}+${L}${R.cff}` },
-  { r: R.endCash, results: (m) => m.cash, cf: true, fc: (L, P) => `=${P}${R.cash}+${L}${R.netChange}` },
-];
+  items.push({ header: `${label.toUpperCase()} BY SEGMENT` });
+  segs.forEach((s, i) => items.push({ line: { id: `seg-prof-${i}`, label: s.name, results: m.segmentProfit[i] } }));
+  items.push({ line: { id: "total-profit", label: `Total ${label.toLowerCase()}`, results: m.basisProfit, emphasis: true } });
 
-const LABELS: Record<number, string> = {
-  [R.revenue]: "Revenue",
-  [R.cogs]: "Cost of goods sold",
-  [R.gross]: "Gross profit",
-  [R.opex]: "Operating expenses",
-  [R.da]: "Depreciation & amortisation",
-  [R.ebit]: "EBIT",
-  [R.interest]: "Interest expense",
-  [R.pretax]: "Pre-tax income",
-  [R.tax]: "Tax",
-  [R.ni]: "Net income",
-  [R.cash]: "Cash",
-  [R.ar]: "Accounts receivable",
-  [R.inv]: "Inventory",
-  [R.ppe]: "Property, plant & equipment",
-  [R.totalAssets]: "Total assets",
-  [R.ap]: "Accounts payable",
-  [R.debt]: "Debt",
-  [R.totalLiab]: "Total liabilities",
-  [R.equity]: "Equity",
-  [R.totalLE]: "Total liabilities & equity",
-  [R.check]: "Balance check",
-  [R.cfNi]: "Net income",
-  [R.cfDa]: "Depreciation & amortisation",
-  [R.cfNwc]: "Change in working capital",
-  [R.cfo]: "Cash from operations",
-  [R.capex]: "Capital expenditure",
-  [R.cfi]: "Cash from investing",
-  [R.div]: "Dividends",
-  [R.cff]: "Cash from financing",
-  [R.netChange]: "Net change in cash",
-  [R.endCash]: "Ending cash",
-};
+  items.push({ header: "INCOME STATEMENT" });
+  items.push({ line: { id: "is-revenue", label: "Revenue", results: m.revenue, emphasis: true } });
+  if (m.basis === "gross_profit") {
+    items.push({ line: { id: "cogs", label: "Cost of goods sold", results: m.cogs } });
+    items.push({ line: { id: "gross", label: "Gross profit", results: m.grossProfit, emphasis: true } });
+    items.push({ line: { id: "opex", label: "Operating expenses", results: m.opex } });
+    items.push({ line: { id: "ebitda", label: "EBITDA", results: m.ebitda, emphasis: true } });
+    items.push({ line: { id: "da", label: "Depreciation & amortisation", results: m.da } });
+    items.push({ line: { id: "ebit", label: "EBIT", results: m.ebit, emphasis: true } });
+  } else if (m.basis === "ebitda") {
+    items.push({ line: { id: "ebitda", label: "EBITDA", results: m.ebitda, emphasis: true } });
+    items.push({ line: { id: "da", label: "Depreciation & amortisation", results: m.da } });
+    items.push({ line: { id: "ebit", label: "EBIT", results: m.ebit, emphasis: true } });
+  } else {
+    items.push({ line: { id: "ebitda", label: "EBITDA (memo)", results: m.ebitda, emphasis: true } });
+    items.push({ line: { id: "da", label: "Depreciation & amortisation", results: m.da } });
+    items.push({ line: { id: "ebit", label: "EBIT", results: m.ebit, emphasis: true } });
+  }
+  items.push({ line: { id: "interest", label: "Interest expense", results: m.interest } });
+  items.push({ line: { id: "pretax", label: "Pre-tax income", results: m.pretax } });
+  items.push({ line: { id: "tax", label: "Tax", results: m.tax } });
+  items.push({ line: { id: "ni", label: "Net income", results: m.netIncome, emphasis: true } });
 
-const SUBTOTAL_ROWS = new Set<number>([
-  R.gross, R.ebit, R.ni, R.totalAssets, R.totalLiab, R.totalLE,
-  R.cfo, R.cfi, R.cff, R.netChange, R.endCash,
-]);
+  items.push({ header: "BALANCE SHEET" });
+  items.push({ line: { id: "cash", label: "Cash", results: m.cash } });
+  items.push({ line: { id: "ar", label: "Accounts receivable", results: m.receivables } });
+  items.push({ line: { id: "inv", label: "Inventory", results: m.inventory } });
+  items.push({ line: { id: "ppe", label: "Property, plant & equipment", results: m.ppe } });
+  items.push({ line: { id: "total-assets", label: "Total assets", results: m.totalAssets, emphasis: true } });
+  items.push({ line: { id: "ap", label: "Accounts payable", results: m.payables } });
+  items.push({ line: { id: "debt", label: "Debt", results: m.debt } });
+  items.push({ line: { id: "total-liab", label: "Total liabilities", results: m.totalLiabilities, emphasis: true } });
+  items.push({ line: { id: "equity", label: "Equity", results: m.equity } });
+  items.push({ line: { id: "total-le", label: "Total liabilities & equity", results: m.totalLiabEquity, emphasis: true } });
+  items.push({ line: { id: "check", label: "Balance check", results: m.balanceCheck, check: true } });
+
+  items.push({ header: "CASH FLOW" });
+  items.push({ line: { id: "cf-ni", label: "Net income", results: m.netIncome, cf: true } });
+  items.push({ line: { id: "cf-da", label: "Depreciation & amortisation", results: m.da, cf: true } });
+  items.push({ line: { id: "cf-nwc", label: "Change in working capital", results: m.changeInNwc.map((v) => -v), cf: true } });
+  items.push({ line: { id: "cfo", label: "Cash from operations", results: m.cfo, emphasis: true, cf: true } });
+  items.push({ line: { id: "capex", label: "Capital expenditure", results: m.capex.map((v) => -v), cf: true } });
+  items.push({ line: { id: "cfi", label: "Cash from investing", results: m.cfi, emphasis: true, cf: true } });
+  items.push({ line: { id: "div", label: "Dividends", results: m.dividends.map((v) => -v), cf: true } });
+  items.push({ line: { id: "cff", label: "Cash from financing", results: m.cff, emphasis: true, cf: true } });
+  items.push({ line: { id: "net-change", label: "Net change in cash", results: m.netChangeInCash, emphasis: true, cf: true } });
+  items.push({ line: { id: "end-cash", label: "Ending cash", results: m.cash, emphasis: true, cf: true } });
+
+  return items;
+}
+
+// Formula (without leading '=') for a line in column L, prior column P. Returns
+// null where there's no cell (e.g. cash-flow rows in the base year).
+function formula(
+  id: string,
+  L: string,
+  P: string,
+  base: boolean,
+  basis: ModelAssumptions["basis"],
+  R: Record<string, number>,
+  segCount: number,
+): string | null {
+  const c = (key: string, column = L) => `${column}${R[key]}`;
+  const wc = basis === "gross_profit" ? "cogs" : "is-revenue";
+  const segRevFirst = R["seg-rev-0"];
+  const segRevLast = R[`seg-rev-${segCount - 1}`];
+  const segProfFirst = R["seg-prof-0"];
+  const segProfLast = R[`seg-prof-${segCount - 1}`];
+
+  if (id.startsWith("seg-rev-")) {
+    const i = Number(id.slice("seg-rev-".length));
+    return base ? segBaseRev(i) : `${P}${R[id]}*(1+${segGrowth(i)})`;
+  }
+  if (id.startsWith("seg-prof-")) {
+    const i = Number(id.slice("seg-prof-".length));
+    return `${c(`seg-rev-${i}`)}*${segMargin(i)}`;
+  }
+  switch (id) {
+    case "total-revenue":
+      return `SUM(${L}${segRevFirst}:${L}${segRevLast})`;
+    case "total-profit":
+      return `SUM(${L}${segProfFirst}:${L}${segProfLast})`;
+    case "is-revenue":
+      return `${c("total-revenue")}`;
+    case "cogs":
+      return `${c("is-revenue")}-${c("gross")}`;
+    case "gross":
+      return `${c("total-profit")}`;
+    case "opex":
+      return `${c("is-revenue")}*${S(SC.opex)}`;
+    case "ebitda":
+      if (basis === "gross_profit") return `${c("gross")}-${c("opex")}`;
+      if (basis === "ebitda") return `${c("total-profit")}`;
+      return `${c("ebit")}+${c("da")}`; // EBIT basis: memo
+    case "da":
+      return `${c("is-revenue")}*${S(SC.da)}`;
+    case "ebit":
+      if (basis === "ebit") return `${c("total-profit")}`;
+      return `${c("ebitda")}-${c("da")}`;
+    case "interest":
+      return base ? "0" : `${P}${R.debt}*${S(SC.interest)}`;
+    case "pretax":
+      return `${c("ebit")}-${c("interest")}`;
+    case "tax":
+      return `MAX(0,${c("pretax")}*${S(SC.tax)})`;
+    case "ni":
+      return `${c("pretax")}-${c("tax")}`;
+    case "cash":
+      return base ? `${S(SC.cash0)}` : `${P}${R.cash}+${c("net-change")}`;
+    case "ar":
+      return `${S(SC.dso)}/365*${c("is-revenue")}`;
+    case "inv":
+      return `${S(SC.dio)}/365*${c(wc)}`;
+    case "ppe":
+      return base ? `${S(SC.ppe0)}` : `${P}${R.ppe}-${c("capex")}-${c("da")}`;
+    case "total-assets":
+      return `SUM(${c("cash")}:${c("ppe")})`;
+    case "ap":
+      return `${S(SC.dpo)}/365*${c(wc)}`;
+    case "debt":
+      return base ? `${S(SC.debt0)}` : `${P}${R.debt}`;
+    case "total-liab":
+      return `${c("ap")}+${c("debt")}`;
+    case "equity":
+      return base ? `${c("total-assets")}-${c("total-liab")}` : `${P}${R.equity}+${c("ni")}+${c("div")}`;
+    case "total-le":
+      return `${c("total-liab")}+${c("equity")}`;
+    case "check":
+      return `${c("total-assets")}-${c("total-le")}`;
+    case "cf-ni":
+      return `${c("ni")}`;
+    case "cf-da":
+      return `${c("da")}`;
+    case "cf-nwc":
+      return `-((${c("ar")}+${c("inv")}-${c("ap")})-(${P}${R.ar}+${P}${R.inv}-${P}${R.ap}))`;
+    case "cfo":
+      return `${c("cf-ni")}+${c("cf-da")}+${c("cf-nwc")}`;
+    case "capex":
+      return `-(${c("is-revenue")}*${S(SC.capex)})`;
+    case "cfi":
+      return `${c("capex")}`;
+    case "div":
+      return `-MAX(0,${c("ni")})*${S(SC.dividend)}`;
+    case "cff":
+      return `${c("div")}`;
+    case "net-change":
+      return `${c("cfo")}+${c("cfi")}+${c("cff")}`;
+    case "end-cash":
+      return `${P}${R.cash}+${c("net-change")}`;
+    default:
+      return null;
+  }
+}
 
 export async function buildWorkbookBlob(ticker: string, a: ModelAssumptions): Promise<Blob> {
   const ExcelJS = (await import("exceljs")).default;
   const m = buildModel(a);
+  const segs = a.segments.length > 0 ? a.segments : [defaultSegment()];
   const wb = new ExcelJS.Workbook();
   wb.creator = "Gym Tracker — Shares";
   wb.created = new Date();
@@ -168,53 +244,105 @@ export async function buildWorkbookBlob(ticker: string, a: ModelAssumptions): Pr
   const asx = wb.addWorksheet("Assumptions");
   asx.getColumn(1).width = 32;
   asx.getColumn(2).width = 16;
-  ASSUMPTIONS.forEach((row, i) => {
-    const r = i + 1;
-    asx.getCell(`A${r}`).value = row.label;
-    const cell = asx.getCell(`B${r}`);
-    cell.value = row.value(a);
-    if (row.pct) cell.numFmt = "0.0%";
-    else if (r !== 1) cell.numFmt = "#,##0";
+  asx.getColumn(3).width = 12;
+  asx.getColumn(4).width = 12;
+
+  const scalar = (row: number, label: string, value: number | string, fmt?: string) => {
+    asx.getCell(`A${row}`).value = label;
+    const cell = asx.getCell(`B${row}`);
+    cell.value = value;
+    if (fmt) cell.numFmt = fmt;
     cell.font = { color: { argb: "FF1D4ED8" } }; // inputs in blue, model convention
+  };
+  scalar(SC.startYear, "Start year", a.startYear);
+  scalar(SC.basis, "Forecast basis", basisLabel(a.basis));
+  scalar(SC.opex, "Operating expenses % of revenue", a.opexPctRevenue, "0.0%");
+  scalar(SC.da, "D&A % of revenue", a.daPctRevenue, "0.0%");
+  scalar(SC.tax, "Tax rate", a.taxRate, "0.0%");
+  scalar(SC.capex, "Capex % of revenue", a.capexPctRevenue, "0.0%");
+  scalar(SC.dso, "Receivable days (DSO)", a.dso, "#,##0");
+  scalar(SC.dio, "Inventory days (DIO)", a.dio, "#,##0");
+  scalar(SC.dpo, "Payable days (DPO)", a.dpo, "#,##0");
+  scalar(SC.interest, "Interest rate on debt", a.interestRate, "0.0%");
+  scalar(SC.dividend, "Dividend payout", a.dividendPayout, "0.0%");
+  scalar(SC.cash0, "Starting cash", a.startingCash, "#,##0");
+  scalar(SC.ppe0, "Starting PP&E", a.startingPpe, "#,##0");
+  scalar(SC.debt0, "Starting debt", a.startingDebt, "#,##0");
+
+  const marginLbl = basisLabel(a.basis);
+  asx.getCell(`A${SEG_HEADER_ROW}`).value = "Segment";
+  asx.getCell(`B${SEG_HEADER_ROW}`).value = "Base revenue";
+  asx.getCell(`C${SEG_HEADER_ROW}`).value = "Growth";
+  asx.getCell(`D${SEG_HEADER_ROW}`).value = `${marginLbl} margin`;
+  asx.getRow(SEG_HEADER_ROW).font = { bold: true };
+  segs.forEach((s, i) => {
+    const r = SEG_FIRST_ROW + i;
+    asx.getCell(`A${r}`).value = s.name;
+    for (const [colLetter, val, fmt] of [
+      ["B", s.baseRevenue, "#,##0"],
+      ["C", s.revenueGrowth, "0.0%"],
+      ["D", s.margin, "0.0%"],
+    ] as const) {
+      const cell = asx.getCell(`${colLetter}${r}`);
+      cell.value = val;
+      cell.numFmt = fmt;
+      cell.font = { color: { argb: "FF1D4ED8" } };
+    }
   });
 
   // --- Model sheet ---
   const ws = wb.addWorksheet("Model");
-  ws.getColumn(1).width = 30;
+  ws.getColumn(1).width = 32;
   const cols = m.years.length; // base + forecast years
   for (let t = 0; t < cols; t++) ws.getColumn(2 + t).width = 14;
 
-  ws.getCell("A1").value = `${ticker} — 3-statement model`;
+  ws.getCell("A1").value = `${ticker} — 3-statement model (${basisLabel(a.basis)} basis)`;
   ws.getCell("A1").font = { bold: true, size: 14 };
 
-  // Year headers reference the start-year assumption so they shift with it.
   for (let t = 0; t < cols; t++) {
-    const c = col(2 + t);
-    const cell = ws.getCell(`${c}${2}`);
-    cell.value = { formula: `${A(1)}+${t}`, result: m.years[t] };
+    const cell = ws.getCell(`${col(2 + t)}2`);
+    cell.value = { formula: `${S(SC.startYear)}+${t}`, result: m.years[t] };
     cell.font = { bold: true };
     cell.alignment = { horizontal: "right" };
   }
 
-  ws.getCell("A3").value = "INCOME STATEMENT";
-  ws.getCell("A14").value = "BALANCE SHEET";
-  ws.getCell("A26").value = "CASH FLOW";
-  for (const hr of [3, 14, 26]) ws.getCell(`A${hr}`).font = { bold: true, color: { argb: "FF6B7280" } };
+  // Pass 1: assign a row to every header and line.
+  const items = layout(a, m);
+  const R: Record<string, number> = {};
+  const placed: { row: number; item: Item }[] = [];
+  let cursor = 3;
+  for (const it of items) {
+    if (isHeader(it)) {
+      placed.push({ row: cursor, item: it });
+    } else {
+      R[it.line.id] = cursor;
+      placed.push({ row: cursor, item: it });
+    }
+    cursor += 1;
+  }
 
-  for (const def of ROWS) {
-    ws.getCell(`A${def.r}`).value = LABELS[def.r];
-    if (SUBTOTAL_ROWS.has(def.r)) ws.getCell(`A${def.r}`).font = { bold: true };
-    const results = def.results(m);
+  // Pass 2: write labels, formulas and pre-computed results.
+  for (const { row, item } of placed) {
+    if (isHeader(item)) {
+      const cell = ws.getCell(`A${row}`);
+      cell.value = item.header;
+      cell.font = { bold: true, color: { argb: "FF6B7280" } };
+      continue;
+    }
+    const ln = item.line;
+    const labelCell = ws.getCell(`A${row}`);
+    labelCell.value = ln.label;
+    if (ln.emphasis) labelCell.font = { bold: true };
     for (let t = 0; t < cols; t++) {
+      if (ln.cf && t === 0) continue; // base year has no cash-flow column
       const L = col(2 + t);
       const P = col(1 + t);
-      const cell = ws.getCell(`${L}${def.r}`);
-      if (def.cf && t === 0) continue; // base year has no cash-flow column
-      const formula = t === 0 ? def.base?.(L) : def.fc(L, P);
-      if (!formula) continue;
-      cell.value = { formula: formula.slice(1), result: round(results[t]) };
+      const f = formula(ln.id, L, P, t === 0, a.basis, R, segs.length);
+      if (!f) continue;
+      const cell = ws.getCell(`${L}${row}`);
+      cell.value = { formula: f, result: round(ln.results[t]) };
       cell.numFmt = "#,##0;(#,##0)";
-      if (SUBTOTAL_ROWS.has(def.r)) cell.font = { bold: true };
+      if (ln.emphasis) cell.font = { bold: true };
     }
   }
 

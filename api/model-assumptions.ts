@@ -19,6 +19,8 @@ const Assumptions = z.object({
   baseRevenue: z.number().nullable(),
   revenueGrowth: z.number().nullable(),
   grossMargin: z.number().nullable(),
+  ebitMargin: z.number().nullable(),
+  ebitdaMargin: z.number().nullable(),
   opexPctRevenue: z.number().nullable(),
   daPctRevenue: z.number().nullable(),
   taxRate: z.number().nullable(),
@@ -75,11 +77,12 @@ export async function POST(request: Request): Promise<Response> {
         "You are an equity-research analyst building a 3-statement model. From the provided " +
         "company filings, propose forward-looking driver assumptions. Ground every figure in the " +
         "documents (latest full-year actuals and management guidance where available); do not " +
-        "invent numbers. Use DECIMALS for all rates and margins (e.g. 0.18 for 18%). Use the " +
-        "filing's own currency units for baseRevenue and the starting balances (cash, PP&E, debt) " +
-        "— take these from the most recent balance sheet. revenueGrowth is a forward annual rate. " +
-        "Return null for any input the filings don't support. Put a one-paragraph justification " +
-        "in `rationale`.",
+        "invent numbers. Use DECIMALS for all rates and margins (e.g. 0.18 for 18%). Provide all " +
+        "three of grossMargin, ebitMargin and ebitdaMargin where the filings disclose them (the " +
+        "user picks which basis to model on). Use the filing's own currency units for baseRevenue " +
+        "and the starting balances (cash, PP&E, debt) — take these from the most recent balance " +
+        "sheet. revenueGrowth is a forward annual rate. Return null for any input the filings " +
+        "don't support. Put a one-paragraph justification in `rationale`.",
       output_config: { format: zodOutputFormat(Assumptions) },
       messages: [
         {

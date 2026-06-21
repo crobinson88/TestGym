@@ -3,23 +3,37 @@
 // (LLMs don't); the Excel writer mirrors the same logic as live formulas so a
 // downloaded workbook recalculates identically.
 //
-// Conventions: index 0 is the base ("year 0") column — its balance sheet is the
-// opening position and equity is the balancing plug, so the sheet ties out in
-// every year. Forecast years run 1..years. All rates are decimals (0.1 = 10%).
+// Revenue and one profit line are forecast per business segment, then summed to
+// a consolidated P&L. Because companies disclose different lines, the basis is
+// chosen once for the whole model: Gross Profit, EBIT, or EBITDA. Everything
+// below that line (tax, D&A, capex, working capital, balance sheet) stays
+// consolidated. D&A is always an input — it bridges EBITDA↔EBIT and is the
+// cash-flow add-back.
+//
+// Index 0 is the base ("year 0") column — its balance sheet is the opening
+// position and equity is the balancing plug, so the sheet ties out every year.
+
+export type ForecastBasis = "gross_profit" | "ebit" | "ebitda";
+
+export interface Segment {
+  name: string;
+  baseRevenue: number;
+  revenueGrowth: number; // applied each forecast year
+  margin: number; // margin on the chosen basis (decimal)
+}
 
 export interface ModelAssumptions {
   startYear: number;
   years: number; // forecast years after the base year
-  baseRevenue: number;
-  revenueGrowth: number; // applied each forecast year
-  grossMargin: number; // gross profit / revenue
-  opexPctRevenue: number; // operating expenses (ex-D&A) / revenue
+  basis: ForecastBasis;
+  segments: Segment[];
+  opexPctRevenue: number; // operating expenses (ex-D&A) / revenue — Gross Profit basis only
   daPctRevenue: number; // depreciation & amortisation / revenue
   taxRate: number;
   capexPctRevenue: number;
   dso: number; // receivable days (on revenue)
-  dio: number; // inventory days (on COGS)
-  dpo: number; // payable days (on COGS)
+  dio: number; // inventory days (on COGS, or revenue when COGS isn't modelled)
+  dpo: number; // payable days (on COGS, or revenue when COGS isn't modelled)
   interestRate: number; // on beginning-of-year debt
   dividendPayout: number; // share of positive net income paid out
   startingCash: number;
@@ -28,12 +42,19 @@ export interface ModelAssumptions {
 }
 
 export interface ModelOutput {
+  basis: ForecastBasis;
+  segmentNames: string[];
   years: number[]; // calendar years, length = assumptions.years + 1
+  // Segment build-up
+  segmentRevenue: number[][]; // [segment][year]
+  segmentProfit: number[][]; // [segment][year], on the chosen basis
+  basisProfit: number[]; // consolidated total of the chosen profit line
   // Income statement
   revenue: number[];
-  cogs: number[];
-  grossProfit: number[];
-  opex: number[];
+  cogs: number[]; // 0 outside Gross Profit basis
+  grossProfit: number[]; // 0 outside Gross Profit basis
+  opex: number[]; // 0 outside Gross Profit basis
+  ebitda: number[];
   da: number[];
   ebit: number[];
   interest: number[];
@@ -62,13 +83,30 @@ export interface ModelOutput {
   netChangeInCash: number[];
 }
 
-export function defaultAssumptions(baseRevenue = 1_000_000): ModelAssumptions {
+export const BASES: { value: ForecastBasis; label: string; marginLabel: string }[] = [
+  { value: "gross_profit", label: "Gross Profit", marginLabel: "Gross margin" },
+  { value: "ebitda", label: "EBITDA", marginLabel: "EBITDA margin" },
+  { value: "ebit", label: "EBIT", marginLabel: "EBIT margin" },
+];
+
+export function basisLabel(b: ForecastBasis): string {
+  return BASES.find((x) => x.value === b)?.label ?? b;
+}
+
+export function marginLabel(b: ForecastBasis): string {
+  return BASES.find((x) => x.value === b)?.marginLabel ?? "Margin";
+}
+
+export function defaultSegment(name = "Consolidated", baseRevenue = 1_000_000): Segment {
+  return { name, baseRevenue, revenueGrowth: 0.1, margin: 0.55 };
+}
+
+export function defaultAssumptions(): ModelAssumptions {
   return {
     startYear: new Date().getFullYear(),
     years: 5,
-    baseRevenue,
-    revenueGrowth: 0.1,
-    grossMargin: 0.55,
+    basis: "gross_profit",
+    segments: [defaultSegment()],
     opexPctRevenue: 0.3,
     daPctRevenue: 0.05,
     taxRate: 0.21,
@@ -88,13 +126,27 @@ const DAYS = 365;
 
 export function buildModel(a: ModelAssumptions): ModelOutput {
   const n = Math.max(0, Math.floor(a.years)) + 1; // include base year
+  const segs = a.segments.length > 0 ? a.segments : [defaultSegment()];
   const z = () => Array<number>(n).fill(0);
 
   const years = Array.from({ length: n }, (_, t) => a.startYear + t);
-  const revenue = z();
+
+  // Segment build-up → consolidated revenue and the chosen profit line.
+  const segmentRevenue = segs.map((s) =>
+    Array.from({ length: n }, (_, t) => s.baseRevenue * (1 + s.revenueGrowth) ** t),
+  );
+  const segmentProfit = segs.map((s, i) => segmentRevenue[i].map((r) => r * s.margin));
+  const revenue = Array.from({ length: n }, (_, t) =>
+    segmentRevenue.reduce((sum, sr) => sum + sr[t], 0),
+  );
+  const basisProfit = Array.from({ length: n }, (_, t) =>
+    segmentProfit.reduce((sum, sp) => sum + sp[t], 0),
+  );
+
   const cogs = z();
   const grossProfit = z();
   const opex = z();
+  const ebitda = z();
   const da = z();
   const ebit = z();
   const interest = z();
@@ -121,12 +173,21 @@ export function buildModel(a: ModelAssumptions): ModelOutput {
   const netChangeInCash = z();
 
   for (let t = 0; t < n; t++) {
-    revenue[t] = t === 0 ? a.baseRevenue : revenue[t - 1] * (1 + a.revenueGrowth);
-    cogs[t] = revenue[t] * (1 - a.grossMargin);
-    grossProfit[t] = revenue[t] - cogs[t];
-    opex[t] = revenue[t] * a.opexPctRevenue;
     da[t] = revenue[t] * a.daPctRevenue;
-    ebit[t] = grossProfit[t] - opex[t] - da[t];
+
+    if (a.basis === "gross_profit") {
+      grossProfit[t] = basisProfit[t];
+      cogs[t] = revenue[t] - grossProfit[t];
+      opex[t] = revenue[t] * a.opexPctRevenue;
+      ebitda[t] = grossProfit[t] - opex[t];
+      ebit[t] = ebitda[t] - da[t];
+    } else if (a.basis === "ebitda") {
+      ebitda[t] = basisProfit[t];
+      ebit[t] = ebitda[t] - da[t];
+    } else {
+      ebit[t] = basisProfit[t];
+      ebitda[t] = ebit[t] + da[t];
+    }
 
     debt[t] = a.startingDebt; // flat debt schedule in v1
     interest[t] = t === 0 ? 0 : debt[t - 1] * a.interestRate;
@@ -134,9 +195,11 @@ export function buildModel(a: ModelAssumptions): ModelOutput {
     tax[t] = Math.max(0, pretax[t] * a.taxRate);
     netIncome[t] = pretax[t] - tax[t];
 
+    // Inventory/payable days sit on COGS where we model it, else on revenue.
+    const wcBase = a.basis === "gross_profit" ? cogs[t] : revenue[t];
     receivables[t] = (a.dso / DAYS) * revenue[t];
-    inventory[t] = (a.dio / DAYS) * cogs[t];
-    payables[t] = (a.dpo / DAYS) * cogs[t];
+    inventory[t] = (a.dio / DAYS) * wcBase;
+    payables[t] = (a.dpo / DAYS) * wcBase;
 
     if (t === 0) {
       cash[0] = a.startingCash;
@@ -166,11 +229,17 @@ export function buildModel(a: ModelAssumptions): ModelOutput {
   }
 
   return {
+    basis: a.basis,
+    segmentNames: segs.map((s) => s.name),
     years,
+    segmentRevenue,
+    segmentProfit,
+    basisProfit,
     revenue,
     cogs,
     grossProfit,
     opex,
+    ebitda,
     da,
     ebit,
     interest,
@@ -210,55 +279,84 @@ export interface Statement {
   rows: StatementRow[];
 }
 
-// Shape the output into the three statements for on-screen preview. Row order
-// here is presentational only; the Excel writer lays out its own grid.
+// Shape the output into preview statements. The income statement layout depends
+// on the basis; segment blocks appear only when there's more than one segment.
 export function toStatements(m: ModelOutput): Statement[] {
-  return [
-    {
-      title: "Income statement",
+  const out: Statement[] = [];
+  const label = basisLabel(m.basis);
+
+  if (m.segmentNames.length > 1) {
+    out.push({
+      title: "Revenue by segment",
       rows: [
-        { label: "Revenue", values: m.revenue, emphasis: true },
-        { label: "Cost of goods sold", values: m.cogs },
-        { label: "Gross profit", values: m.grossProfit, emphasis: true },
-        { label: "Operating expenses", values: m.opex },
-        { label: "Depreciation & amortisation", values: m.da },
-        { label: "EBIT", values: m.ebit, emphasis: true },
-        { label: "Interest expense", values: m.interest },
-        { label: "Pre-tax income", values: m.pretax },
-        { label: "Tax", values: m.tax },
-        { label: "Net income", values: m.netIncome, emphasis: true },
+        ...m.segmentNames.map((name, i) => ({ label: name, values: m.segmentRevenue[i] })),
+        { label: "Total revenue", values: m.revenue, emphasis: true },
       ],
-    },
-    {
-      title: "Balance sheet",
+    });
+    out.push({
+      title: `${label} by segment`,
       rows: [
-        { label: "Cash", values: m.cash },
-        { label: "Accounts receivable", values: m.receivables },
-        { label: "Inventory", values: m.inventory },
-        { label: "Property, plant & equipment", values: m.ppe },
-        { label: "Total assets", values: m.totalAssets, emphasis: true },
-        { label: "Accounts payable", values: m.payables },
-        { label: "Debt", values: m.debt },
-        { label: "Total liabilities", values: m.totalLiabilities, emphasis: true },
-        { label: "Equity", values: m.equity },
-        { label: "Total liabilities & equity", values: m.totalLiabEquity, emphasis: true },
-        { label: "Balance check", values: m.balanceCheck, check: true },
+        ...m.segmentNames.map((name, i) => ({ label: name, values: m.segmentProfit[i] })),
+        { label: `Total ${label.toLowerCase()}`, values: m.basisProfit, emphasis: true },
       ],
-    },
-    {
-      title: "Cash flow",
-      rows: [
-        { label: "Net income", values: m.netIncome },
-        { label: "Depreciation & amortisation", values: m.da },
-        { label: "Change in working capital", values: m.changeInNwc.map((v) => -v) },
-        { label: "Cash from operations", values: m.cfo, emphasis: true },
-        { label: "Capital expenditure", values: m.capex.map((v) => -v) },
-        { label: "Cash from investing", values: m.cfi, emphasis: true },
-        { label: "Dividends", values: m.dividends.map((v) => -v) },
-        { label: "Cash from financing", values: m.cff, emphasis: true },
-        { label: "Net change in cash", values: m.netChangeInCash, emphasis: true },
-        { label: "Ending cash", values: m.cash, emphasis: true },
-      ],
-    },
-  ];
+    });
+  }
+
+  const is: StatementRow[] = [{ label: "Revenue", values: m.revenue, emphasis: true }];
+  if (m.basis === "gross_profit") {
+    is.push({ label: "Cost of goods sold", values: m.cogs });
+    is.push({ label: "Gross profit", values: m.grossProfit, emphasis: true });
+    is.push({ label: "Operating expenses", values: m.opex });
+    is.push({ label: "EBITDA", values: m.ebitda, emphasis: true });
+    is.push({ label: "Depreciation & amortisation", values: m.da });
+    is.push({ label: "EBIT", values: m.ebit, emphasis: true });
+  } else if (m.basis === "ebitda") {
+    is.push({ label: "EBITDA", values: m.ebitda, emphasis: true });
+    is.push({ label: "Depreciation & amortisation", values: m.da });
+    is.push({ label: "EBIT", values: m.ebit, emphasis: true });
+  } else {
+    is.push({ label: "EBITDA (memo)", values: m.ebitda, emphasis: true });
+    is.push({ label: "Depreciation & amortisation", values: m.da });
+    is.push({ label: "EBIT", values: m.ebit, emphasis: true });
+  }
+  is.push({ label: "Interest expense", values: m.interest });
+  is.push({ label: "Pre-tax income", values: m.pretax });
+  is.push({ label: "Tax", values: m.tax });
+  is.push({ label: "Net income", values: m.netIncome, emphasis: true });
+  out.push({ title: "Income statement", rows: is });
+
+  out.push({
+    title: "Balance sheet",
+    rows: [
+      { label: "Cash", values: m.cash },
+      { label: "Accounts receivable", values: m.receivables },
+      { label: "Inventory", values: m.inventory },
+      { label: "Property, plant & equipment", values: m.ppe },
+      { label: "Total assets", values: m.totalAssets, emphasis: true },
+      { label: "Accounts payable", values: m.payables },
+      { label: "Debt", values: m.debt },
+      { label: "Total liabilities", values: m.totalLiabilities, emphasis: true },
+      { label: "Equity", values: m.equity },
+      { label: "Total liabilities & equity", values: m.totalLiabEquity, emphasis: true },
+      { label: "Balance check", values: m.balanceCheck, check: true },
+    ],
+  });
+
+  out.push({
+    title: "Cash flow",
+    rows: [
+      { label: "Net income", values: m.netIncome },
+      { label: "Depreciation & amortisation", values: m.da },
+      { label: "Change in working capital", values: m.changeInNwc.map((v) => -v) },
+      { label: "Cash from operations", values: m.cfo, emphasis: true },
+      { label: "Capital expenditure", values: m.capex.map((v) => -v) },
+      { label: "Cash from investing", values: m.cfi, emphasis: true },
+      { label: "Dividends", values: m.dividends.map((v) => -v) },
+      { label: "Cash from financing", values: m.cff, emphasis: true },
+      { label: "Net change in cash", values: m.netChangeInCash, emphasis: true },
+      { label: "Ending cash", values: m.cash, emphasis: true },
+    ],
+  });
+
+  return out;
 }

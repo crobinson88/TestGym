@@ -9,6 +9,7 @@ import {
   Plus,
   Save,
   Sparkles,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -16,22 +17,59 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
+import { cn } from "@/lib/utils";
 import { useTradesForTicker } from "../hooks";
 import { uploadModelFiles } from "../storage";
-import { readUploadDoc, seedModelAssumptions, type UploadDoc } from "../research";
-import { defaultAssumptions, buildModel, toStatements, type ModelAssumptions } from "../model/engine";
+import { readUploadDoc, seedModelAssumptions, type SeededAssumptions, type UploadDoc } from "../research";
+import {
+  BASES,
+  buildModel,
+  defaultAssumptions,
+  defaultSegment,
+  marginLabel,
+  toStatements,
+  type ForecastBasis,
+  type ModelAssumptions,
+} from "../model/engine";
 import { buildWorkbookBlob, downloadBlob, modelFileName } from "../model/excel";
 
-type Kind = "money" | "pct" | "int" | "year";
-type Key = keyof ModelAssumptions;
-
-interface FieldDef {
-  key: Key;
-  label: string;
-  kind: Kind;
+interface SegDraft {
+  name: string;
+  baseRevenue: string;
+  revenueGrowth: string; // percent
+  margin: string; // percent
 }
 
-const GROUPS: { title: string; fields: FieldDef[] }[] = [
+type ScalarKey =
+  | "startYear"
+  | "years"
+  | "opexPctRevenue"
+  | "daPctRevenue"
+  | "taxRate"
+  | "capexPctRevenue"
+  | "dso"
+  | "dio"
+  | "dpo"
+  | "interestRate"
+  | "dividendPayout"
+  | "startingCash"
+  | "startingPpe"
+  | "startingDebt";
+
+type Draft = { basis: ForecastBasis; segments: SegDraft[] } & Record<ScalarKey, string>;
+
+type Kind = "money" | "pct" | "int" | "year";
+
+const PCT_SCALARS = new Set<ScalarKey>([
+  "opexPctRevenue",
+  "daPctRevenue",
+  "taxRate",
+  "capexPctRevenue",
+  "interestRate",
+  "dividendPayout",
+]);
+
+const SCALAR_GROUPS: { title: string; fields: { key: ScalarKey; label: string; kind: Kind }[] }[] = [
   {
     title: "Horizon",
     fields: [
@@ -40,18 +78,10 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
     ],
   },
   {
-    title: "Growth & margins",
+    title: "Profitability & tax",
     fields: [
-      { key: "baseRevenue", label: "Base revenue", kind: "money" },
-      { key: "revenueGrowth", label: "Revenue growth", kind: "pct" },
-      { key: "grossMargin", label: "Gross margin", kind: "pct" },
-      { key: "opexPctRevenue", label: "Opex % of revenue", kind: "pct" },
+      { key: "opexPctRevenue", label: "Opex % of revenue", kind: "pct" }, // Gross Profit basis only
       { key: "daPctRevenue", label: "D&A % of revenue", kind: "pct" },
-    ],
-  },
-  {
-    title: "Capital & tax",
-    fields: [
       { key: "taxRate", label: "Tax rate", kind: "pct" },
       { key: "capexPctRevenue", label: "Capex % of revenue", kind: "pct" },
       { key: "interestRate", label: "Interest rate on debt", kind: "pct" },
@@ -76,42 +106,82 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
   },
 ];
 
-const KIND: Record<Key, Kind> = Object.fromEntries(
-  GROUPS.flatMap((g) => g.fields.map((f) => [f.key, f.kind])),
-) as Record<Key, Kind>;
-
-// Form values are display strings (percentages shown ×100); parsed back to the
-// engine's decimal assumptions for the live preview and export.
-function toForm(a: ModelAssumptions): Record<Key, string> {
-  const out = {} as Record<Key, string>;
-  for (const k of Object.keys(a) as Key[]) {
-    const v = a[k];
-    out[k] = KIND[k] === "pct" ? String(round(v * 100, 4)) : String(v);
-  }
-  return out;
-}
-
-function parseForm(form: Record<Key, string>): ModelAssumptions {
-  const base = defaultAssumptions();
-  const out = { ...base };
-  for (const k of Object.keys(form) as Key[]) {
-    const n = Number(form[k]);
-    if (!Number.isFinite(n)) continue;
-    out[k] = KIND[k] === "pct" ? n / 100 : n;
-  }
-  out.years = Math.min(10, Math.max(1, Math.round(out.years)));
-  return out;
-}
-
 function round(n: number, dp = 0): number {
   const f = 10 ** dp;
   return Math.round(n * f) / f;
+}
+const pct = (v: number) => String(round(v * 100, 4));
+
+function toDraft(a: ModelAssumptions): Draft {
+  return {
+    basis: a.basis,
+    segments: a.segments.map((s) => ({
+      name: s.name,
+      baseRevenue: String(s.baseRevenue),
+      revenueGrowth: pct(s.revenueGrowth),
+      margin: pct(s.margin),
+    })),
+    startYear: String(a.startYear),
+    years: String(a.years),
+    opexPctRevenue: pct(a.opexPctRevenue),
+    daPctRevenue: pct(a.daPctRevenue),
+    taxRate: pct(a.taxRate),
+    capexPctRevenue: pct(a.capexPctRevenue),
+    dso: String(a.dso),
+    dio: String(a.dio),
+    dpo: String(a.dpo),
+    interestRate: pct(a.interestRate),
+    dividendPayout: pct(a.dividendPayout),
+    startingCash: String(a.startingCash),
+    startingPpe: String(a.startingPpe),
+    startingDebt: String(a.startingDebt),
+  };
+}
+
+function parseDraft(d: Draft): ModelAssumptions {
+  const base = defaultAssumptions();
+  const num = (s: string, fallback: number) => {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const scalar = (k: ScalarKey, fallback: number) =>
+    PCT_SCALARS.has(k) ? num(d[k], fallback * 100) / 100 : num(d[k], fallback);
+  return {
+    startYear: Math.round(num(d.startYear, base.startYear)),
+    years: Math.min(10, Math.max(1, Math.round(num(d.years, base.years)))),
+    basis: d.basis,
+    segments: d.segments.map((s, i) => ({
+      name: s.name.trim() || `Segment ${i + 1}`,
+      baseRevenue: num(s.baseRevenue, 0),
+      revenueGrowth: num(s.revenueGrowth, 0) / 100,
+      margin: num(s.margin, 0) / 100,
+    })),
+    opexPctRevenue: scalar("opexPctRevenue", base.opexPctRevenue),
+    daPctRevenue: scalar("daPctRevenue", base.daPctRevenue),
+    taxRate: scalar("taxRate", base.taxRate),
+    capexPctRevenue: scalar("capexPctRevenue", base.capexPctRevenue),
+    dso: scalar("dso", base.dso),
+    dio: scalar("dio", base.dio),
+    dpo: scalar("dpo", base.dpo),
+    interestRate: scalar("interestRate", base.interestRate),
+    dividendPayout: scalar("dividendPayout", base.dividendPayout),
+    startingCash: scalar("startingCash", base.startingCash),
+    startingPpe: scalar("startingPpe", base.startingPpe),
+    startingDebt: scalar("startingDebt", base.startingDebt),
+  };
 }
 
 function fmt(n: number): string {
   const r = Math.round(n);
   if (Object.is(r, -0) || r === 0) return "0";
   return r < 0 ? `(${Math.abs(r).toLocaleString()})` : r.toLocaleString();
+}
+
+// The seeded margin to use depends on the chosen basis.
+function seededMargin(s: SeededAssumptions, basis: ForecastBasis): number | null {
+  if (basis === "gross_profit") return s.grossMargin;
+  if (basis === "ebitda") return s.ebitdaMargin;
+  return s.ebitMargin;
 }
 
 export default function ModelBuilder() {
@@ -122,19 +192,18 @@ export default function ModelBuilder() {
   const trades = useTradesForTicker(ticker);
   const latest = trades && trades.length > 0 ? trades[0] : null;
 
-  const [form, setForm] = useState<Record<Key, string>>(() => toForm(defaultAssumptions()));
+  const [draft, setDraft] = useState<Draft>(() => toDraft(defaultAssumptions()));
   const [busy, setBusy] = useState<null | "download" | "save">(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Seeding state
   const [seedUrls, setSeedUrls] = useState<string[]>([]);
   const [seedDocs, setSeedDocs] = useState<UploadDoc[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [rationale, setRationale] = useState<string | null>(null);
 
-  const assumptions = useMemo(() => parseForm(form), [form]);
+  const assumptions = useMemo(() => parseDraft(draft), [draft]);
   const model = useMemo(() => buildModel(assumptions), [assumptions]);
   const statements = useMemo(() => toStatements(model), [model]);
   const maxImbalance = useMemo(
@@ -142,8 +211,30 @@ export default function ModelBuilder() {
     [model],
   );
 
-  function setField(k: Key, v: string) {
-    setForm((prev) => ({ ...prev, [k]: v }));
+  function setScalar(k: ScalarKey, v: string) {
+    setDraft((prev) => ({ ...prev, [k]: v }));
+  }
+  function setBasis(basis: ForecastBasis) {
+    setDraft((prev) => ({ ...prev, basis }));
+  }
+  function setSeg(i: number, patch: Partial<SegDraft>) {
+    setDraft((prev) => ({
+      ...prev,
+      segments: prev.segments.map((s, j) => (j === i ? { ...s, ...patch } : s)),
+    }));
+  }
+  function addSegment() {
+    const s = defaultSegment(`Segment ${draft.segments.length + 1}`, 0);
+    setDraft((prev) => ({
+      ...prev,
+      segments: [
+        ...prev.segments,
+        { name: s.name, baseRevenue: "0", revenueGrowth: pct(s.revenueGrowth), margin: pct(s.margin) },
+      ],
+    }));
+  }
+  function removeSegment(i: number) {
+    setDraft((prev) => ({ ...prev, segments: prev.segments.filter((_, j) => j !== i) }));
   }
 
   async function download() {
@@ -173,12 +264,8 @@ export default function ModelBuilder() {
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? "Couldn't upload the model — check your connection. You can still download it."
-          : "Save failed",
-      );
+    } catch {
+      setError("Couldn't upload the model — check your connection. You can still download it.");
     } finally {
       setBusy(null);
     }
@@ -198,18 +285,37 @@ export default function ModelBuilder() {
     setSeedError(null);
     setRationale(null);
     try {
-      const seeded = await seedModelAssumptions({ ticker, urls, files: seedDocs }, token);
-      setForm((prev) => {
+      const s = await seedModelAssumptions({ ticker, urls, files: seedDocs }, token);
+      setDraft((prev) => {
         const next = { ...prev };
-        for (const k of Object.keys(prev) as Key[]) {
-          const v = (seeded as unknown as Record<string, number | string | null>)[k];
+        // Scalars
+        const apply = (k: ScalarKey, v: number | null) => {
           if (typeof v === "number" && Number.isFinite(v)) {
-            next[k] = KIND[k] === "pct" ? String(round(v * 100, 4)) : String(v);
+            next[k] = PCT_SCALARS.has(k) ? pct(v) : String(v);
           }
-        }
+        };
+        apply("opexPctRevenue", s.opexPctRevenue);
+        apply("daPctRevenue", s.daPctRevenue);
+        apply("taxRate", s.taxRate);
+        apply("capexPctRevenue", s.capexPctRevenue);
+        apply("dso", s.dso);
+        apply("dio", s.dio);
+        apply("dpo", s.dpo);
+        apply("interestRate", s.interestRate);
+        apply("dividendPayout", s.dividendPayout);
+        apply("startingCash", s.startingCash);
+        apply("startingPpe", s.startingPpe);
+        apply("startingDebt", s.startingDebt);
+        // First segment from the consolidated figures Claude found.
+        const margin = seededMargin(s, prev.basis);
+        const seg = { ...prev.segments[0] };
+        if (typeof s.baseRevenue === "number") seg.baseRevenue = String(s.baseRevenue);
+        if (typeof s.revenueGrowth === "number") seg.revenueGrowth = pct(s.revenueGrowth);
+        if (typeof margin === "number") seg.margin = pct(margin);
+        next.segments = prev.segments.map((x, i) => (i === 0 ? seg : x));
         return next;
       });
-      setRationale(seeded.rationale ?? null);
+      setRationale(s.rationale ?? null);
     } catch (e) {
       setSeedError(e instanceof Error ? e.message : "Seeding failed");
     } finally {
@@ -218,6 +324,7 @@ export default function ModelBuilder() {
   }
 
   const seedSources = seedUrls.filter((u) => u.trim()).length + seedDocs.length;
+  const marginLbl = marginLabel(draft.basis);
 
   return (
     <div className="flex h-full flex-col">
@@ -240,8 +347,8 @@ export default function ModelBuilder() {
             <h2 className="text-base font-semibold">Seed assumptions from filings</h2>
           </div>
           <p className="text-xs text-muted">
-            Add a 10-K / annual report and Claude proposes the drivers below. You stay in control —
-            edit anything before exporting.
+            Add a 10-K / annual report and Claude proposes the drivers below. It fills the first
+            segment plus the consolidated assumptions — edit anything before exporting.
           </p>
 
           {seedUrls.map((url, i) => (
@@ -331,33 +438,103 @@ export default function ModelBuilder() {
           )}
         </section>
 
-        {/* Assumptions form */}
-        {GROUPS.map((group) => (
-          <section key={group.title} className="space-y-3 rounded-2xl border border-line bg-surface p-4">
-            <h2 className="text-xs uppercase tracking-wider text-muted">{group.title}</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {group.fields.map((f) => (
-                <label key={f.key} className="block space-y-1">
-                  <span className="text-xs text-muted">
-                    {f.label}
-                    {f.kind === "pct" ? " (%)" : ""}
-                  </span>
+        {/* Basis + segments */}
+        <section className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+          <h2 className="text-xs uppercase tracking-wider text-muted">Forecast basis</h2>
+          <div className="grid grid-cols-3 gap-2">
+            {BASES.map((b) => (
+              <button
+                key={b.value}
+                onClick={() => setBasis(b.value)}
+                className={cn(
+                  "h-12 rounded-xl border text-sm font-semibold transition active:scale-[0.98]",
+                  draft.basis === b.value
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted">
+            Forecast each segment by revenue and its {marginLbl.toLowerCase()}. Segments sum to a
+            consolidated P&L.
+          </p>
+
+          {draft.segments.map((s, i) => (
+            <div key={i} className="space-y-2 rounded-xl border border-line bg-surface2 p-3">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={s.name}
+                  onChange={(e) => setSeg(i, { name: e.target.value })}
+                  placeholder={`Segment ${i + 1}`}
+                />
+                <button
+                  onClick={() => removeSegment(i)}
+                  disabled={draft.segments.length <= 1}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-surface disabled:opacity-30"
+                  aria-label="Remove segment"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Labeled label="Base revenue">
                   <Input
                     type="number"
                     inputMode="decimal"
-                    value={form[f.key]}
-                    onChange={(e) => setField(f.key, e.target.value)}
+                    value={s.baseRevenue}
+                    onChange={(e) => setSeg(i, { baseRevenue: e.target.value })}
                   />
-                </label>
-              ))}
+                </Labeled>
+                <Labeled label="Growth (%)">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={s.revenueGrowth}
+                    onChange={(e) => setSeg(i, { revenueGrowth: e.target.value })}
+                  />
+                </Labeled>
+                <Labeled label={`${marginLbl} (%)`}>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={s.margin}
+                    onChange={(e) => setSeg(i, { margin: e.target.value })}
+                  />
+                </Labeled>
+              </div>
+            </div>
+          ))}
+          <Button variant="secondary" size="sm" onClick={addSegment} className="w-full">
+            <Plus className="mr-1 h-4 w-4" /> Add segment
+          </Button>
+        </section>
+
+        {/* Consolidated assumptions */}
+        {SCALAR_GROUPS.map((group) => (
+          <section key={group.title} className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+            <h2 className="text-xs uppercase tracking-wider text-muted">{group.title}</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {group.fields
+                .filter((f) => f.key !== "opexPctRevenue" || draft.basis === "gross_profit")
+                .map((f) => (
+                  <Labeled key={f.key} label={`${f.label}${f.kind === "pct" ? " (%)" : ""}`}>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      value={draft[f.key]}
+                      onChange={(e) => setScalar(f.key, e.target.value)}
+                    />
+                  </Labeled>
+                ))}
             </div>
           </section>
         ))}
 
         {/* Live preview */}
-        <div
-          className={cnCheck(maxImbalance)}
-        >
+        <div className={cnCheck(maxImbalance)}>
           {maxImbalance < 1
             ? "Balance sheet ties out ✓"
             : `Balance sheet off by ${fmt(maxImbalance)} — check inputs`}
@@ -421,12 +598,7 @@ export default function ModelBuilder() {
           </p>
         )}
         <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={download}
-            disabled={busy !== null}
-          >
+          <Button variant="secondary" className="flex-1" onClick={download} disabled={busy !== null}>
             <Download className="mr-2 h-5 w-5" />
             {busy === "download" ? "Building…" : "Download .xlsx"}
           </Button>
@@ -445,6 +617,15 @@ export default function ModelBuilder() {
         </div>
       </div>
     </div>
+  );
+}
+
+function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block space-y-1">
+      <span className="text-xs text-muted">{label}</span>
+      {children}
+    </label>
   );
 }
 
