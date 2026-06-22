@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { BookOpen, ScrollText, Sparkles, Target } from "lucide-react";
+import { BookMarked, BookOpen, ChevronRight, ScrollText, Sparkles, Target } from "lucide-react";
 import { cn, relativeDay } from "@/lib/utils";
 import { useFrenchStats } from "../hooks";
 import { pct, type KindStats } from "../stats";
@@ -57,6 +57,17 @@ export default function FrenchHome() {
             <div className="text-lg font-semibold">New rules test</div>
             <div className="text-sm text-muted">10 grammar questions</div>
           </div>
+        </button>
+        <button
+          onClick={() => navigate("/french/rules")}
+          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-3.5 text-left transition active:scale-[0.98]"
+        >
+          <BookMarked className="h-6 w-6 shrink-0 text-muted" />
+          <div className="flex-1">
+            <div className="font-semibold">Review grammar rules</div>
+            <div className="text-sm text-muted">Read the reference guide</div>
+          </div>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted" />
         </button>
       </section>
 

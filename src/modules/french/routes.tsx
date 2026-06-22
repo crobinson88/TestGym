@@ -3,6 +3,7 @@ import { Route } from "react-router-dom";
 
 const FrenchHome = lazy(() => import("./pages/FrenchHome"));
 const TestRunner = lazy(() => import("./pages/TestRunner"));
+const GrammarReview = lazy(() => import("./pages/GrammarReview"));
 
 function Fallback() {
   return <div className="p-6 text-center text-muted">Loading French…</div>;
@@ -16,6 +17,7 @@ export function frenchRoutes() {
   return (
     <Route path="/french">
       <Route index element={wrap(<FrenchHome />)} />
+      <Route path="rules" element={wrap(<GrammarReview />)} />
       <Route path="test/:kind" element={wrap(<TestRunner />)} />
     </Route>
   );

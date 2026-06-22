@@ -143,13 +143,19 @@ export default function Dashboard() {
         </>
       )}
 
-      {frenchAccuracy && frenchAccuracy.some((d) => d.vocab !== null || d.rules !== null) && (
+      {frenchAccuracy && (
         <section>
           <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
             French accuracy · last 8 weeks
           </h2>
           <div className="rounded-2xl border border-line bg-surface p-3">
-            <FrenchAccuracyChart data={frenchAccuracy} />
+            {frenchAccuracy.some((d) => d.vocab !== null || d.rules !== null) ? (
+              <FrenchAccuracyChart data={frenchAccuracy} />
+            ) : (
+              <div className="py-10 text-center text-sm text-muted">
+                No French tests yet — take a vocab or rules test to start tracking accuracy.
+              </div>
+            )}
           </div>
         </section>
       )}

@@ -11,3 +11,5 @@ export {
 export type { Question } from "./quiz";
 export { VOCAB, VERBS, WORDS } from "./data/vocab";
 export { RULE_QUESTIONS } from "./data/rules";
+export { GUIDE } from "./data/guide";
+export type { GuideSection, GuidePoint, GuideExample, GuidePointKind } from "./data/guide";
