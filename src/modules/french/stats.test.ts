@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FrenchAttemptRow } from "@/lib/database.types";
-import { computeStats, weeklyAccuracy } from "./stats";
+import { computeStats, computeVocabHistory, vocabKeyFromQuestionId, weeklyAccuracy } from "./stats";
 
 function attempt(over: Partial<FrenchAttemptRow>): FrenchAttemptRow {
   return {
@@ -73,6 +73,56 @@ describe("computeStats", () => {
     expect(stats.totalTests).toBe(0);
     expect(stats.byKind.vocab.accuracy).toBe(0);
     expect(stats.byKind.rules.tests).toBe(0);
+  });
+});
+
+describe("vocabKeyFromQuestionId", () => {
+  it("extracts the French word from a vocab id", () => {
+    expect(vocabKeyFromQuestionId("vocab:être:fr2en")).toBe("être");
+    expect(vocabKeyFromQuestionId("vocab:le chien:en2fr")).toBe("le chien");
+  });
+
+  it("returns null for non-vocab ids", () => {
+    expect(vocabKeyFromQuestionId("r1")).toBeNull();
+    expect(vocabKeyFromQuestionId("vocab:incomplete")).toBeNull();
+  });
+});
+
+describe("computeVocabHistory", () => {
+  it("aggregates a word across directions and tracks the latest showing", () => {
+    const history = computeVocabHistory([
+      attempt({
+        started_at: "2026-06-01T10:00:00Z",
+        details: [{ questionId: "vocab:être:fr2en", prompt: "être", correct: true }],
+      }),
+      attempt({
+        started_at: "2026-06-05T10:00:00Z",
+        details: [{ questionId: "vocab:être:en2fr", prompt: "to be", correct: false }],
+      }),
+    ]);
+    const h = history.get("être")!;
+    expect(h.seen).toBe(2);
+    expect(h.correct).toBe(1);
+    expect(h.lastShownAt).toBe("2026-06-05T10:00:00Z");
+  });
+
+  it("ignores rules attempts, soft-deleted attempts and non-vocab details", () => {
+    const history = computeVocabHistory([
+      attempt({
+        kind: "rules",
+        details: [{ questionId: "r1", prompt: "rule", correct: true }],
+      }),
+      attempt({
+        deleted_at: "2026-06-10T00:00:00Z",
+        details: [{ questionId: "vocab:avoir:fr2en", prompt: "avoir", correct: true }],
+      }),
+      attempt({
+        details: [{ questionId: "vocab:faire:fr2en", prompt: "faire", correct: true }],
+      }),
+    ]);
+    expect(history.has("avoir")).toBe(false);
+    expect(history.has("faire")).toBe(true);
+    expect(history.size).toBe(1);
   });
 });
 

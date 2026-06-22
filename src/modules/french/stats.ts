@@ -97,6 +97,44 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+// Per-word recall history, keyed by the French word, aggregated across both test
+// directions (a word is the same study item whether shown fr→en or en→fr).
+export interface VocabWordHistory {
+  seen: number;
+  correct: number;
+  lastShownAt: string | null; // attempt started_at of the most recent showing
+}
+
+// Pull the French word out of a vocab questionId (`vocab:{fr}:{direction}`). The
+// word itself never contains a colon, but join the middle defensively. Returns
+// null for non-vocab ids (e.g. rule questions).
+export function vocabKeyFromQuestionId(questionId: string): string | null {
+  const parts = questionId.split(":");
+  if (parts[0] !== "vocab" || parts.length < 3) return null;
+  return parts.slice(1, -1).join(":");
+}
+
+// Build a map of every vocab word the learner has been tested on, so a running
+// test can flag each prompt as new or show its prior recall.
+export function computeVocabHistory(
+  attempts: readonly FrenchAttemptRow[],
+): Map<string, VocabWordHistory> {
+  const map = new Map<string, VocabWordHistory>();
+  for (const a of attempts) {
+    if (a.deleted_at || a.kind !== "vocab") continue;
+    for (const d of a.details ?? []) {
+      const key = vocabKeyFromQuestionId(d.questionId);
+      if (!key) continue;
+      const h = map.get(key) ?? { seen: 0, correct: 0, lastShownAt: null };
+      h.seen += 1;
+      if (d.correct) h.correct += 1;
+      if (!h.lastShownAt || a.started_at > h.lastShownAt) h.lastShownAt = a.started_at;
+      map.set(key, h);
+    }
+  }
+  return map;
+}
+
 // One week's accuracy per kind, as a 0..100 percentage. `null` means no test of
 // that kind was taken that week, so the chart can leave a gap instead of a zero.
 export interface WeekAccuracyPoint {

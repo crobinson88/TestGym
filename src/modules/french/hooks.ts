@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { addDays, todayIsoDate, weekStart } from "@/lib/utils";
-import { computeStats, weeklyAccuracy } from "./stats";
+import { computeStats, computeVocabHistory, weeklyAccuracy } from "./stats";
 
 export function useFrenchAttempts() {
   return useLiveQuery(async () => {
@@ -18,6 +18,13 @@ export function useFrenchStats() {
   return useLiveQuery(async () => {
     const all = await db.french_attempts.toArray();
     return computeStats(all);
+  }, []);
+}
+
+export function useVocabHistory() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return computeVocabHistory(all);
   }, []);
 }
 

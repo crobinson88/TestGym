@@ -3,13 +3,44 @@ import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-
 import { Check, ChevronRight, RotateCcw, Sparkles, X } from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { syncEngine } from "@/lib/sync";
-import { cn } from "@/lib/utils";
+import { cn, relativeDay } from "@/lib/utils";
 import { generateTest, TEST_SIZE, type Question, type VocabDirection } from "../quiz";
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
+import { useVocabHistory } from "../hooks";
+import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
   return k === "vocab" || k === "rules";
+}
+
+// Flags the current vocab prompt as new, or shows its prior recall (times shown,
+// when last seen, % correct). Renders nothing until the history has loaded.
+function WordHistoryBadge({
+  questionId,
+  history,
+}: {
+  questionId: string;
+  history: Map<string, VocabWordHistory> | undefined;
+}) {
+  if (!history) return null;
+  const key = vocabKeyFromQuestionId(questionId);
+  const h = key ? history.get(key) : undefined;
+
+  if (!h || h.seen === 0) {
+    return (
+      <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+        <Sparkles className="h-3.5 w-3.5" /> New word
+      </span>
+    );
+  }
+
+  return (
+    <div className="mt-3 text-xs text-muted">
+      Seen {h.seen}× · last {relativeDay(h.lastShownAt!.slice(0, 10))} ·{" "}
+      {Math.round((h.correct / h.seen) * 100)}% correct
+    </div>
+  );
 }
 
 export default function TestRunner() {
@@ -36,6 +67,10 @@ export default function TestRunner() {
   const [details, setDetails] = useState<FrenchAttemptDetail[]>([]);
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Snapshotted on mount; the in-progress test isn't persisted until it finishes,
+  // so this reflects prior tests only — each prompt's "seen before" is honest.
+  const vocabHistory = useVocabHistory();
 
   if (!isKind(kind)) return <Navigate to="/french" replace />;
   if (questions.length === 0) return <Navigate to="/french" replace />;
@@ -130,6 +165,7 @@ export default function TestRunner() {
       <div className="mt-6 mb-8">
         <div className="text-xs uppercase tracking-wider text-muted">{q.sub}</div>
         <h2 className="mt-2 text-3xl font-bold leading-tight">{q.prompt}</h2>
+        {kind === "vocab" && <WordHistoryBadge questionId={q.id} history={vocabHistory} />}
       </div>
 
       <div className="flex flex-col gap-3">
