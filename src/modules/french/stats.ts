@@ -1,0 +1,97 @@
+import type { FrenchAttemptRow, FrenchTestKind } from "@/lib/database.types";
+
+export interface KindStats {
+  kind: FrenchTestKind;
+  tests: number;
+  questions: number;
+  correct: number;
+  accuracy: number; // 0..1 over all questions of this kind
+  bestAccuracy: number; // best single completed test
+  lastAt: string | null;
+}
+
+export interface MissedItem {
+  questionId: string;
+  prompt: string;
+  seen: number;
+  wrong: number;
+}
+
+export interface FrenchStats {
+  byKind: Record<FrenchTestKind, KindStats>;
+  totalTests: number;
+  recent: FrenchAttemptRow[];
+  missed: MissedItem[];
+}
+
+const KINDS: FrenchTestKind[] = ["vocab", "rules"];
+
+function emptyKind(kind: FrenchTestKind): KindStats {
+  return {
+    kind,
+    tests: 0,
+    questions: 0,
+    correct: 0,
+    accuracy: 0,
+    bestAccuracy: 0,
+    lastAt: null,
+  };
+}
+
+// Aggregate completed attempts into headline stats per kind plus the most-missed
+// individual questions (across every attempt's per-question detail).
+export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats {
+  const live = attempts
+    .filter((a) => !a.deleted_at)
+    .slice()
+    .sort((a, b) => (a.started_at < b.started_at ? 1 : a.started_at > b.started_at ? -1 : 0));
+
+  const byKind: Record<FrenchTestKind, KindStats> = {
+    vocab: emptyKind("vocab"),
+    rules: emptyKind("rules"),
+  };
+
+  const missedMap = new Map<string, MissedItem>();
+
+  for (const a of live) {
+    const k = byKind[a.kind];
+    if (!k) continue;
+    k.tests += 1;
+    k.questions += a.total;
+    k.correct += a.correct;
+    const acc = a.total > 0 ? a.correct / a.total : 0;
+    if (acc > k.bestAccuracy) k.bestAccuracy = acc;
+    if (!k.lastAt || a.started_at > k.lastAt) k.lastAt = a.started_at;
+
+    for (const d of a.details ?? []) {
+      const m = missedMap.get(d.questionId) ?? {
+        questionId: d.questionId,
+        prompt: d.prompt,
+        seen: 0,
+        wrong: 0,
+      };
+      m.seen += 1;
+      if (!d.correct) m.wrong += 1;
+      missedMap.set(d.questionId, m);
+    }
+  }
+
+  for (const kind of KINDS) {
+    const k = byKind[kind];
+    k.accuracy = k.questions > 0 ? k.correct / k.questions : 0;
+  }
+
+  const missed = [...missedMap.values()]
+    .filter((m) => m.wrong > 0)
+    .sort((a, b) => b.wrong - a.wrong || b.seen - a.seen)
+    .slice(0, 10);
+
+  return {
+    byKind,
+    totalTests: live.length,
+    recent: live.slice(0, 10),
+    missed,
+  };
+}
+
+export const pct = (x: number) => `${Math.round(x * 100)}%`;

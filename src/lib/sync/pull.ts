@@ -3,6 +3,7 @@ import type {
   CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  FrenchAttemptRow,
   MetActivityRow,
   ForecastRow,
   SetRow,
@@ -231,6 +232,25 @@ async function mergeForecasts(db: GymDB, rows: ForecastRow[]) {
   });
 }
 
+async function mergeFrenchAttempts(db: GymDB, rows: FrenchAttemptRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.french_attempts, async () => {
+    for (const remote of rows) {
+      const local = await db.french_attempts.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.french_attempts.put({
+          ...remote,
+          total: Number(remote.total),
+          correct: Number(remote.correct),
+          duration_ms: remote.duration_ms === null ? null : Number(remote.duration_ms),
+          details: remote.details ?? [],
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -251,6 +271,7 @@ const META_KEYS: Record<SyncTable, string> = {
   share_trades: "last_pull_share_trades",
   stocks: "last_pull_stocks",
   forecasts: "last_pull_forecasts",
+  french_attempts: "last_pull_french_attempts",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -278,6 +299,7 @@ export function createPull({ client, db, log }: PullDeps) {
       share_trades: 0,
       stocks: 0,
       forecasts: 0,
+      french_attempts: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -350,12 +372,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("stocks", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "forecasts") {
           const rows = await fetchSince<ForecastRow>(client, "forecasts", since);
           await mergeForecasts(db, rows);
           fetched.forecasts = rows.length;
           if (rows.length > 0) {
             await writeMark("forecasts", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<FrenchAttemptRow>(client, "french_attempts", since);
+          await mergeFrenchAttempts(db, rows);
+          fetched.french_attempts = rows.length;
+          if (rows.length > 0) {
+            await writeMark("french_attempts", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {
