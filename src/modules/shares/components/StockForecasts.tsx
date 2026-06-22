@@ -9,6 +9,9 @@ import type { LocalShareTrade } from "@/lib/db";
 import type { TradeCurrency } from "../types";
 import { CURRENCIES, formatCagr, formatMoney, impliedCagr } from "../types";
 import { useForecastsForTicker } from "../hooks";
+import { buildModel } from "../model/engine";
+import { latestGeneratedModel } from "../model/saved";
+import { computeTarget, derivation, METHODS, type ValMethod } from "../model/valuation";
 
 // Format a date-only string without the UTC->local off-by-one shift.
 function ymd(iso: string): string {
@@ -101,6 +104,7 @@ export function StockForecasts({
         <ForecastForm
           ticker={ticker}
           defaultCurrency={defaultCurrency}
+          trades={trades}
           onDone={() => setAdding(false)}
         />
       )}
@@ -172,41 +176,89 @@ export function StockForecasts({
   );
 }
 
+const num = (s: string) => {
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+};
+
 function ForecastForm({
   ticker,
   defaultCurrency,
+  trades,
   onDone,
 }: {
   ticker: string;
   defaultCurrency: TradeCurrency;
+  trades: LocalShareTrade[] | undefined;
   onDone: () => void;
 }) {
   const [basePrice, setBasePrice] = useState("");
-  const [targetPrice, setTargetPrice] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [madeOn, setMadeOn] = useState(todayIsoDate());
   const [currency, setCurrency] = useState<TradeCurrency>(defaultCurrency);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const baseNum = Number(basePrice);
-  const targetNum = Number(targetPrice);
+  const [method, setMethod] = useState<ValMethod>("pe");
+  const [multiple, setMultiple] = useState("");
+  const [metric, setMetric] = useState("");
+  const [netDebt, setNetDebt] = useState("");
+  const [shares, setShares] = useState("");
+
+  const methodDef = METHODS.find((m) => m.value === method)!;
+  const saved = useMemo(() => latestGeneratedModel(trades), [trades]);
+
+  const baseNum = num(basePrice);
+  const multNum = num(multiple);
+  const metricNum = num(metric);
+  const netDebtNum = netDebt.trim() === "" ? 0 : num(netDebt);
+  const sharesNum = num(shares);
+  const target = computeTarget(method, multNum, metricNum, netDebtNum, sharesNum);
+
   const valid =
-    baseNum > 0 && targetNum > 0 && !!targetDate && !!madeOn && targetDate > madeOn;
-  const cagr = valid ? impliedCagr(baseNum, targetNum, madeOn, targetDate) : null;
+    baseNum > 0 &&
+    target != null &&
+    target > 0 &&
+    !!targetDate &&
+    !!madeOn &&
+    targetDate > madeOn;
+  const cagr = valid ? impliedCagr(baseNum, target!, madeOn, targetDate) : null;
+
+  // Pull the metric (and net debt for EV methods) from the latest saved model,
+  // using the forecast year that matches the target date.
+  function fillFromModel() {
+    if (!saved) return;
+    const m = buildModel(saved.assumptions);
+    const ty = targetDate ? Number(targetDate.slice(0, 4)) : null;
+    const i = ty && m.years.includes(ty) ? m.years.indexOf(ty) : m.years.length - 1;
+    if (method === "ev_ebitda") setMetric(String(round2(m.ebitda[i])));
+    else if (method === "ev_ebit") setMetric(String(round2(m.ebit[i])));
+    else if (method === "ev_sales") setMetric(String(round2(m.revenue[i])));
+    else if (sharesNum > 0) setMetric(String(round2(m.netIncome[i] / sharesNum))); // EPS
+    if (methodDef.enterprise) setNetDebt(String(round2(m.debt[i] - m.cash[i])));
+  }
+  const modelYear = useMemo(() => {
+    if (!saved) return null;
+    const ty = targetDate ? Number(targetDate.slice(0, 4)) : null;
+    const years = saved.assumptions.startYear;
+    const last = years + saved.assumptions.years;
+    return ty && ty >= years && ty <= last ? ty : last;
+  }, [saved, targetDate]);
 
   async function save() {
-    if (!valid || saving) return;
+    if (!valid || saving || target == null) return;
     setSaving(true);
     try {
+      const deriv = derivation(method, multNum, metricNum, netDebtNum, sharesNum, target, currency);
+      const userNotes = notes.trim();
       await syncEngine.mutations.addForecast({
         ticker,
         base_price: baseNum,
-        target_price: targetNum,
+        target_price: round2(target),
         target_date: targetDate,
         made_on: madeOn,
         currency,
-        notes: notes.trim() === "" ? null : notes.trim(),
+        notes: userNotes ? `${deriv}\n${userNotes}` : deriv,
       });
       onDone();
     } finally {
@@ -226,15 +278,6 @@ function ForecastForm({
             placeholder="0.00"
           />
         </Labeled>
-        <Labeled label="Target price">
-          <Input
-            type="number"
-            inputMode="decimal"
-            value={targetPrice}
-            onChange={(e) => setTargetPrice(e.target.value)}
-            placeholder="0.00"
-          />
-        </Labeled>
         <Labeled label="Made on">
           <Input type="date" value={madeOn} onChange={(e) => setMadeOn(e.target.value)} />
         </Labeled>
@@ -246,6 +289,89 @@ function ForecastForm({
             onChange={(e) => setTargetDate(e.target.value)}
           />
         </Labeled>
+      </div>
+
+      {/* Valuation: target price = multiple × metric */}
+      <div className="space-y-3 rounded-xl border border-line bg-surface p-3">
+        <span className="text-xs uppercase tracking-wide text-muted">Valuation</span>
+        <div className="grid grid-cols-2 gap-2">
+          {METHODS.map((m) => (
+            <button
+              key={m.value}
+              onClick={() => setMethod(m.value)}
+              className={cn(
+                "h-10 rounded-xl border text-sm font-semibold transition active:scale-[0.98]",
+                method === m.value
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-line bg-surface2 text-muted",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Labeled label={`${methodDef.label} multiple`}>
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={multiple}
+              onChange={(e) => setMultiple(e.target.value)}
+              placeholder="0.0"
+            />
+          </Labeled>
+          <Labeled label={`${methodDef.metricLabel} forecast`}>
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={metric}
+              onChange={(e) => setMetric(e.target.value)}
+              placeholder="0.00"
+            />
+          </Labeled>
+          {methodDef.enterprise && (
+            <>
+              <Labeled label="Net debt">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={netDebt}
+                  onChange={(e) => setNetDebt(e.target.value)}
+                  placeholder="0"
+                />
+              </Labeled>
+              <Labeled label="Shares out.">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={shares}
+                  onChange={(e) => setShares(e.target.value)}
+                  placeholder="0"
+                />
+              </Labeled>
+            </>
+          )}
+        </div>
+
+        {saved && (
+          <button
+            onClick={fillFromModel}
+            className="w-full rounded-xl border border-line bg-surface2 px-3 py-2 text-xs font-medium text-accent active:scale-[0.99]"
+          >
+            Fill {methodDef.metricLabel}
+            {methodDef.enterprise ? " + net debt" : ""} from latest model
+            {modelYear ? ` (${modelYear})` : ""}
+            {method === "pe" && !(sharesNum > 0) ? " — enter shares first" : ""}
+          </button>
+        )}
+
+        <div className="flex items-center justify-between rounded-xl bg-surface2 px-4 py-2">
+          <span className="text-xs uppercase tracking-wide text-muted">Target price</span>
+          <span className="text-xl font-bold tabular-nums">
+            {target == null ? "—" : formatMoney(target, currency)}
+          </span>
+        </div>
       </div>
 
       <Labeled label="Currency">
@@ -288,6 +414,10 @@ function ForecastForm({
       </Button>
     </div>
   );
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {

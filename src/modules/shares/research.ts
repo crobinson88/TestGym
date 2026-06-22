@@ -35,6 +35,58 @@ export async function readUploadDoc(file: File): Promise<UploadDoc> {
   return { name: file.name, mediaType: "text/plain", text: await file.text() };
 }
 
+// Financial drivers Claude can propose; rates are decimals. Any field may be
+// null when the filings don't support it — the caller merges non-nulls onto its
+// own defaults.
+export interface SeededAssumptions {
+  baseRevenue: number | null;
+  revenueGrowth: number | null;
+  grossMargin: number | null;
+  ebitMargin: number | null;
+  ebitdaMargin: number | null;
+  opexPctRevenue: number | null;
+  daPctRevenue: number | null;
+  taxRate: number | null;
+  capexPctRevenue: number | null;
+  dso: number | null;
+  dio: number | null;
+  dpo: number | null;
+  interestRate: number | null;
+  dividendPayout: number | null;
+  startingCash: number | null;
+  startingPpe: number | null;
+  startingDebt: number | null;
+  rationale: string | null;
+}
+
+export interface SeedInput {
+  ticker?: string;
+  urls: string[];
+  files: UploadDoc[];
+}
+
+export async function seedModelAssumptions(
+  input: SeedInput,
+  token: string,
+): Promise<SeededAssumptions> {
+  const res = await fetch("/api/model-assumptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const text = await res.text();
+  let parsed: { assumptions?: SeededAssumptions; error?: string } | null;
+  try {
+    parsed = JSON.parse(text) as { assumptions?: SeededAssumptions; error?: string };
+  } catch {
+    parsed = null;
+  }
+  if (!res.ok || !parsed?.assumptions) {
+    throw new Error(parsed?.error ?? `Seeding failed (${res.status})`);
+  }
+  return parsed.assumptions;
+}
+
 export async function summarizeDocuments(input: SummarizeInput, token: string): Promise<string> {
   const res = await fetch("/api/stock-summarize", {
     method: "POST",

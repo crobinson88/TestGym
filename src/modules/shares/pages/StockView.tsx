@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, Check, ChevronLeft } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Check, ChevronLeft, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay } from "@/lib/utils";
 import { useStockByTicker, useTradesForTicker } from "../hooks";
 import { formatMoney, formatQty } from "../types";
+import { CompanyForecasts } from "../components/CompanyForecasts";
 import { ResearchLibrary } from "../components/ResearchLibrary";
 import { ResearchPanel } from "../components/ResearchPanel";
 import { StockForecasts } from "../components/StockForecasts";
@@ -111,9 +112,19 @@ export default function StockView() {
 
         <StockForecasts ticker={ticker} trades={trades} />
 
+        <CompanyForecasts ticker={ticker} trades={trades} />
+
         <ResearchLibrary ticker={ticker} stock={stock} trades={trades} />
 
         <StockModels trades={trades} />
+
+        <Link
+          to={`/shares/stock/${ticker}/model`}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface text-base font-semibold text-text transition active:scale-[0.98]"
+        >
+          <Table2 className="h-5 w-5 text-accent" />
+          Build a 3-statement model
+        </Link>
 
         <ResearchPanel ticker={ticker} onInsert={insertSummary} />
 
