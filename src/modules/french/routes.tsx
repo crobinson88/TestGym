@@ -1,0 +1,26 @@
+import { lazy, Suspense } from "react";
+import { Route } from "react-router-dom";
+
+const FrenchHome = lazy(() => import("./pages/FrenchHome"));
+const TestRunner = lazy(() => import("./pages/TestRunner"));
+const GrammarReview = lazy(() => import("./pages/GrammarReview"));
+const ChatRoleplay = lazy(() => import("./pages/ChatRoleplay"));
+
+function Fallback() {
+  return <div className="p-6 text-center text-muted">Loading French…</div>;
+}
+
+function wrap(node: React.ReactNode) {
+  return <Suspense fallback={<Fallback />}>{node}</Suspense>;
+}
+
+export function frenchRoutes() {
+  return (
+    <Route path="/french">
+      <Route index element={wrap(<FrenchHome />)} />
+      <Route path="rules" element={wrap(<GrammarReview />)} />
+      <Route path="chat" element={wrap(<ChatRoleplay />)} />
+      <Route path="test/:kind" element={wrap(<TestRunner />)} />
+    </Route>
+  );
+}

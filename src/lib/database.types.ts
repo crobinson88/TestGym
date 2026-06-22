@@ -244,6 +244,33 @@ export interface ForecastRow {
   deleted_at: string | null;
 }
 
+export type FrenchTestKind = "vocab" | "rules";
+
+// One question's outcome inside a completed test, kept so the stats view can
+// surface which items were missed without re-deriving them.
+export interface FrenchAttemptDetail {
+  questionId: string;
+  prompt: string;
+  correct: boolean;
+}
+
+// One completed French test. `correct`/`total` are the score; `details` is the
+// per-question breakdown. Same sync / RLS / soft-delete rules as `sets`.
+export interface FrenchAttemptRow {
+  id: string;
+  kind: FrenchTestKind;
+  total: number;
+  correct: number;
+  duration_ms: number | null;
+  details: FrenchAttemptDetail[];
+  started_at: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -347,6 +374,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<ForecastRow>;
+      };
+      french_attempts: {
+        Row: FrenchAttemptRow;
+        Insert: Omit<FrenchAttemptRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<FrenchAttemptRow>;
       };
     };
   };

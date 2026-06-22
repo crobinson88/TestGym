@@ -5,6 +5,7 @@ import type {
   LocalCategory,
   LocalExercise,
   LocalForecast,
+  LocalFrenchAttempt,
   LocalSet,
   LocalShareTrade,
   LocalStock,
@@ -14,6 +15,9 @@ import type {
   CategoryRow,
   ExerciseRow,
   ForecastRow,
+  FrenchAttemptDetail,
+  FrenchAttemptRow,
+  FrenchTestKind,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -81,6 +85,15 @@ export interface AddForecastInput {
   notes?: string | null;
 }
 
+export interface AddFrenchAttemptInput {
+  kind: FrenchTestKind;
+  total: number;
+  correct: number;
+  duration_ms?: number | null;
+  details?: FrenchAttemptDetail[];
+  started_at: string;
+}
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -114,6 +127,10 @@ function pendingStock(row: StockRow): LocalStock {
 }
 
 function pendingForecast(row: ForecastRow): LocalForecast {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingFrenchAttempt(row: FrenchAttemptRow): LocalFrenchAttempt {
   return { ...row, sync_status: "pending" };
 }
 
@@ -424,6 +441,27 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     notify();
   }
 
+  async function addFrenchAttempt(input: AddFrenchAttemptInput): Promise<LocalFrenchAttempt> {
+    const id = uuid();
+    const ts = now();
+    const row: FrenchAttemptRow = {
+      id,
+      kind: input.kind,
+      total: input.total,
+      correct: input.correct,
+      duration_ms: input.duration_ms ?? null,
+      details: input.details ?? [],
+      started_at: input.started_at,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingFrenchAttempt(row);
+    await db.french_attempts.put(local);
+    notify();
+    return local;
+  }
+
   return {
     addSet,
     updateSet,
@@ -440,6 +478,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     updateStock,
     addForecast,
     deleteForecast,
+    addFrenchAttempt,
   };
 }
 
