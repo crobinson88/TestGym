@@ -5,16 +5,26 @@ import {
   BookOpen,
   ChevronRight,
   MessageCircle,
+  Repeat,
   ScrollText,
   Sparkles,
   Target,
 } from "lucide-react";
+import type { FrenchTestKind } from "@/lib/database.types";
 import { cn, relativeDay } from "@/lib/utils";
 import { useFrenchStats } from "../hooks";
 import { pct, type KindStats } from "../stats";
-import type { VocabAnswerMode, VocabDirection } from "../quiz";
+import { KIND_LABELS, type VocabAnswerMode, type VocabDirection } from "../quiz";
 import { RULE_QUESTIONS } from "../data/rules";
 import { VOCAB } from "../data/vocab";
+import { CONJ_VERBS } from "../data/conjugations";
+
+// Icon + accent colour per kind, shared by the recent-tests list.
+const KIND_VISUAL: Record<FrenchTestKind, { Icon: typeof BookOpen; tint: string }> = {
+  vocab: { Icon: BookOpen, tint: "bg-accent/15 text-accent" },
+  rules: { Icon: ScrollText, tint: "bg-success/15 text-success" },
+  conjug: { Icon: Repeat, tint: "bg-warn/15 text-warn" },
+};
 
 const DIRECTIONS: { value: VocabDirection; label: string }[] = [
   { value: "fr2en", label: "FR → EN" },
@@ -56,7 +66,7 @@ export default function FrenchHome() {
       <header>
         <h1 className="text-2xl font-bold">French 🇫🇷</h1>
         <p className="mt-1 text-sm text-muted">
-          {VOCAB.length} words · {RULE_QUESTIONS.length} rule questions
+          {VOCAB.length} words · {RULE_QUESTIONS.length} rule questions · {CONJ_VERBS.length} verbs
         </p>
       </header>
 
@@ -118,6 +128,16 @@ export default function FrenchHome() {
           </div>
         </button>
         <button
+          onClick={() => navigate("/french/test/conjug")}
+          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+        >
+          <Repeat className="h-7 w-7 shrink-0 text-warn" />
+          <div>
+            <div className="text-lg font-semibold">New conjugation test</div>
+            <div className="text-sm text-muted">être, avoir, aller & more · present + near future</div>
+          </div>
+        </button>
+        <button
           onClick={() => navigate("/french/rules")}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-3.5 text-left transition active:scale-[0.98]"
         >
@@ -146,9 +166,10 @@ export default function FrenchHome() {
         {stats === undefined ? (
           <div className="text-sm text-muted">Loading…</div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <StatCard stats={stats.byKind.vocab} label="Vocab" />
-            <StatCard stats={stats.byKind.rules} label="Rules" />
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard stats={stats.byKind.vocab} label={KIND_LABELS.vocab} />
+            <StatCard stats={stats.byKind.rules} label={KIND_LABELS.rules} />
+            <StatCard stats={stats.byKind.conjug} label={KIND_LABELS.conjug} />
           </div>
         )}
       </section>
@@ -180,26 +201,18 @@ export default function FrenchHome() {
           <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
             {stats.recent.map((a) => {
               const acc = a.total > 0 ? a.correct / a.total : 0;
+              const { Icon, tint } = KIND_VISUAL[a.kind];
               return (
                 <li
                   key={a.id}
                   className="flex items-center justify-between border-b border-line/50 px-4 py-3 last:border-b-0"
                 >
                   <div className="flex items-center gap-3">
-                    <span
-                      className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-full",
-                        a.kind === "vocab" ? "bg-accent/15 text-accent" : "bg-success/15 text-success",
-                      )}
-                    >
-                      {a.kind === "vocab" ? (
-                        <BookOpen className="h-5 w-5" />
-                      ) : (
-                        <ScrollText className="h-5 w-5" />
-                      )}
+                    <span className={cn("flex h-9 w-9 items-center justify-center rounded-full", tint)}>
+                      <Icon className="h-5 w-5" />
                     </span>
                     <div>
-                      <div className="text-sm font-semibold capitalize">{a.kind}</div>
+                      <div className="text-sm font-semibold">{KIND_LABELS[a.kind]}</div>
                       <div className="text-xs text-muted">{relativeDay(a.started_at.slice(0, 10))}</div>
                     </div>
                   </div>

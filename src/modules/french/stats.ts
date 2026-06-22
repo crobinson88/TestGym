@@ -25,7 +25,7 @@ export interface FrenchStats {
   missed: MissedItem[];
 }
 
-const KINDS: FrenchTestKind[] = ["vocab", "rules"];
+const KINDS: FrenchTestKind[] = ["vocab", "rules", "conjug"];
 
 function emptyKind(kind: FrenchTestKind): KindStats {
   return {
@@ -50,6 +50,7 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
   const byKind: Record<FrenchTestKind, KindStats> = {
     vocab: emptyKind("vocab"),
     rules: emptyKind("rules"),
+    conjug: emptyKind("conjug"),
   };
 
   const missedMap = new Map<string, MissedItem>();
@@ -141,6 +142,7 @@ export interface WeekAccuracyPoint {
   week_start: string;
   vocab: number | null;
   rules: number | null;
+  conjug: number | null;
 }
 
 // Bucket attempts into the supplied (chronological) week starts and compute
@@ -151,7 +153,11 @@ export function weeklyAccuracy(
 ): WeekAccuracyPoint[] {
   const buckets = new Map<string, Record<FrenchTestKind, { correct: number; total: number }>>();
   for (const ws of weekStarts) {
-    buckets.set(ws, { vocab: { correct: 0, total: 0 }, rules: { correct: 0, total: 0 } });
+    buckets.set(ws, {
+      vocab: { correct: 0, total: 0 },
+      rules: { correct: 0, total: 0 },
+      conjug: { correct: 0, total: 0 },
+    });
   }
 
   for (const a of attempts) {
@@ -169,6 +175,6 @@ export function weeklyAccuracy(
 
   return weekStarts.map((ws) => {
     const b = buckets.get(ws)!;
-    return { week_start: ws, vocab: rate(b.vocab), rules: rate(b.rules) };
+    return { week_start: ws, vocab: rate(b.vocab), rules: rate(b.rules), conjug: rate(b.conjug) };
   });
 }

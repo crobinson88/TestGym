@@ -1,8 +1,17 @@
 import type { FrenchTestKind } from "@/lib/database.types";
 import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
+import type { Person, VerbConjugation } from "./data/conjugations";
+import { ALLER, PERSONS, PRONOUN_LABEL } from "./data/conjugations";
 
 export const TEST_SIZE = 10;
+
+// Human label per test kind, for headings and the recent-tests list.
+export const KIND_LABELS: Record<FrenchTestKind, string> = {
+  vocab: "Vocab",
+  rules: "Rules",
+  conjug: "Conjugation",
+};
 
 export type Rng = () => number;
 
@@ -163,13 +172,83 @@ export function generateRulesTest(
   return sample(pool, count, rng).map((r) => makeRuleQuestion(r, rng));
 }
 
+// present = je suis, nous sommes …; futurProche = the near future "going to …",
+// built as aller (present) + infinitive (je vais être, nous allons être …).
+export type ConjTense = "present" | "futurProche";
+
+export interface ConjGenerateOptions {
+  count?: number;
+  rng?: Rng;
+  tenses?: ConjTense[];
+}
+
+// Render a conjugated form with its subject pronoun, eliding je → j' before a
+// vowel/silent-h (j'ai). Used in explanations only; the choices stay bare forms.
+function withPronoun(person: Person, form: string): string {
+  if (person === "je" && /^[aeiouâäéèêëïîôûh]/i.test(form)) return `j'${form}`;
+  return `${PRONOUN_LABEL[person]} ${form}`;
+}
+
+// The near-future phrase for a verb at a person: aller (present) + infinitive.
+function futurProcheForm(verb: VerbConjugation, person: Person): string {
+  return `${ALLER.present[person]} ${verb.infinitive}`;
+}
+
+export function makeConjugationQuestion(
+  verb: VerbConjugation,
+  tense: ConjTense,
+  person: Person,
+  rng: Rng,
+): Question {
+  if (tense === "present") {
+    const correct = verb.present[person];
+    const pool = PERSONS.filter((p) => p !== person).map((p) => verb.present[p]);
+    const { choices, answer } = buildChoices(correct, pool, 4, rng);
+    return {
+      id: `conjug:${verb.infinitive}:present:${person}`,
+      prompt: `${verb.infinitive} — ${PRONOUN_LABEL[person]}`,
+      sub: "Present tense",
+      choices,
+      answer,
+      explanation: `${withPronoun(person, correct)} — ${verb.infinitive} (${verb.en}), present tense.`,
+    };
+  }
+  const correct = futurProcheForm(verb, person);
+  const pool = PERSONS.filter((p) => p !== person).map((p) => futurProcheForm(verb, p));
+  const { choices, answer } = buildChoices(correct, pool, 4, rng);
+  return {
+    id: `conjug:${verb.infinitive}:futurProche:${person}`,
+    prompt: `${verb.infinitive} — ${PRONOUN_LABEL[person]} (near future)`,
+    sub: "Near future · going to",
+    choices,
+    answer,
+    explanation: `${withPronoun(person, correct)} — aller (present) + infinitive = "going to ${verb.en.replace(/^to /, "")}".`,
+  };
+}
+
+export function generateConjugationTest(
+  verbs: readonly VerbConjugation[],
+  { count = TEST_SIZE, rng = Math.random, tenses = ["present", "futurProche"] }: ConjGenerateOptions = {},
+): Question[] {
+  const combos: { verb: VerbConjugation; tense: ConjTense; person: Person }[] = [];
+  for (const verb of verbs) {
+    for (const tense of tenses) {
+      for (const person of PERSONS) combos.push({ verb, tense, person });
+    }
+  }
+  return sample(combos, count, rng).map((c) =>
+    makeConjugationQuestion(c.verb, c.tense, c.person, rng),
+  );
+}
+
 export function generateTest(
   kind: FrenchTestKind,
   vocab: readonly VocabWord[],
   rules: readonly RuleQuestion[],
+  conjugations: readonly VerbConjugation[],
   opts: GenerateOptions = {},
 ): Question[] {
-  return kind === "vocab"
-    ? generateVocabTest(vocab, opts)
-    : generateRulesTest(rules, opts);
+  if (kind === "vocab") return generateVocabTest(vocab, opts);
+  if (kind === "rules") return generateRulesTest(rules, opts);
+  return generateConjugationTest(conjugations, { count: opts.count, rng: opts.rng });
 }

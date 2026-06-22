@@ -7,17 +7,19 @@ import { cn, relativeDay } from "@/lib/utils";
 import {
   checkTypedAnswer,
   generateTest,
+  KIND_LABELS,
   TEST_SIZE,
   type Question,
   type VocabDirection,
 } from "../quiz";
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
+import { CONJ_VERBS } from "../data/conjugations";
 import { useVocabHistory } from "../hooks";
 import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
-  return k === "vocab" || k === "rules";
+  return k === "vocab" || k === "rules" || k === "conjug";
 }
 
 // Flags the current vocab prompt as new, or shows its prior recall (times shown,
@@ -64,7 +66,7 @@ export default function TestRunner() {
   const questions = useMemo<Question[]>(
     () =>
       isKind(kind)
-        ? generateTest(kind, VOCAB, RULE_QUESTIONS, { count: TEST_SIZE, direction })
+        ? generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, { count: TEST_SIZE, direction })
         : [],
     [kind, direction],
   );
@@ -138,7 +140,9 @@ export default function TestRunner() {
       <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6 p-6 text-center">
         {perfect && <Sparkles className="h-10 w-10 text-accent" />}
         <div>
-          <div className="text-sm uppercase tracking-wider text-muted">{kind} test complete</div>
+          <div className="text-sm uppercase tracking-wider text-muted">
+            {KIND_LABELS[kind]} test complete
+          </div>
           <div className="mt-2 text-5xl font-bold tabular-nums">
             {correct}/{questions.length}
           </div>
@@ -150,7 +154,7 @@ export default function TestRunner() {
             onClick={() => navigate(0)}
             className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent font-semibold text-bg transition active:scale-[0.98]"
           >
-            <RotateCcw className="h-5 w-5" /> Another {kind} test
+            <RotateCcw className="h-5 w-5" /> Another {KIND_LABELS[kind].toLowerCase()} test
           </button>
           <button
             onClick={() => navigate("/french")}

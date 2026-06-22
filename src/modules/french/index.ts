@@ -6,12 +6,15 @@ export {
   generateTest,
   generateVocabTest,
   generateRulesTest,
+  generateConjugationTest,
+  KIND_LABELS,
   TEST_SIZE,
 } from "./quiz";
-export type { Question, VocabDirection } from "./quiz";
+export type { Question, VocabDirection, ConjTense } from "./quiz";
 export { SCENARIOS, sendChat } from "./chat";
 export type { Scenario, ChatTurn } from "./chat";
 export { VOCAB, VERBS, WORDS } from "./data/vocab";
+export { CONJ_VERBS } from "./data/conjugations";
 export { RULE_QUESTIONS } from "./data/rules";
 export { GUIDE } from "./data/guide";
 export type { GuideSection, GuidePoint, GuideExample, GuidePointKind } from "./data/guide";
