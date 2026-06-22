@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
 import {
+  checkTypedAnswer,
   generateRulesTest,
   generateVocabTest,
   makeRuleQuestion,
   makeVocabQuestion,
+  normalizeAnswer,
   shuffle,
 } from "./quiz";
 
@@ -105,6 +107,48 @@ describe("generateVocabTest", () => {
     const test = generateVocabTest(VOCAB, { count: 6, rng: lcg(12), direction: "en2fr" });
     expect(test.every((q) => q.sub === "Which is the French?")).toBe(true);
     expect(test.every((q) => VOCAB.some((w) => w.en === q.prompt))).toBe(true);
+  });
+});
+
+describe("normalizeAnswer", () => {
+  it("strips accents and lowercases", () => {
+    expect(normalizeAnswer("Être")).toBe("etre");
+    expect(normalizeAnswer("garçon")).toBe("garcon");
+    expect(normalizeAnswer("À")).toBe("a");
+  });
+
+  it("drops parenthetical qualifiers and punctuation", () => {
+    expect(normalizeAnswer("the (m)")).toBe("the");
+    expect(normalizeAnswer("not (negation)")).toBe("not");
+  });
+});
+
+describe("checkTypedAnswer", () => {
+  it("ignores accents and case", () => {
+    expect(checkTypedAnswer("etre", "être")).toBe(true);
+    expect(checkTypedAnswer("ÊTRE", "être")).toBe(true);
+    expect(checkTypedAnswer("garcon", "garçon")).toBe(true);
+  });
+
+  it("accepts any slash-separated alternative", () => {
+    expect(checkTypedAnswer("make", "to make/do")).toBe(true);
+    expect(checkTypedAnswer("do", "to make/do")).toBe(true);
+    expect(checkTypedAnswer("of", "of/from")).toBe(true);
+  });
+
+  it("treats a leading 'to ' on verbs as optional", () => {
+    expect(checkTypedAnswer("take", "to take")).toBe(true);
+    expect(checkTypedAnswer("to take", "to take")).toBe(true);
+  });
+
+  it("ignores parenthetical qualifiers in the expected gloss", () => {
+    expect(checkTypedAnswer("the", "the (m)")).toBe(true);
+  });
+
+  it("rejects wrong answers and blank input", () => {
+    expect(checkTypedAnswer("house", "dog")).toBe(false);
+    expect(checkTypedAnswer("", "dog")).toBe(false);
+    expect(checkTypedAnswer("   ", "dog")).toBe(false);
   });
 });
 

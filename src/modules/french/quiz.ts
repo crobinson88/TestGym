@@ -21,6 +21,37 @@ export interface Question {
 // mixed = randomise per question.
 export type VocabDirection = "fr2en" | "en2fr" | "mixed";
 
+// choice = tap one of four options (the default). type = write the answer in,
+// graded leniently (accents/case/punctuation ignored). Chosen before the test.
+export type VocabAnswerMode = "choice" | "type";
+
+// Normalise a string for typed-answer grading: strip accents, lowercase, drop
+// parenthetical qualifiers ("(m)", "(negation)"), and collapse punctuation so
+// only words and "/" alternative separators remain.
+export function normalizeAnswer(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z0-9/ ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Accept a typed answer if it matches any "/"-separated alternative of the
+// expected gloss. A leading "to " on verb glosses is optional ("take" ≡ "to take").
+export function checkTypedAnswer(input: string, expected: string): boolean {
+  const stripTo = (s: string) => s.replace(/^to /, "");
+  const typed = normalizeAnswer(input);
+  if (!typed) return false;
+  return normalizeAnswer(expected)
+    .split("/")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .some((v) => v === typed || stripTo(v) === stripTo(typed));
+}
+
 export interface GenerateOptions {
   count?: number;
   rng?: Rng;
