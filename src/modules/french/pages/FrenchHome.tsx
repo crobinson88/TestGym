@@ -12,7 +12,7 @@ import {
 import { cn, relativeDay } from "@/lib/utils";
 import { useFrenchStats } from "../hooks";
 import { pct, type KindStats } from "../stats";
-import type { VocabDirection } from "../quiz";
+import type { VocabAnswerMode, VocabDirection } from "../quiz";
 import { RULE_QUESTIONS } from "../data/rules";
 import { VOCAB } from "../data/vocab";
 
@@ -20,6 +20,11 @@ const DIRECTIONS: { value: VocabDirection; label: string }[] = [
   { value: "fr2en", label: "FR → EN" },
   { value: "en2fr", label: "EN → FR" },
   { value: "mixed", label: "Mixed" },
+];
+
+const ANSWER_MODES: { value: VocabAnswerMode; label: string }[] = [
+  { value: "choice", label: "Multiple choice" },
+  { value: "type", label: "Type answer" },
 ];
 
 function StatCard({ stats, label }: { stats: KindStats; label: string }) {
@@ -44,6 +49,7 @@ export default function FrenchHome() {
   const navigate = useNavigate();
   const stats = useFrenchStats();
   const [dir, setDir] = useState<VocabDirection>("mixed");
+  const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -57,7 +63,7 @@ export default function FrenchHome() {
       <section className="grid grid-cols-1 gap-3">
         <div className="space-y-2">
           <button
-            onClick={() => navigate(`/french/test/vocab?dir=${dir}`)}
+            onClick={() => navigate(`/french/test/vocab?dir=${dir}&ans=${answerMode}`)}
             className="flex w-full items-center gap-4 rounded-2xl bg-accent px-5 py-4 text-left text-bg shadow-lg shadow-accent/20 transition active:scale-[0.98]"
           >
             <BookOpen className="h-7 w-7 shrink-0" />
@@ -80,6 +86,23 @@ export default function FrenchHome() {
                 )}
               >
                 {d.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2" role="group" aria-label="Vocab answer type">
+            {ANSWER_MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setAnswerMode(m.value)}
+                aria-pressed={answerMode === m.value}
+                className={cn(
+                  "flex-1 rounded-xl border px-2 py-2 text-sm font-medium transition",
+                  answerMode === m.value
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {m.label}
               </button>
             ))}
           </div>

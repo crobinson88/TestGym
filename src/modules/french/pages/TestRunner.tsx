@@ -4,7 +4,13 @@ import { Check, ChevronRight, RotateCcw, Sparkles, X } from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay } from "@/lib/utils";
-import { generateTest, TEST_SIZE, type Question, type VocabDirection } from "../quiz";
+import {
+  checkTypedAnswer,
+  generateTest,
+  TEST_SIZE,
+  type Question,
+  type VocabDirection,
+} from "../quiz";
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 import { useVocabHistory } from "../hooks";
@@ -52,6 +58,9 @@ export default function TestRunner() {
   const direction: VocabDirection =
     dirParam === "fr2en" || dirParam === "en2fr" ? dirParam : "mixed";
 
+  // Typed answers only apply to vocab; rules are always multiple choice.
+  const typing = kind === "vocab" && searchParams.get("ans") === "type";
+
   const questions = useMemo<Question[]>(
     () =>
       isKind(kind)
@@ -64,6 +73,8 @@ export default function TestRunner() {
 
   const [index, setIndex] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
+  const [typed, setTyped] = useState("");
+  const [typedResult, setTypedResult] = useState<boolean | null>(null);
   const [details, setDetails] = useState<FrenchAttemptDetail[]>([]);
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,6 +88,7 @@ export default function TestRunner() {
 
   const q = questions[index];
   const correct = details.filter((d) => d.correct).length;
+  const expected = q.choices[q.answer];
 
   function choose(choice: number) {
     if (picked !== null) return;
@@ -87,10 +99,19 @@ export default function TestRunner() {
     ]);
   }
 
+  function submitTyped() {
+    if (typedResult !== null || typed.trim() === "") return;
+    const ok = checkTypedAnswer(typed, expected);
+    setTypedResult(ok);
+    setDetails((prev) => [...prev, { questionId: q.id, prompt: q.prompt, correct: ok }]);
+  }
+
   async function next() {
     if (index + 1 < questions.length) {
       setIndex((i) => i + 1);
       setPicked(null);
+      setTyped("");
+      setTypedResult(null);
       return;
     }
     setFinished(true);
@@ -142,7 +163,7 @@ export default function TestRunner() {
     );
   }
 
-  const answered = picked !== null;
+  const answered = typing ? typedResult !== null : picked !== null;
 
   return (
     <div className="flex min-h-[70vh] flex-col p-4 pb-24">
@@ -168,37 +189,96 @@ export default function TestRunner() {
         {kind === "vocab" && <WordHistoryBadge questionId={q.id} history={vocabHistory} />}
       </div>
 
-      <div className="flex flex-col gap-3">
-        {q.choices.map((choice, i) => {
-          const isCorrect = i === q.answer;
-          const isPicked = i === picked;
-          const state = !answered
-            ? "idle"
-            : isCorrect
-              ? "correct"
-              : isPicked
-                ? "wrong"
-                : "muted";
-          return (
-            <button
-              key={i}
-              onClick={() => choose(i)}
+      {typing ? (
+        <div className="flex flex-col gap-3">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitTyped();
+            }}
+          >
+            <input
+              type="text"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
               disabled={answered}
+              autoFocus
+              autoCapitalize="off"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Type your answer"
               className={cn(
-                "flex min-h-[3.5rem] items-center justify-between rounded-2xl border px-4 py-3 text-left text-base font-medium transition",
-                state === "idle" && "border-line bg-surface active:scale-[0.99]",
-                state === "correct" && "border-success bg-success/15 text-success",
-                state === "wrong" && "border-warn bg-warn/15 text-warn",
-                state === "muted" && "border-line bg-surface opacity-50",
+                "h-14 w-full rounded-2xl border bg-surface px-4 text-lg font-medium outline-none transition placeholder:text-muted focus:border-accent",
+                !answered && "border-line",
+                answered && typedResult && "border-success bg-success/15 text-success",
+                answered && !typedResult && "border-warn bg-warn/15 text-warn",
+              )}
+            />
+          </form>
+          {answered && (
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-2xl border px-4 py-3 text-base font-medium",
+                typedResult
+                  ? "border-success bg-success/15 text-success"
+                  : "border-warn bg-warn/15 text-warn",
               )}
             >
-              <span>{choice}</span>
-              {state === "correct" && <Check className="h-5 w-5 shrink-0" />}
-              {state === "wrong" && <X className="h-5 w-5 shrink-0" />}
+              {typedResult ? (
+                <Check className="h-5 w-5 shrink-0" />
+              ) : (
+                <X className="h-5 w-5 shrink-0" />
+              )}
+              <span>{typedResult ? "Correct" : `Answer: ${expected}`}</span>
+            </div>
+          )}
+          {!answered && (
+            <button
+              onClick={submitTyped}
+              disabled={typed.trim() === ""}
+              className={cn(
+                "flex h-12 items-center justify-center rounded-2xl font-semibold transition active:scale-[0.99]",
+                typed.trim() === "" ? "bg-surface2 text-muted" : "bg-surface border border-accent text-accent",
+              )}
+            >
+              Check
             </button>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {q.choices.map((choice, i) => {
+            const isCorrect = i === q.answer;
+            const isPicked = i === picked;
+            const state = !answered
+              ? "idle"
+              : isCorrect
+                ? "correct"
+                : isPicked
+                  ? "wrong"
+                  : "muted";
+            return (
+              <button
+                key={i}
+                onClick={() => choose(i)}
+                disabled={answered}
+                className={cn(
+                  "flex min-h-[3.5rem] items-center justify-between rounded-2xl border px-4 py-3 text-left text-base font-medium transition",
+                  state === "idle" && "border-line bg-surface active:scale-[0.99]",
+                  state === "correct" && "border-success bg-success/15 text-success",
+                  state === "wrong" && "border-warn bg-warn/15 text-warn",
+                  state === "muted" && "border-line bg-surface opacity-50",
+                )}
+              >
+                <span>{choice}</span>
+                {state === "correct" && <Check className="h-5 w-5 shrink-0" />}
+                {state === "wrong" && <X className="h-5 w-5 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {answered && q.explanation && (
         <div className="mt-5 rounded-2xl border border-line bg-surface2 px-4 py-3 text-sm text-muted">
