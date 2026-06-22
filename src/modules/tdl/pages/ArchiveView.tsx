@@ -1,6 +1,8 @@
-import { ArchiveRestore, ChevronLeft } from "lucide-react";
+import { useState } from "react";
+import { ArchiveRestore, ChevronLeft, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useArchivedItems } from "../hooks";
 import { useCategories } from "../categories";
@@ -11,6 +13,16 @@ export default function ArchiveView() {
   const items = useArchivedItems();
   const categories = useCategories();
   const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
+
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const filtered = (items ?? []).filter(
+    (i) =>
+      !searching ||
+      i.title.toLowerCase().includes(q) ||
+      (i.notes ?? "").toLowerCase().includes(q),
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -36,8 +48,25 @@ export default function ArchiveView() {
         ) : items.length === 0 ? (
           <div className="p-6 text-center text-muted">Nothing archived.</div>
         ) : (
+          <>
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search archived…"
+                aria-label="Search archived items"
+                className="h-10 pl-9 text-sm"
+              />
+            </div>
+            {filtered.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted">
+                No archived items match “{query.trim()}”.
+              </div>
+            ) : (
           <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
-            {items.map((item) => (
+            {filtered.map((item) => (
               <li
                 key={item.id}
                 className="flex items-center gap-2 border-b border-line/50 px-3 py-2 last:border-b-0"
@@ -61,6 +90,8 @@ export default function ArchiveView() {
               </li>
             ))}
           </ul>
+            )}
+          </>
         )}
       </div>
     </div>

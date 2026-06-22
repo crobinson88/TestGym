@@ -1,6 +1,8 @@
-import { BellOff, ChevronLeft } from "lucide-react";
+import { useState } from "react";
+import { BellOff, ChevronLeft, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useSnoozedItems } from "../hooks";
 import { useCategories } from "../categories";
@@ -13,10 +15,20 @@ export default function SnoozedView() {
   const items = useSnoozedItems();
   const categories = useCategories();
 
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const filtered = (items ?? []).filter(
+    (i) =>
+      !searching ||
+      i.title.toLowerCase().includes(q) ||
+      (i.notes ?? "").toLowerCase().includes(q),
+  );
+
   const liveKeys = new Set(categories.map((c) => c.key));
   const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
   const bySection = new Map<string, LocalTdlItem[]>();
-  for (const item of items ?? []) {
+  for (const item of filtered) {
     const key = liveKeys.has(item.section) ? item.section : UNCATEGORISED_KEY;
     const arr = bySection.get(key) ?? [];
     arr.push(item);
@@ -50,7 +62,24 @@ export default function SnoozedView() {
         ) : items.length === 0 ? (
           <div className="p-6 text-center text-muted">Nothing snoozed.</div>
         ) : (
-          groups.map((s) => (
+          <>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search snoozed…"
+                aria-label="Search snoozed items"
+                className="h-10 pl-9 text-sm"
+              />
+            </div>
+            {groups.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted">
+                No snoozed items match “{query.trim()}”.
+              </div>
+            ) : (
+              groups.map((s) => (
             <div key={s.key}>
               <h2 className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
                 {s.label}
@@ -83,7 +112,9 @@ export default function SnoozedView() {
                 ))}
               </ul>
             </div>
-          ))
+              ))
+            )}
+          </>
         )}
       </div>
     </div>
