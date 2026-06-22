@@ -17,9 +17,14 @@ export interface Question {
   explanation: string | null;
 }
 
+// fr2en = show the French word, pick the English. en2fr = the reverse.
+// mixed = randomise per question.
+export type VocabDirection = "fr2en" | "en2fr" | "mixed";
+
 export interface GenerateOptions {
   count?: number;
   rng?: Rng;
+  direction?: VocabDirection;
 }
 
 // Fisher-Yates, parameterised on the rng so tests are deterministic.
@@ -99,9 +104,12 @@ export function makeVocabQuestion(
 
 export function generateVocabTest(
   pool: readonly VocabWord[],
-  { count = TEST_SIZE, rng = Math.random }: GenerateOptions = {},
+  { count = TEST_SIZE, rng = Math.random, direction = "mixed" }: GenerateOptions = {},
 ): Question[] {
-  return sample(pool, count, rng).map((w) => makeVocabQuestion(w, pool, rng));
+  return sample(pool, count, rng).map((w) => {
+    const dir: Direction = direction === "mixed" ? (rng() < 0.5 ? "fr2en" : "en2fr") : direction;
+    return makeVocabQuestion(w, pool, rng, dir);
+  });
 }
 
 export function makeRuleQuestion(rule: RuleQuestion, rng: Rng): Question {

@@ -8,7 +8,9 @@ export {
   generateRulesTest,
   TEST_SIZE,
 } from "./quiz";
-export type { Question } from "./quiz";
+export type { Question, VocabDirection } from "./quiz";
+export { SCENARIOS, sendChat } from "./chat";
+export type { Scenario, ChatTurn } from "./chat";
 export { VOCAB, VERBS, WORDS } from "./data/vocab";
 export { RULE_QUESTIONS } from "./data/rules";
 export { GUIDE } from "./data/guide";

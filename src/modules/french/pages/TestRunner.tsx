@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Check, ChevronRight, RotateCcw, Sparkles, X } from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { syncEngine } from "@/lib/sync";
 import { cn } from "@/lib/utils";
-import { generateTest, TEST_SIZE, type Question } from "../quiz";
+import { generateTest, TEST_SIZE, type Question, type VocabDirection } from "../quiz";
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 
@@ -14,11 +14,19 @@ function isKind(k: string | undefined): k is FrenchTestKind {
 
 export default function TestRunner() {
   const { kind } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  const dirParam = searchParams.get("dir");
+  const direction: VocabDirection =
+    dirParam === "fr2en" || dirParam === "en2fr" ? dirParam : "mixed";
+
   const questions = useMemo<Question[]>(
-    () => (isKind(kind) ? generateTest(kind, VOCAB, RULE_QUESTIONS, { count: TEST_SIZE }) : []),
-    [kind],
+    () =>
+      isKind(kind)
+        ? generateTest(kind, VOCAB, RULE_QUESTIONS, { count: TEST_SIZE, direction })
+        : [],
+    [kind, direction],
   );
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());

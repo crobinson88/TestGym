@@ -1,10 +1,26 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookMarked, BookOpen, ChevronRight, ScrollText, Sparkles, Target } from "lucide-react";
+import {
+  BookMarked,
+  BookOpen,
+  ChevronRight,
+  MessageCircle,
+  ScrollText,
+  Sparkles,
+  Target,
+} from "lucide-react";
 import { cn, relativeDay } from "@/lib/utils";
 import { useFrenchStats } from "../hooks";
 import { pct, type KindStats } from "../stats";
+import type { VocabDirection } from "../quiz";
 import { RULE_QUESTIONS } from "../data/rules";
 import { VOCAB } from "../data/vocab";
+
+const DIRECTIONS: { value: VocabDirection; label: string }[] = [
+  { value: "fr2en", label: "FR → EN" },
+  { value: "en2fr", label: "EN → FR" },
+  { value: "mixed", label: "Mixed" },
+];
 
 function StatCard({ stats, label }: { stats: KindStats; label: string }) {
   return (
@@ -27,6 +43,7 @@ function StatCard({ stats, label }: { stats: KindStats; label: string }) {
 export default function FrenchHome() {
   const navigate = useNavigate();
   const stats = useFrenchStats();
+  const [dir, setDir] = useState<VocabDirection>("mixed");
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -38,16 +55,35 @@ export default function FrenchHome() {
       </header>
 
       <section className="grid grid-cols-1 gap-3">
-        <button
-          onClick={() => navigate("/french/test/vocab")}
-          className="flex items-center gap-4 rounded-2xl bg-accent px-5 py-4 text-left text-bg shadow-lg shadow-accent/20 transition active:scale-[0.98]"
-        >
-          <BookOpen className="h-7 w-7 shrink-0" />
-          <div>
-            <div className="text-lg font-semibold">New vocab test</div>
-            <div className="text-sm opacity-80">10 words from the top 1000</div>
+        <div className="space-y-2">
+          <button
+            onClick={() => navigate(`/french/test/vocab?dir=${dir}`)}
+            className="flex w-full items-center gap-4 rounded-2xl bg-accent px-5 py-4 text-left text-bg shadow-lg shadow-accent/20 transition active:scale-[0.98]"
+          >
+            <BookOpen className="h-7 w-7 shrink-0" />
+            <div>
+              <div className="text-lg font-semibold">New vocab test</div>
+              <div className="text-sm opacity-80">10 words from the top 1000</div>
+            </div>
+          </button>
+          <div className="flex gap-2" role="group" aria-label="Vocab test direction">
+            {DIRECTIONS.map((d) => (
+              <button
+                key={d.value}
+                onClick={() => setDir(d.value)}
+                aria-pressed={dir === d.value}
+                className={cn(
+                  "flex-1 rounded-xl border px-2 py-2 text-sm font-medium transition",
+                  dir === d.value
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {d.label}
+              </button>
+            ))}
           </div>
-        </button>
+        </div>
         <button
           onClick={() => navigate("/french/test/rules")}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
@@ -66,6 +102,17 @@ export default function FrenchHome() {
           <div className="flex-1">
             <div className="font-semibold">Review grammar rules</div>
             <div className="text-sm text-muted">Read the reference guide</div>
+          </div>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted" />
+        </button>
+        <button
+          onClick={() => navigate("/french/chat")}
+          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-3.5 text-left transition active:scale-[0.98]"
+        >
+          <MessageCircle className="h-6 w-6 shrink-0 text-accent" />
+          <div className="flex-1">
+            <div className="font-semibold">Roleplay chat</div>
+            <div className="text-sm text-muted">Practise a conversation in French</div>
           </div>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted" />
         </button>

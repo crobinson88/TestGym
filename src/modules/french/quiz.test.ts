@@ -94,6 +94,18 @@ describe("generateVocabTest", () => {
     const test = generateVocabTest(VOCAB, { count: 100, rng: lcg(8) });
     expect(test).toHaveLength(VOCAB.length);
   });
+
+  it("direction fr2en asks for the English of every question", () => {
+    const test = generateVocabTest(VOCAB, { count: 6, rng: lcg(11), direction: "fr2en" });
+    expect(test.every((q) => q.sub === "What does this mean?")).toBe(true);
+    expect(test.every((q) => VOCAB.some((w) => w.fr === q.prompt))).toBe(true);
+  });
+
+  it("direction en2fr asks for the French of every question", () => {
+    const test = generateVocabTest(VOCAB, { count: 6, rng: lcg(12), direction: "en2fr" });
+    expect(test.every((q) => q.sub === "Which is the French?")).toBe(true);
+    expect(test.every((q) => VOCAB.some((w) => w.en === q.prompt))).toBe(true);
+  });
 });
 
 describe("rules", () => {
