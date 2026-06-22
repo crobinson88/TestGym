@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FrenchAttemptRow } from "@/lib/database.types";
-import { computeStats } from "./stats";
+import { computeStats, weeklyAccuracy } from "./stats";
 
 function attempt(over: Partial<FrenchAttemptRow>): FrenchAttemptRow {
   return {
@@ -73,5 +73,54 @@ describe("computeStats", () => {
     expect(stats.totalTests).toBe(0);
     expect(stats.byKind.vocab.accuracy).toBe(0);
     expect(stats.byKind.rules.tests).toBe(0);
+  });
+});
+
+describe("weeklyAccuracy", () => {
+  // 2026-06-08 and 2026-06-15 are Mondays.
+  const weeks = ["2026-06-08", "2026-06-15"];
+
+  it("computes per-kind percentage weighted across questions in a week", () => {
+    const points = weeklyAccuracy(
+      [
+        attempt({ kind: "vocab", total: 10, correct: 7, started_at: "2026-06-16T09:00:00Z" }),
+        attempt({ kind: "vocab", total: 10, correct: 9, started_at: "2026-06-18T09:00:00Z" }),
+        attempt({ kind: "rules", total: 10, correct: 5, started_at: "2026-06-17T09:00:00Z" }),
+      ],
+      weeks,
+    );
+    const wk = points.find((p) => p.week_start === "2026-06-15")!;
+    expect(wk.vocab).toBe(80); // (7+9)/20
+    expect(wk.rules).toBe(50);
+  });
+
+  it("uses null for a kind with no tests that week (chart gap, not zero)", () => {
+    const points = weeklyAccuracy(
+      [attempt({ kind: "vocab", total: 10, correct: 8, started_at: "2026-06-09T09:00:00Z" })],
+      weeks,
+    );
+    const wk = points.find((p) => p.week_start === "2026-06-08")!;
+    expect(wk.vocab).toBe(80);
+    expect(wk.rules).toBeNull();
+    const empty = points.find((p) => p.week_start === "2026-06-15")!;
+    expect(empty.vocab).toBeNull();
+    expect(empty.rules).toBeNull();
+  });
+
+  it("ignores attempts outside the requested weeks and soft-deleted ones", () => {
+    const points = weeklyAccuracy(
+      [
+        attempt({ kind: "vocab", total: 10, correct: 10, started_at: "2026-01-01T09:00:00Z" }),
+        attempt({
+          kind: "vocab",
+          total: 10,
+          correct: 10,
+          started_at: "2026-06-16T09:00:00Z",
+          deleted_at: "2026-06-20T00:00:00Z",
+        }),
+      ],
+      weeks,
+    );
+    expect(points.every((p) => p.vocab === null && p.rules === null)).toBe(true);
   });
 });

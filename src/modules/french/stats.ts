@@ -1,4 +1,5 @@
 import type { FrenchAttemptRow, FrenchTestKind } from "@/lib/database.types";
+import { weekStart } from "@/lib/utils";
 
 export interface KindStats {
   kind: FrenchTestKind;
@@ -95,3 +96,41 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
 }
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+// One week's accuracy per kind, as a 0..100 percentage. `null` means no test of
+// that kind was taken that week, so the chart can leave a gap instead of a zero.
+export interface WeekAccuracyPoint {
+  week_start: string;
+  vocab: number | null;
+  rules: number | null;
+}
+
+// Bucket attempts into the supplied (chronological) week starts and compute
+// per-kind accuracy weighted across every question answered that week.
+export function weeklyAccuracy(
+  attempts: readonly FrenchAttemptRow[],
+  weekStarts: readonly string[],
+): WeekAccuracyPoint[] {
+  const buckets = new Map<string, Record<FrenchTestKind, { correct: number; total: number }>>();
+  for (const ws of weekStarts) {
+    buckets.set(ws, { vocab: { correct: 0, total: 0 }, rules: { correct: 0, total: 0 } });
+  }
+
+  for (const a of attempts) {
+    if (a.deleted_at) continue;
+    const b = buckets.get(weekStart(a.started_at.slice(0, 10)));
+    if (!b) continue;
+    const acc = b[a.kind];
+    if (!acc) continue;
+    acc.correct += a.correct;
+    acc.total += a.total;
+  }
+
+  const rate = (x: { correct: number; total: number }) =>
+    x.total > 0 ? Math.round((x.correct / x.total) * 100) : null;
+
+  return weekStarts.map((ws) => {
+    const b = buckets.get(ws)!;
+    return { week_start: ws, vocab: rate(b.vocab), rules: rate(b.rules) };
+  });
+}

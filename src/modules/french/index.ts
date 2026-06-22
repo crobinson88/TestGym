@@ -1,7 +1,7 @@
 export { frenchRoutes } from "./routes";
-export { useFrenchAttempts, useFrenchStats } from "./hooks";
-export { computeStats, pct } from "./stats";
-export type { FrenchStats, KindStats, MissedItem } from "./stats";
+export { useFrenchAttempts, useFrenchStats, useFrenchWeeklyAccuracy } from "./hooks";
+export { computeStats, weeklyAccuracy, pct } from "./stats";
+export type { FrenchStats, KindStats, MissedItem, WeekAccuracyPoint } from "./stats";
 export {
   generateTest,
   generateVocabTest,
