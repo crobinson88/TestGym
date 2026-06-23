@@ -34,7 +34,7 @@ export {
 export type { Question, VocabDirection, ConjTense } from "./quiz";
 export { SCENARIOS, sendChat } from "./chat";
 export type { Scenario, ChatTurn } from "./chat";
-export { VOCAB, VERBS, WORDS } from "./data/vocab";
+export { VOCAB, VERBS, WORDS, WORDS_EXT } from "./data/vocab";
 export { CONJ_VERBS } from "./data/conjugations";
 export { RULE_QUESTIONS } from "./data/rules";
 export { GUIDE } from "./data/guide";
