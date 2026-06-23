@@ -3,13 +3,17 @@ import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
 import {
   checkTypedAnswer,
+  clampCount,
+  generateConjugationTest,
   generateRulesTest,
   generateVocabTest,
+  makeConjugationQuestion,
   makeRuleQuestion,
   makeVocabQuestion,
   normalizeAnswer,
   shuffle,
 } from "./quiz";
+import { CONJ_VERBS } from "./data/conjugations";
 
 // Deterministic LCG so tests are reproducible.
 function lcg(seed: number) {
@@ -149,6 +153,68 @@ describe("checkTypedAnswer", () => {
     expect(checkTypedAnswer("house", "dog")).toBe(false);
     expect(checkTypedAnswer("", "dog")).toBe(false);
     expect(checkTypedAnswer("   ", "dog")).toBe(false);
+  });
+});
+
+describe("makeConjugationQuestion", () => {
+  const etre = CONJ_VERBS.find((v) => v.infinitive === "être")!;
+  const faire = CONJ_VERBS.find((v) => v.infinitive === "faire")!;
+
+  it("present puts the bare conjugated form at the answer index", () => {
+    const q = makeConjugationQuestion(etre, "present", "nous", lcg(1));
+    expect(q.id).toBe("conjug:être:present:nous");
+    expect(q.choices[q.answer]).toBe("sommes");
+    expect(q.sub).toBe("Present tense");
+    expect(q.choices).toHaveLength(4);
+    expect(new Set(q.choices).size).toBe(4); // no duplicate choices
+  });
+
+  it("futur proche answers with aller (present) + infinitive", () => {
+    const q = makeConjugationQuestion(faire, "futurProche", "je", lcg(2));
+    expect(q.id).toBe("conjug:faire:futurProche:je");
+    expect(q.choices[q.answer]).toBe("vais faire");
+    expect(q.choices.every((c) => c.endsWith(" faire"))).toBe(true);
+  });
+});
+
+describe("clampCount", () => {
+  it("defaults a missing/invalid count to the standard size", () => {
+    expect(clampCount(null)).toBe(10);
+    expect(clampCount(NaN)).toBe(10);
+    expect(clampCount(0)).toBe(10);
+  });
+
+  it("keeps valid counts and floors fractions", () => {
+    expect(clampCount(5)).toBe(5);
+    expect(clampCount(20)).toBe(20);
+    expect(clampCount(12.9)).toBe(12);
+  });
+
+  it("clamps to the guard-rail bounds", () => {
+    expect(clampCount(-3)).toBe(1);
+    expect(clampCount(999)).toBe(50);
+  });
+});
+
+describe("generateConjugationTest", () => {
+  it("respects a custom count", () => {
+    const test = generateConjugationTest(CONJ_VERBS, { count: 15, rng: lcg(4) });
+    expect(test).toHaveLength(15);
+  });
+
+  it("returns the requested count with valid answer indices and conjug ids", () => {
+    const test = generateConjugationTest(CONJ_VERBS, { count: 10, rng: lcg(5) });
+    expect(test).toHaveLength(10);
+    for (const q of test) {
+      expect(q.id.startsWith("conjug:")).toBe(true);
+      expect(q.answer).toBeGreaterThanOrEqual(0);
+      expect(q.answer).toBeLessThan(q.choices.length);
+    }
+  });
+
+  it("limits to a single tense when asked", () => {
+    const test = generateConjugationTest(CONJ_VERBS, { count: 8, rng: lcg(6), tenses: ["present"] });
+    expect(test.every((q) => q.sub === "Present tense")).toBe(true);
   });
 });
 

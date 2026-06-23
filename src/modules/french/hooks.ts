@@ -1,7 +1,14 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { addDays, todayIsoDate, weekStart } from "@/lib/utils";
-import { computeStats, computeVocabHistory, weeklyAccuracy } from "./stats";
+import {
+  computeStats,
+  computeVocabHistory,
+  vocabMastery,
+  vocabMasteryProgress,
+  weeklyAccuracy,
+} from "./stats";
+import { VOCAB } from "./data/vocab";
 
 export function useFrenchAttempts() {
   return useLiveQuery(async () => {
@@ -28,12 +35,30 @@ export function useVocabHistory() {
   }, []);
 }
 
+function lastWeekStarts(weeks: number): string[] {
+  const thisWeekStart = weekStart(todayIsoDate());
+  const starts: string[] = [];
+  for (let i = weeks - 1; i >= 0; i--) starts.push(addDays(thisWeekStart, -i * 7));
+  return starts;
+}
+
 export function useFrenchWeeklyAccuracy(weeks = 8) {
   return useLiveQuery(async () => {
     const all = await db.french_attempts.toArray();
-    const thisWeekStart = weekStart(todayIsoDate());
-    const starts: string[] = [];
-    for (let i = weeks - 1; i >= 0; i--) starts.push(addDays(thisWeekStart, -i * 7));
-    return weeklyAccuracy(all, starts);
+    return weeklyAccuracy(all, lastWeekStarts(weeks));
+  }, [weeks]);
+}
+
+export function useVocabMastery() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return vocabMastery(all, VOCAB.length);
+  }, []);
+}
+
+export function useVocabMasteryProgress(weeks = 8) {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return vocabMasteryProgress(all, lastWeekStarts(weeks), VOCAB.length);
   }, [weeks]);
 }
