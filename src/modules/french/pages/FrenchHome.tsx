@@ -106,7 +106,9 @@ export default function FrenchHome() {
             <BookOpen className="h-7 w-7 shrink-0" />
             <div>
               <div className="text-lg font-semibold">New vocab test</div>
-              <div className="text-sm opacity-80">{count} words from the top 1000</div>
+              <div className="text-sm opacity-80">
+                {count} words from the top {VOCAB.length.toLocaleString()}
+              </div>
             </div>
           </button>
           <div className="flex gap-2" role="group" aria-label="Vocab test direction">

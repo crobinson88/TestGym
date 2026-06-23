@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { FrenchAttemptRow } from "@/lib/database.types";
-import { computeStats, computeVocabHistory, vocabKeyFromQuestionId, weeklyAccuracy } from "./stats";
+import {
+  computeStats,
+  computeVocabHistory,
+  vocabKeyFromQuestionId,
+  vocabMastery,
+  vocabMasteryProgress,
+  weeklyAccuracy,
+} from "./stats";
+
+const mk = (id: string, correct: boolean) => ({ questionId: id, prompt: id, correct });
 
 function attempt(over: Partial<FrenchAttemptRow>): FrenchAttemptRow {
   return {
@@ -123,6 +132,55 @@ describe("computeVocabHistory", () => {
     expect(history.has("avoir")).toBe(false);
     expect(history.has("faire")).toBe(true);
     expect(history.size).toBe(1);
+  });
+});
+
+describe("vocabMastery", () => {
+  it("masters a word at >90% over at least 3 showings, aggregating directions", () => {
+    const attempts = [
+      attempt({ details: [mk("vocab:être:fr2en", true)] }),
+      attempt({ details: [mk("vocab:être:en2fr", true)] }),
+      attempt({ details: [mk("vocab:être:fr2en", true)] }),
+      // avoir: 2/3 = 67% → not mastered
+      attempt({ details: [mk("vocab:avoir:fr2en", true), mk("vocab:avoir:en2fr", false)] }),
+      attempt({ details: [mk("vocab:avoir:fr2en", true)] }),
+    ];
+    const m = vocabMastery(attempts, 1000);
+    expect(m.mastered).toBe(1); // only être
+    expect(m.attempted).toBe(2);
+    expect(m.total).toBe(1000);
+  });
+
+  it("needs at least 3 showings even at 100% correct", () => {
+    const attempts = [
+      attempt({ details: [mk("vocab:faire:fr2en", true)] }),
+      attempt({ details: [mk("vocab:faire:fr2en", true)] }),
+    ];
+    expect(vocabMastery(attempts, 100).mastered).toBe(0);
+  });
+
+  it("pct is mastered words over the whole list", () => {
+    const attempts = ["un", "deux", "trois"].flatMap((w) =>
+      [0, 1, 2, 3].map(() => attempt({ details: [mk(`vocab:${w}:fr2en`, true)] })),
+    );
+    const m = vocabMastery(attempts, 12);
+    expect(m.mastered).toBe(3);
+    expect(m.pct).toBe(25);
+  });
+});
+
+describe("vocabMasteryProgress", () => {
+  const weeks = ["2026-06-08", "2026-06-15"];
+
+  it("accumulates: a word crosses the bar only once enough showings land", () => {
+    const attempts = [
+      attempt({ started_at: "2026-06-09T09:00:00Z", details: [mk("vocab:être:fr2en", true)] }),
+      attempt({ started_at: "2026-06-10T09:00:00Z", details: [mk("vocab:être:en2fr", true)] }),
+      attempt({ started_at: "2026-06-16T09:00:00Z", details: [mk("vocab:être:fr2en", true)] }),
+    ];
+    const pts = vocabMasteryProgress(attempts, weeks, 100);
+    expect(pts.find((p) => p.week_start === "2026-06-08")!.mastered).toBe(0);
+    expect(pts.find((p) => p.week_start === "2026-06-15")!.mastered).toBe(1);
   });
 });
 

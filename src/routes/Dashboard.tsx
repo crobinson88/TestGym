@@ -20,12 +20,19 @@ import { useDashboardStats, type WeekVolumePoint } from "@/lib/hooks";
 import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
 import { formatFull, formatVolume, prettyDate } from "@/lib/utils";
-import { useFrenchWeeklyAccuracy, type WeekAccuracyPoint } from "@/modules/french";
+import {
+  useFrenchWeeklyAccuracy,
+  useVocabMastery,
+  useVocabMasteryProgress,
+  type MasteryPoint,
+  type WeekAccuracyPoint,
+} from "@/modules/french";
 
 const HOURS_COLOR = "#22d3ee";
 const VOCAB_COLOR = "#22d3ee";
 const RULES_COLOR = "#a855f7";
 const CONJUG_COLOR = "#f59e0b";
+const MASTERY_COLOR = "#34d399";
 
 function mdTick(iso: string): string {
   const [, m, d] = iso.split("-");
@@ -44,6 +51,8 @@ export default function Dashboard() {
   const stats = useDashboardStats();
   const timeStats = useTimeDashboardStats();
   const frenchAccuracy = useFrenchWeeklyAccuracy();
+  const vocabMastery = useVocabMastery();
+  const masteryProgress = useVocabMasteryProgress();
   const [exporting, setExporting] = useState(false);
   if (!stats) return <div className="p-6 text-center text-muted">Loading...</div>;
 
@@ -155,6 +164,34 @@ export default function Dashboard() {
             ) : (
               <div className="py-10 text-center text-sm text-muted">
                 No French tests yet — take a vocab or rules test to start tracking accuracy.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {vocabMastery && masteryProgress && (
+        <section>
+          <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
+            French vocab mastery · top {vocabMastery.total.toLocaleString()}
+          </h2>
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <div className="mb-3 flex items-end justify-between px-1">
+              <div>
+                <div className="text-3xl font-bold tabular-nums">{vocabMastery.pct}%</div>
+                <div className="text-xs text-muted">
+                  {vocabMastery.mastered.toLocaleString()} of{" "}
+                  {vocabMastery.total.toLocaleString()} mastered · {vocabMastery.attempted.toLocaleString()} seen
+                </div>
+              </div>
+              <div className="text-right text-xs text-muted">mastered = &gt;90% correct</div>
+            </div>
+            {vocabMastery.attempted > 0 ? (
+              <MasteryChart data={masteryProgress} />
+            ) : (
+              <div className="py-10 text-center text-sm text-muted">
+                No vocab answered yet — take a vocab test to start mastering the top{" "}
+                {vocabMastery.total.toLocaleString()}.
               </div>
             )}
           </div>
@@ -336,6 +373,52 @@ function FrenchAccuracyChart({ data }: { data: WeekAccuracyPoint[] }) {
           connectNulls
         />
       </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function MasteryChart({ data }: { data: MasteryPoint[] }) {
+  const peak = Math.max(1, ...data.map((d) => d.pct));
+  const top = Math.min(100, Math.ceil(peak / 5) * 5 + 5);
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <AreaChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="masteryFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={MASTERY_COLOR} stopOpacity={0.5} />
+            <stop offset="100%" stopColor={MASTERY_COLOR} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="#2a2a2a" vertical={false} />
+        <XAxis
+          dataKey="week_start"
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          tickFormatter={(iso) => mdTick(iso as string)}
+        />
+        <YAxis
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          width={40}
+          domain={[0, top]}
+          tickFormatter={(v) => `${v}%`}
+        />
+        <Tooltip
+          contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
+          labelStyle={{ color: "#8a8a8a" }}
+          formatter={(value, _name, item) => [
+            `${value as number}% · ${(item?.payload as MasteryPoint).mastered} words`,
+            "Mastered",
+          ]}
+          labelFormatter={(label) => `Week of ${prettyDate(label as string)}`}
+        />
+        <Area
+          type="monotone"
+          dataKey="pct"
+          stroke={MASTERY_COLOR}
+          strokeWidth={2}
+          fill="url(#masteryFill)"
+          dot={{ r: 3 }}
+        />
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

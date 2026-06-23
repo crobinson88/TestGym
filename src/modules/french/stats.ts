@@ -1,5 +1,5 @@
 import type { FrenchAttemptRow, FrenchTestKind } from "@/lib/database.types";
-import { weekStart } from "@/lib/utils";
+import { addDays, weekStart } from "@/lib/utils";
 
 export interface KindStats {
   kind: FrenchTestKind;
@@ -134,6 +134,65 @@ export function computeVocabHistory(
     }
   }
   return map;
+}
+
+// A word counts as "mastered" once it's been answered correctly more than 90% of
+// the times it's been shown — but only after enough showings that the rate means
+// something (a single lucky hit shouldn't count).
+export const VOCAB_MASTERY_THRESHOLD = 0.9;
+export const VOCAB_MASTERY_MIN_SEEN = 3;
+
+export function isMastered(h: VocabWordHistory): boolean {
+  return h.seen >= VOCAB_MASTERY_MIN_SEEN && h.correct / h.seen > VOCAB_MASTERY_THRESHOLD;
+}
+
+export interface VocabMastery {
+  total: number; // size of the study list (top N)
+  attempted: number; // distinct words shown at least once
+  mastered: number; // distinct words clearing the mastery bar
+  pct: number; // mastered / total, 0..100
+}
+
+// Mastery snapshot across the whole study list.
+export function vocabMastery(
+  attempts: readonly FrenchAttemptRow[],
+  total: number,
+): VocabMastery {
+  const hist = computeVocabHistory(attempts);
+  let attempted = 0;
+  let mastered = 0;
+  for (const h of hist.values()) {
+    if (h.seen > 0) attempted += 1;
+    if (isMastered(h)) mastered += 1;
+  }
+  return {
+    total,
+    attempted,
+    mastered,
+    pct: total > 0 ? Math.round((mastered / total) * 100) : 0,
+  };
+}
+
+export interface MasteryPoint {
+  week_start: string;
+  mastered: number;
+  pct: number; // mastered words as a 0..100 % of the whole study list
+}
+
+// Cumulative mastery as of the end of each (Mon–Sun) week, so the chart shows
+// progress toward mastering the whole list. Recomputed from scratch per week, so
+// a word slipping back below the bar correctly lowers the line.
+export function vocabMasteryProgress(
+  attempts: readonly FrenchAttemptRow[],
+  weekStarts: readonly string[],
+  total: number,
+): MasteryPoint[] {
+  return weekStarts.map((ws) => {
+    const cutoff = addDays(ws, 6); // inclusive Sunday of this week
+    const upto = attempts.filter((a) => a.started_at.slice(0, 10) <= cutoff);
+    const m = vocabMastery(upto, total);
+    return { week_start: ws, mastered: m.mastered, pct: m.pct };
+  });
 }
 
 // One week's accuracy per kind, as a 0..100 percentage. `null` means no test of
