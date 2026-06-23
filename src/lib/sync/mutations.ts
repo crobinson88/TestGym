@@ -71,6 +71,7 @@ export interface AddShareTradeInput {
   links?: string[];
   images?: string[];
   models?: TradeModel[];
+  is_opening?: boolean;
 }
 
 export type UpdateShareTradeInput = Partial<AddShareTradeInput>;
@@ -314,6 +315,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       links: input.links ?? [],
       images: input.images ?? [],
       models: input.models ?? [],
+      is_opening: input.is_opening ?? false,
       total: null,
       client_id: id,
       user_id: null,

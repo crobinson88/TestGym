@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, Plus, TrendingUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, PiggyBank, Plus, TrendingUp } from "lucide-react";
 import { cn, relativeDay } from "@/lib/utils";
 import { usePositions, useShareTrades } from "../hooks";
 import { formatMoney, formatQty } from "../types";
@@ -14,23 +14,34 @@ export default function SharesView() {
   }
 
   const openPositions = positions.filter((p) => Math.abs(p.netShares) > 1e-9);
+  // Opening holdings roll into positions but aren't trade decisions, so keep
+  // them out of the log.
+  const tradeLog = trades.filter((t) => !t.is_opening);
 
   return (
     <div className="space-y-6 p-4 pb-24">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Shares</h1>
-        <button
-          onClick={() => navigate("/shares/add")}
-          className="flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-bg transition active:scale-[0.98]"
-        >
-          <Plus className="h-5 w-5" /> Log trade
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate("/shares/add-holding")}
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-text transition active:scale-[0.98]"
+          >
+            <PiggyBank className="h-5 w-5 text-accent" /> Holding
+          </button>
+          <button
+            onClick={() => navigate("/shares/add")}
+            className="flex h-11 items-center gap-1.5 rounded-xl bg-accent px-3 text-sm font-semibold text-bg transition active:scale-[0.98]"
+          >
+            <Plus className="h-5 w-5" /> Trade
+          </button>
+        </div>
       </header>
 
       {trades.length === 0 && (
         <div className="rounded-2xl border border-dashed border-line bg-surface p-8 text-center text-muted">
           <TrendingUp className="mx-auto mb-3 h-8 w-8 text-accent" />
-          No trades yet. Log your first buy or sell.
+          Nothing here yet. Log a buy or sell, or add a holding you already own.
         </div>
       )}
 
@@ -69,11 +80,11 @@ export default function SharesView() {
         </section>
       )}
 
-      {trades.length > 0 && (
+      {tradeLog.length > 0 && (
         <section>
           <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Trade log</h2>
           <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
-            {trades.map((t) => (
+            {tradeLog.map((t) => (
               <li key={t.id} className="border-b border-line/50 last:border-b-0">
                 <Link
                   to={`/shares/${t.id}`}

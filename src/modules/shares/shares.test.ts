@@ -28,6 +28,7 @@ function makeLocalTrade(over: Partial<LocalShareTrade> = {}): LocalShareTrade {
     links: [],
     images: [],
     models: [],
+    is_opening: false,
     total: 1000,
     client_id: id,
     user_id: null,
@@ -60,10 +61,41 @@ describe("shares mutations", () => {
     expect(trade.client_id).toBe(trade.id);
     expect(trade.total).toBeNull(); // server-generated
     expect(trade.traded_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(trade.is_opening).toBe(false); // defaults to a real trade
     expect(notified).toBe(1);
 
     const stored = await db.share_trades.get(trade.id);
     expect(stored?.quantity).toBe(5);
+  });
+
+  it("addShareTrade flags an opening holding and still rolls into the position", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    const holding = await m.addShareTrade({
+      ticker: "NVDA",
+      side: "buy",
+      quantity: 12,
+      price: 100,
+      is_opening: true,
+    });
+    expect(holding.is_opening).toBe(true);
+
+    const all = await db.share_trades.toArray();
+    const [pos] = computePositions(all);
+    expect(pos.ticker).toBe("NVDA");
+    expect(pos.netShares).toBe(12);
+    expect(pos.avgBuyPrice).toBe(100); // avg cost still reflects the holding
+    expect(pos.netCash).toBe(0); // already owned — no cash dented
+  });
+
+  it("an opening holding doesn't dent net cash, but selling it realises cash", () => {
+    const trades = [
+      makeLocalTrade({ ticker: "NVDA", side: "buy", quantity: 12, price: 100, is_opening: true }),
+      makeLocalTrade({ ticker: "NVDA", side: "sell", quantity: 5, price: 120 }),
+    ];
+    const [pos] = computePositions(trades);
+    expect(pos.netShares).toBe(7);
+    expect(pos.netCash).toBe(600); // 5 * 120 proceeds, no buy-side cash outflow
   });
 
   it("addShareTrade stores attached models (sheet + file)", async () => {

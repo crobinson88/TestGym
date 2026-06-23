@@ -46,7 +46,8 @@ export interface Position {
   buyCost: number;
   sellProceeds: number;
   avgBuyPrice: number;
-  // Net cash flow: positive means more realised from sells than spent on buys.
+  // Net cash flow: sell proceeds minus cash spent on buys. Opening holdings
+  // (already owned, no cash outflow) are excluded.
   netCash: number;
   tradeCount: number;
   lastTradedAt: string;
@@ -84,11 +85,15 @@ export function computePositions(trades: LocalShareTrade[]): Position[] {
   }
   const positions = [...byTicker.values()];
   for (const pos of positions) {
-    const boughtShares = trades
-      .filter((t) => t.ticker === pos.ticker && t.side === "buy")
-      .reduce((sum, t) => sum + t.quantity, 0);
+    const buys = trades.filter((t) => t.ticker === pos.ticker && t.side === "buy");
+    const boughtShares = buys.reduce((sum, t) => sum + t.quantity, 0);
     pos.avgBuyPrice = boughtShares > 0 ? pos.buyCost / boughtShares : 0;
-    pos.netCash = pos.sellProceeds - pos.buyCost;
+    // Opening holdings are shares already owned — no cash left your account
+    // for them, so they don't dent net cash (but still count toward avg cost).
+    const cashOut = buys
+      .filter((t) => !t.is_opening)
+      .reduce((sum, t) => sum + t.quantity * t.price, 0);
+    pos.netCash = pos.sellProceeds - cashOut;
   }
   return positions.sort((a, b) => (a.lastTradedAt < b.lastTradedAt ? 1 : -1));
 }
