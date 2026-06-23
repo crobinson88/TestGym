@@ -217,6 +217,9 @@ export interface ShareTradeRow {
   links: string[];
   images: string[];
   models: TradeModel[];
+  // An opening/existing holding recorded after the fact, not a logged buy
+  // decision. Rolls into position math but is hidden from the trade log.
+  is_opening: boolean;
   total: number | null;
   client_id: string | null;
   user_id: string | null;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, Check, ChevronLeft, Table2 } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Check, ChevronLeft, PiggyBank, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { syncEngine } from "@/lib/sync";
@@ -129,9 +129,15 @@ export default function StockView() {
         <ResearchPanel ticker={ticker} onInsert={insertSummary} />
 
         <section>
-          <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
-            Trades · {ticker}
-          </h2>
+          <div className="mb-2 flex items-center justify-between px-1">
+            <h2 className="text-xs uppercase tracking-wider text-muted">Trades · {ticker}</h2>
+            <Link
+              to={`/shares/add-holding?ticker=${ticker}`}
+              className="flex items-center gap-1 text-sm font-semibold text-accent"
+            >
+              <PiggyBank className="h-4 w-4" /> Add holding
+            </Link>
+          </div>
           {trades && trades.length > 0 ? (
             <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
               {trades.map((t) => (
@@ -156,7 +162,14 @@ export default function StockView() {
                         )}
                       </span>
                       <span className="text-sm">
-                        {formatQty(t.quantity)} @ {formatMoney(t.price, t.currency)}
+                        <span className="flex items-center gap-1.5">
+                          {formatQty(t.quantity)} @ {formatMoney(t.price, t.currency)}
+                          {t.is_opening && (
+                            <span className="rounded-full bg-surface2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                              Opening
+                            </span>
+                          )}
+                        </span>
                         <span className="block text-xs text-muted">{relativeDay(t.traded_at)}</span>
                       </span>
                     </span>
