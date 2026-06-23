@@ -7,6 +7,7 @@ import type {
   ForecastRow,
   FrenchAttemptRow,
   MetActivityRow,
+  ReadingItemRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -87,6 +88,10 @@ export interface LocalFrenchAttempt extends FrenchAttemptRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalReadingItem extends ReadingItemRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -104,6 +109,7 @@ export class GymDB extends Dexie {
   stocks!: Table<LocalStock, string>;
   forecasts!: Table<LocalForecast, string>;
   french_attempts!: Table<LocalFrenchAttempt, string>;
+  reading_items!: Table<LocalReadingItem, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -202,6 +208,9 @@ export class GymDB extends Dexie {
     });
     this.version(12).stores({
       french_attempts: "id, kind, started_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(13).stores({
+      reading_items: "id, is_read, created_at, updated_at, sync_status, deleted_at",
     });
   }
 }

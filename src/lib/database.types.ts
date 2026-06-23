@@ -274,6 +274,21 @@ export interface FrenchAttemptRow {
   deleted_at: string | null;
 }
 
+// An article or podcast saved to read/listen to later. URL + title + a free-text
+// description; `is_read` flags it done. Same sync / RLS / soft-delete rules as `sets`.
+export interface ReadingItemRow {
+  id: string;
+  url: string;
+  title: string;
+  description: string | null;
+  is_read: boolean;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -385,6 +400,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<FrenchAttemptRow>;
+      };
+      reading_items: {
+        Row: ReadingItemRow;
+        Insert: Omit<ReadingItemRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<ReadingItemRow>;
       };
     };
   };

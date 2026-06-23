@@ -14,6 +14,7 @@ import { tdlRoutes } from "@/modules/tdl/routes";
 import { venmoRoutes } from "@/modules/venmo/routes";
 import { sharesRoutes } from "@/modules/shares/routes";
 import { frenchRoutes } from "@/modules/french/routes";
+import { readingRoutes } from "@/modules/reading_list/routes";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
 const Dashboard = lazy(() => import("@/routes/Dashboard"));
@@ -72,6 +73,7 @@ export function App() {
               {venmoRoutes()}
               {sharesRoutes()}
               {frenchRoutes()}
+              {readingRoutes()}
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

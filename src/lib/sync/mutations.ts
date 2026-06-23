@@ -6,6 +6,7 @@ import type {
   LocalExercise,
   LocalForecast,
   LocalFrenchAttempt,
+  LocalReadingItem,
   LocalSet,
   LocalShareTrade,
   LocalStock,
@@ -18,6 +19,7 @@ import type {
   FrenchAttemptDetail,
   FrenchAttemptRow,
   FrenchTestKind,
+  ReadingItemRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -95,6 +97,16 @@ export interface AddFrenchAttemptInput {
   started_at: string;
 }
 
+export interface AddReadingItemInput {
+  url: string;
+  title: string;
+  description?: string | null;
+}
+
+export type UpdateReadingItemInput = Partial<AddReadingItemInput> & {
+  is_read?: boolean;
+};
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -132,6 +144,10 @@ function pendingForecast(row: ForecastRow): LocalForecast {
 }
 
 function pendingFrenchAttempt(row: FrenchAttemptRow): LocalFrenchAttempt {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingReadingItem(row: ReadingItemRow): LocalReadingItem {
   return { ...row, sync_status: "pending" };
 }
 
@@ -464,6 +480,62 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return local;
   }
 
+  async function addReadingItem(input: AddReadingItemInput): Promise<LocalReadingItem> {
+    const id = uuid();
+    const ts = now();
+    const row: ReadingItemRow = {
+      id,
+      url: input.url.trim(),
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      is_read: false,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingReadingItem(row);
+    await db.reading_items.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateReadingItem(
+    id: string,
+    patch: UpdateReadingItemInput,
+  ): Promise<LocalReadingItem | null> {
+    const existing = await db.reading_items.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalReadingItem = {
+      ...existing,
+      ...patch,
+      url: patch.url !== undefined ? patch.url.trim() : existing.url,
+      title: patch.title !== undefined ? patch.title.trim() : existing.title,
+      description:
+        patch.description !== undefined
+          ? patch.description?.trim() || null
+          : existing.description,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.reading_items.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function deleteReadingItem(id: string): Promise<void> {
+    const existing = await db.reading_items.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.reading_items.put({
+      ...existing,
+      deleted_at: ts,
+      updated_at: ts,
+      sync_status: "pending",
+    });
+    notify();
+  }
+
   return {
     addSet,
     updateSet,
@@ -481,6 +553,9 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addForecast,
     deleteForecast,
     addFrenchAttempt,
+    addReadingItem,
+    updateReadingItem,
+    deleteReadingItem,
   };
 }
 

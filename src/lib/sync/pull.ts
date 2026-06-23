@@ -6,6 +6,7 @@ import type {
   FrenchAttemptRow,
   MetActivityRow,
   ForecastRow,
+  ReadingItemRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -251,6 +252,18 @@ async function mergeFrenchAttempts(db: GymDB, rows: FrenchAttemptRow[]) {
   });
 }
 
+async function mergeReadingItems(db: GymDB, rows: ReadingItemRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.reading_items, async () => {
+    for (const remote of rows) {
+      const local = await db.reading_items.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.reading_items.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -272,6 +285,7 @@ const META_KEYS: Record<SyncTable, string> = {
   stocks: "last_pull_stocks",
   forecasts: "last_pull_forecasts",
   french_attempts: "last_pull_french_attempts",
+  reading_items: "last_pull_reading_items",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -300,6 +314,7 @@ export function createPull({ client, db, log }: PullDeps) {
       stocks: 0,
       forecasts: 0,
       french_attempts: 0,
+      reading_items: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -379,12 +394,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("forecasts", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "french_attempts") {
           const rows = await fetchSince<FrenchAttemptRow>(client, "french_attempts", since);
           await mergeFrenchAttempts(db, rows);
           fetched.french_attempts = rows.length;
           if (rows.length > 0) {
             await writeMark("french_attempts", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<ReadingItemRow>(client, "reading_items", since);
+          await mergeReadingItems(db, rows);
+          fetched.reading_items = rows.length;
+          if (rows.length > 0) {
+            await writeMark("reading_items", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {
