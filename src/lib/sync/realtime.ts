@@ -7,6 +7,7 @@ import type {
   FrenchAttemptRow,
   MetActivityRow,
   ForecastRow,
+  ReadingItemRow,
   SetRow,
   ShareTradeRow,
   StockRow,
@@ -33,7 +34,8 @@ type AnyRow =
   | ShareTradeRow
   | StockRow
   | ForecastRow
-  | FrenchAttemptRow;
+  | FrenchAttemptRow
+  | ReadingItemRow;
 
 export interface MergeResult {
   applied: boolean;

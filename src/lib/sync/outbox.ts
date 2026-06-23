@@ -6,6 +6,7 @@ import type {
   LocalFrenchAttempt,
   LocalMetActivity,
   LocalForecast,
+  LocalReadingItem,
   LocalSet,
   LocalShareTrade,
   LocalStock,
@@ -32,7 +33,8 @@ type PendingRow =
   | LocalShareTrade
   | LocalStock
   | LocalForecast
-  | LocalFrenchAttempt;
+  | LocalFrenchAttempt
+  | LocalReadingItem;
 
 const STRIP_KEYS = [
   "sync_status",
@@ -60,6 +62,7 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   stocks: "id",
   forecasts: "id",
   french_attempts: "id",
+  reading_items: "id",
 };
 
 function toPayload(row: PendingRow): Record<string, unknown> {
@@ -116,6 +119,9 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   }
   if (table === "french_attempts") {
     return db.french_attempts.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "reading_items") {
+    return db.reading_items.where("sync_status").equals("pending").limit(limit).toArray();
   }
   return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
 }
