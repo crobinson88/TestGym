@@ -6,6 +6,16 @@ import { ALLER, PERSONS, PRONOUN_LABEL } from "./data/conjugations";
 
 export const TEST_SIZE = 10;
 
+// Selectable question counts offered on the French home screen.
+export const TEST_SIZES = [5, 10, 15, 20] as const;
+
+// Coerce a (possibly user-supplied) count into a sane test length. Generators
+// cap at their pool size, so the upper bound here is just a guard rail.
+export function clampCount(n: number | null | undefined): number {
+  if (!n || !Number.isFinite(n)) return TEST_SIZE;
+  return Math.min(50, Math.max(1, Math.floor(n)));
+}
+
 // Human label per test kind, for headings and the recent-tests list.
 export const KIND_LABELS: Record<FrenchTestKind, string> = {
   vocab: "Vocab",

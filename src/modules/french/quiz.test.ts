@@ -3,6 +3,7 @@ import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
 import {
   checkTypedAnswer,
+  clampCount,
   generateConjugationTest,
   generateRulesTest,
   generateVocabTest,
@@ -176,7 +177,31 @@ describe("makeConjugationQuestion", () => {
   });
 });
 
+describe("clampCount", () => {
+  it("defaults a missing/invalid count to the standard size", () => {
+    expect(clampCount(null)).toBe(10);
+    expect(clampCount(NaN)).toBe(10);
+    expect(clampCount(0)).toBe(10);
+  });
+
+  it("keeps valid counts and floors fractions", () => {
+    expect(clampCount(5)).toBe(5);
+    expect(clampCount(20)).toBe(20);
+    expect(clampCount(12.9)).toBe(12);
+  });
+
+  it("clamps to the guard-rail bounds", () => {
+    expect(clampCount(-3)).toBe(1);
+    expect(clampCount(999)).toBe(50);
+  });
+});
+
 describe("generateConjugationTest", () => {
+  it("respects a custom count", () => {
+    const test = generateConjugationTest(CONJ_VERBS, { count: 15, rng: lcg(4) });
+    expect(test).toHaveLength(15);
+  });
+
   it("returns the requested count with valid answer indices and conjug ids", () => {
     const test = generateConjugationTest(CONJ_VERBS, { count: 10, rng: lcg(5) });
     expect(test).toHaveLength(10);

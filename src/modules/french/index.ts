@@ -7,8 +7,10 @@ export {
   generateVocabTest,
   generateRulesTest,
   generateConjugationTest,
+  clampCount,
   KIND_LABELS,
   TEST_SIZE,
+  TEST_SIZES,
 } from "./quiz";
 export type { Question, VocabDirection, ConjTense } from "./quiz";
 export { SCENARIOS, sendChat } from "./chat";

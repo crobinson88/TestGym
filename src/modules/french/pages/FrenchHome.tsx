@@ -14,7 +14,13 @@ import type { FrenchTestKind } from "@/lib/database.types";
 import { cn, relativeDay } from "@/lib/utils";
 import { useFrenchStats } from "../hooks";
 import { pct, type KindStats } from "../stats";
-import { KIND_LABELS, type VocabAnswerMode, type VocabDirection } from "../quiz";
+import {
+  KIND_LABELS,
+  TEST_SIZE,
+  TEST_SIZES,
+  type VocabAnswerMode,
+  type VocabDirection,
+} from "../quiz";
 import { RULE_QUESTIONS } from "../data/rules";
 import { VOCAB } from "../data/vocab";
 import { CONJ_VERBS } from "../data/conjugations";
@@ -60,6 +66,7 @@ export default function FrenchHome() {
   const stats = useFrenchStats();
   const [dir, setDir] = useState<VocabDirection>("mixed");
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
+  const [count, setCount] = useState<number>(TEST_SIZE);
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -71,15 +78,35 @@ export default function FrenchHome() {
       </header>
 
       <section className="grid grid-cols-1 gap-3">
+        <div className="space-y-1.5">
+          <div className="px-1 text-xs uppercase tracking-wider text-muted">Questions per test</div>
+          <div className="flex gap-2" role="group" aria-label="Questions per test">
+            {TEST_SIZES.map((n) => (
+              <button
+                key={n}
+                onClick={() => setCount(n)}
+                aria-pressed={count === n}
+                className={cn(
+                  "flex-1 rounded-xl border px-2 py-2 text-sm font-semibold tabular-nums transition",
+                  count === n
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="space-y-2">
           <button
-            onClick={() => navigate(`/french/test/vocab?dir=${dir}&ans=${answerMode}`)}
+            onClick={() => navigate(`/french/test/vocab?dir=${dir}&ans=${answerMode}&n=${count}`)}
             className="flex w-full items-center gap-4 rounded-2xl bg-accent px-5 py-4 text-left text-bg shadow-lg shadow-accent/20 transition active:scale-[0.98]"
           >
             <BookOpen className="h-7 w-7 shrink-0" />
             <div>
               <div className="text-lg font-semibold">New vocab test</div>
-              <div className="text-sm opacity-80">10 words from the top 1000</div>
+              <div className="text-sm opacity-80">{count} words from the top 1000</div>
             </div>
           </button>
           <div className="flex gap-2" role="group" aria-label="Vocab test direction">
@@ -118,23 +145,23 @@ export default function FrenchHome() {
           </div>
         </div>
         <button
-          onClick={() => navigate("/french/test/rules")}
+          onClick={() => navigate(`/french/test/rules?n=${count}`)}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
         >
           <ScrollText className="h-7 w-7 shrink-0 text-accent" />
           <div>
             <div className="text-lg font-semibold">New rules test</div>
-            <div className="text-sm text-muted">10 grammar questions</div>
+            <div className="text-sm text-muted">{count} grammar questions</div>
           </div>
         </button>
         <button
-          onClick={() => navigate("/french/test/conjug")}
+          onClick={() => navigate(`/french/test/conjug?n=${count}`)}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
         >
           <Repeat className="h-7 w-7 shrink-0 text-warn" />
           <div>
             <div className="text-lg font-semibold">New conjugation test</div>
-            <div className="text-sm text-muted">être, avoir, aller & more · present + near future</div>
+            <div className="text-sm text-muted">{count} prompts · present + near future</div>
           </div>
         </button>
         <button

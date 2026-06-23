@@ -6,9 +6,9 @@ import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay } from "@/lib/utils";
 import {
   checkTypedAnswer,
+  clampCount,
   generateTest,
   KIND_LABELS,
-  TEST_SIZE,
   type Question,
   type VocabDirection,
 } from "../quiz";
@@ -63,12 +63,14 @@ export default function TestRunner() {
   // Typed answers only apply to vocab; rules are always multiple choice.
   const typing = kind === "vocab" && searchParams.get("ans") === "type";
 
+  const count = clampCount(Number(searchParams.get("n")));
+
   const questions = useMemo<Question[]>(
     () =>
       isKind(kind)
-        ? generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, { count: TEST_SIZE, direction })
+        ? generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, { count, direction })
         : [],
-    [kind, direction],
+    [kind, direction, count],
   );
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());
