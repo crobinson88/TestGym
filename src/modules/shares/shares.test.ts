@@ -84,7 +84,18 @@ describe("shares mutations", () => {
     const [pos] = computePositions(all);
     expect(pos.ticker).toBe("NVDA");
     expect(pos.netShares).toBe(12);
-    expect(pos.avgBuyPrice).toBe(100);
+    expect(pos.avgBuyPrice).toBe(100); // avg cost still reflects the holding
+    expect(pos.netCash).toBe(0); // already owned — no cash dented
+  });
+
+  it("an opening holding doesn't dent net cash, but selling it realises cash", () => {
+    const trades = [
+      makeLocalTrade({ ticker: "NVDA", side: "buy", quantity: 12, price: 100, is_opening: true }),
+      makeLocalTrade({ ticker: "NVDA", side: "sell", quantity: 5, price: 120 }),
+    ];
+    const [pos] = computePositions(trades);
+    expect(pos.netShares).toBe(7);
+    expect(pos.netCash).toBe(600); // 5 * 120 proceeds, no buy-side cash outflow
   });
 
   it("addShareTrade stores attached models (sheet + file)", async () => {
