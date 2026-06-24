@@ -11,6 +11,7 @@ import type {
   SetRow,
   ShareTradeRow,
   StockRow,
+  TipRow,
   TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
@@ -92,6 +93,10 @@ export interface LocalReadingItem extends ReadingItemRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalTip extends TipRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -110,6 +115,7 @@ export class GymDB extends Dexie {
   forecasts!: Table<LocalForecast, string>;
   french_attempts!: Table<LocalFrenchAttempt, string>;
   reading_items!: Table<LocalReadingItem, string>;
+  tips!: Table<LocalTip, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -211,6 +217,9 @@ export class GymDB extends Dexie {
     });
     this.version(13).stores({
       reading_items: "id, is_read, created_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(14).stores({
+      tips: "id, ticker, status, received_at, updated_at, sync_status, deleted_at",
     });
   }
 }
