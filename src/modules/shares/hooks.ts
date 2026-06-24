@@ -58,3 +58,29 @@ export function useForecastsForTicker(ticker?: string) {
     return all.filter((f) => !f.deleted_at);
   }, [ticker]);
 }
+
+// Tip list: newest received first; dismissed tips sink below watched ones.
+export function useTips() {
+  return useLiveQuery(async () => {
+    const all = await db.tips.toArray();
+    return all
+      .filter((t) => !t.deleted_at)
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === "dismissed" ? 1 : -1;
+        return a.received_at < b.received_at
+          ? 1
+          : a.received_at > b.received_at
+            ? -1
+            : a.created_at < b.created_at
+              ? 1
+              : -1;
+      });
+  }, []);
+}
+
+export function useTip(id?: string) {
+  return useLiveQuery(async () => {
+    if (!id) return undefined;
+    return db.tips.get(id);
+  }, [id]);
+}

@@ -1,17 +1,28 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, PiggyBank, Plus, TrendingUp } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  ChevronRight,
+  Lightbulb,
+  PiggyBank,
+  Plus,
+  TrendingUp,
+} from "lucide-react";
 import { cn, relativeDay } from "@/lib/utils";
-import { usePositions, useShareTrades } from "../hooks";
+import { usePositions, useShareTrades, useTips } from "../hooks";
 import { formatMoney, formatQty } from "../types";
 
 export default function SharesView() {
   const trades = useShareTrades();
   const positions = usePositions();
+  const tips = useTips();
   const navigate = useNavigate();
 
-  if (trades === undefined || positions === undefined) {
+  if (trades === undefined || positions === undefined || tips === undefined) {
     return <div className="p-6 text-center text-muted">Loading…</div>;
   }
+
+  const watchingTips = tips.filter((t) => t.status === "watching").length;
 
   const openPositions = positions.filter((p) => Math.abs(p.netShares) > 1e-9);
   // Opening holdings roll into positions but aren't trade decisions, so keep
@@ -37,6 +48,26 @@ export default function SharesView() {
           </button>
         </div>
       </header>
+
+      <Link
+        to="/shares/tips"
+        className="flex items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 active:bg-surface2"
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <Lightbulb className="h-5 w-5" />
+          </span>
+          <div className="font-semibold">Tip list</div>
+        </div>
+        <div className="flex items-center gap-2 text-muted">
+          {watchingTips > 0 && (
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
+              {watchingTips} watching
+            </span>
+          )}
+          <ChevronRight className="h-5 w-5" />
+        </div>
+      </Link>
 
       {trades.length === 0 && (
         <div className="rounded-2xl border border-dashed border-line bg-surface p-8 text-center text-muted">

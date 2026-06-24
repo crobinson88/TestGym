@@ -10,6 +10,7 @@ import type {
   LocalSet,
   LocalShareTrade,
   LocalStock,
+  LocalTip,
 } from "../db";
 import type {
   CardioSessionRow,
@@ -23,6 +24,8 @@ import type {
   SetRow,
   ShareTradeRow,
   StockRow,
+  TipRow,
+  TipStatus,
   TradeCurrency,
   TradeModel,
   TradeSide,
@@ -107,6 +110,17 @@ export type UpdateReadingItemInput = Partial<AddReadingItemInput> & {
   is_read?: boolean;
 };
 
+export interface AddTipInput {
+  ticker: string;
+  tipped_by: string;
+  note?: string | null;
+  received_at?: string;
+}
+
+export type UpdateTipInput = Partial<AddTipInput> & {
+  status?: TipStatus;
+};
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -148,6 +162,10 @@ function pendingFrenchAttempt(row: FrenchAttemptRow): LocalFrenchAttempt {
 }
 
 function pendingReadingItem(row: ReadingItemRow): LocalReadingItem {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingTip(row: TipRow): LocalTip {
   return { ...row, sync_status: "pending" };
 }
 
@@ -536,6 +554,52 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     notify();
   }
 
+  async function addTip(input: AddTipInput): Promise<LocalTip> {
+    const id = uuid();
+    const ts = now();
+    const row: TipRow = {
+      id,
+      ticker: normaliseTicker(input.ticker),
+      tipped_by: input.tipped_by.trim(),
+      note: input.note?.trim() || null,
+      status: "watching",
+      received_at: input.received_at ?? todayIsoDate(),
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingTip(row);
+    await db.tips.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateTip(id: string, patch: UpdateTipInput): Promise<LocalTip | null> {
+    const existing = await db.tips.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalTip = {
+      ...existing,
+      ...patch,
+      ticker: patch.ticker !== undefined ? normaliseTicker(patch.ticker) : existing.ticker,
+      tipped_by: patch.tipped_by !== undefined ? patch.tipped_by.trim() : existing.tipped_by,
+      note: patch.note !== undefined ? patch.note?.trim() || null : existing.note,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.tips.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function deleteTip(id: string): Promise<void> {
+    const existing = await db.tips.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.tips.put({ ...existing, deleted_at: ts, updated_at: ts, sync_status: "pending" });
+    notify();
+  }
+
   return {
     addSet,
     updateSet,
@@ -556,6 +620,9 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addReadingItem,
     updateReadingItem,
     deleteReadingItem,
+    addTip,
+    updateTip,
+    deleteTip,
   };
 }
 

@@ -289,6 +289,25 @@ export interface ReadingItemRow {
   deleted_at: string | null;
 }
 
+export type TipStatus = "watching" | "dismissed";
+
+// A stock a friend flagged to watch. One row per ticker tip: who sent it, a
+// free-text note, when it came in, and whether it's still being watched or
+// dismissed. Same sync / RLS / soft-delete rules as `sets`.
+export interface TipRow {
+  id: string;
+  ticker: string;
+  tipped_by: string;
+  note: string | null;
+  status: TipStatus;
+  received_at: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -408,6 +427,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<ReadingItemRow>;
+      };
+      tips: {
+        Row: TipRow;
+        Insert: Omit<TipRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<TipRow>;
       };
     };
   };

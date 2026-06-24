@@ -10,6 +10,7 @@ import type {
   SetRow,
   ShareTradeRow,
   StockRow,
+  TipRow,
   TdlCategoryRow,
   TdlDayRow,
   TdlItemRow,
@@ -264,6 +265,18 @@ async function mergeReadingItems(db: GymDB, rows: ReadingItemRow[]) {
   });
 }
 
+async function mergeTips(db: GymDB, rows: TipRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.tips, async () => {
+    for (const remote of rows) {
+      const local = await db.tips.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.tips.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -286,6 +299,7 @@ const META_KEYS: Record<SyncTable, string> = {
   forecasts: "last_pull_forecasts",
   french_attempts: "last_pull_french_attempts",
   reading_items: "last_pull_reading_items",
+  tips: "last_pull_tips",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -315,6 +329,7 @@ export function createPull({ client, db, log }: PullDeps) {
       forecasts: 0,
       french_attempts: 0,
       reading_items: 0,
+      tips: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -401,12 +416,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("french_attempts", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "reading_items") {
           const rows = await fetchSince<ReadingItemRow>(client, "reading_items", since);
           await mergeReadingItems(db, rows);
           fetched.reading_items = rows.length;
           if (rows.length > 0) {
             await writeMark("reading_items", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<TipRow>(client, "tips", since);
+          await mergeTips(db, rows);
+          fetched.tips = rows.length;
+          if (rows.length > 0) {
+            await writeMark("tips", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

@@ -15,6 +15,7 @@ import type {
   LocalTdlItem,
   LocalTimeAllocation,
   LocalTimeTask,
+  LocalTip,
 } from "../db";
 import type { Client, DrainResult, Logger, SyncTable } from "./types";
 import { DEXIE_TABLE, SYNC_TABLES } from "./types";
@@ -34,7 +35,8 @@ type PendingRow =
   | LocalStock
   | LocalForecast
   | LocalFrenchAttempt
-  | LocalReadingItem;
+  | LocalReadingItem
+  | LocalTip;
 
 const STRIP_KEYS = [
   "sync_status",
@@ -63,6 +65,7 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   forecasts: "id",
   french_attempts: "id",
   reading_items: "id",
+  tips: "id",
 };
 
 function toPayload(row: PendingRow): Record<string, unknown> {
@@ -122,6 +125,9 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   }
   if (table === "reading_items") {
     return db.reading_items.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "tips") {
+    return db.tips.where("sync_status").equals("pending").limit(limit).toArray();
   }
   return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
 }
