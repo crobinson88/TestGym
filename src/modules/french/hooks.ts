@@ -4,6 +4,8 @@ import { addDays, todayIsoDate, weekStart } from "@/lib/utils";
 import {
   computeStats,
   computeVocabHistory,
+  computeVocabSchedules,
+  dueForReview,
   vocabMastery,
   vocabMasteryProgress,
   weeklyAccuracy,
@@ -32,6 +34,23 @@ export function useVocabHistory() {
   return useLiveQuery(async () => {
     const all = await db.french_attempts.toArray();
     return computeVocabHistory(all);
+  }, []);
+}
+
+// Spaced-repetition schedule per word, driving which words a vocab test resurfaces.
+export function useVocabSchedules() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return computeVocabSchedules(all);
+  }, []);
+}
+
+// Count of words due for review today, for the "due for review" hint on the home
+// screen. Undefined until the attempts load.
+export function useVocabDueCount() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return dueForReview(computeVocabSchedules(all), todayIsoDate());
   }, []);
 }
 

@@ -11,9 +11,11 @@ import {
   makeRuleQuestion,
   makeVocabQuestion,
   normalizeAnswer,
+  selectVocab,
   shuffle,
 } from "./quiz";
 import { CONJ_VERBS } from "./data/conjugations";
+import type { VocabSchedule } from "./stats";
 
 // Deterministic LCG so tests are reproducible.
 function lcg(seed: number) {
@@ -111,6 +113,61 @@ describe("generateVocabTest", () => {
     const test = generateVocabTest(VOCAB, { count: 6, rng: lcg(12), direction: "en2fr" });
     expect(test.every((q) => q.sub === "Which is the French?")).toBe(true);
     expect(test.every((q) => VOCAB.some((w) => w.en === q.prompt))).toBe(true);
+  });
+});
+
+const NOW = "2026-06-10";
+const sched = (over: Partial<VocabSchedule> & { fr: string }): VocabSchedule => ({
+  seen: 1,
+  correct: 0,
+  box: 0,
+  lastShownAt: "2026-06-01",
+  dueOn: "2026-06-01",
+  mastered: false,
+  ...over,
+});
+
+describe("selectVocab", () => {
+  it("puts due words ahead of brand-new ones", () => {
+    const schedules = new Map([["être", sched({ fr: "être", dueOn: "2026-06-09" })]]);
+    const out = selectVocab(VOCAB, 3, lcg(1), schedules, NOW);
+    expect(out).toHaveLength(3);
+    expect(out[0].fr).toBe("être"); // due word resurfaces first
+  });
+
+  it("orders the most-lapsed (lowest box) due word first", () => {
+    const schedules = new Map([
+      ["être", sched({ fr: "être", box: 0, dueOn: "2026-06-08" })],
+      ["avoir", sched({ fr: "avoir", box: 2, dueOn: "2026-06-01" })], // more overdue but better known
+    ]);
+    const out = selectVocab(VOCAB, 6, lcg(2), schedules, NOW);
+    expect(out[0].fr).toBe("être"); // box 0 beats box 2
+    expect(out[1].fr).toBe("avoir");
+  });
+
+  it("sinks mastered (not-due) words to the back of the queue", () => {
+    const schedules = new Map([
+      ["avoir", sched({ fr: "avoir", dueOn: "2026-06-09" })],
+      ["être", sched({ fr: "être", box: 5, dueOn: "2026-07-01", mastered: true })],
+    ]);
+    const out = selectVocab(VOCAB, 6, lcg(3), schedules, NOW);
+    expect(out[0].fr).toBe("avoir"); // the due word leads
+    expect(out[out.length - 1].fr).toBe("être"); // mastered word last
+  });
+
+  it("falls back to a plain sample and respects count + pool cap with no history", () => {
+    const empty = new Map<string, VocabSchedule>();
+    expect(selectVocab(VOCAB, 100, lcg(4), empty, NOW)).toHaveLength(VOCAB.length);
+    expect(selectVocab(VOCAB, 3, lcg(4), empty, NOW)).toHaveLength(3);
+  });
+});
+
+describe("generateVocabTest with a schedule", () => {
+  it("resurfaces a due word for testing", () => {
+    const schedules = new Map([["le chien", sched({ fr: "le chien", dueOn: "2026-06-09" })]]);
+    const test = generateVocabTest(VOCAB, { count: 1, rng: lcg(5), schedules, now: NOW });
+    expect(test).toHaveLength(1);
+    expect(test[0].id.startsWith("vocab:le chien:")).toBe(true);
   });
 });
 

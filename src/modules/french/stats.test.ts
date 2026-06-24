@@ -3,6 +3,10 @@ import type { FrenchAttemptRow } from "@/lib/database.types";
 import {
   computeStats,
   computeVocabHistory,
+  computeVocabSchedules,
+  dueForReview,
+  reviewIntervalDays,
+  REVIEW_INTERVALS_DAYS,
   vocabKeyFromQuestionId,
   vocabMastery,
   vocabMasteryProgress,
@@ -181,6 +185,69 @@ describe("vocabMasteryProgress", () => {
     const pts = vocabMasteryProgress(attempts, weeks, 100);
     expect(pts.find((p) => p.week_start === "2026-06-08")!.mastered).toBe(0);
     expect(pts.find((p) => p.week_start === "2026-06-15")!.mastered).toBe(1);
+  });
+});
+
+describe("reviewIntervalDays", () => {
+  it("maps each box to its interval and clamps out-of-range boxes", () => {
+    expect(reviewIntervalDays(0)).toBe(REVIEW_INTERVALS_DAYS[0]);
+    expect(reviewIntervalDays(2)).toBe(REVIEW_INTERVALS_DAYS[2]);
+    expect(reviewIntervalDays(-5)).toBe(REVIEW_INTERVALS_DAYS[0]);
+    expect(reviewIntervalDays(999)).toBe(REVIEW_INTERVALS_DAYS[REVIEW_INTERVALS_DAYS.length - 1]);
+  });
+});
+
+describe("computeVocabSchedules", () => {
+  it("climbs a box per correct answer and pushes the due date further out", () => {
+    const schedules = computeVocabSchedules([
+      attempt({ started_at: "2026-06-01T10:00:00Z", details: [mk("vocab:être:fr2en", true)] }),
+      attempt({ started_at: "2026-06-03T10:00:00Z", details: [mk("vocab:être:en2fr", true)] }),
+      attempt({ started_at: "2026-06-06T10:00:00Z", details: [mk("vocab:être:fr2en", true)] }),
+    ]);
+    const s = schedules.get("être")!;
+    expect(s.seen).toBe(3);
+    expect(s.correct).toBe(3);
+    expect(s.box).toBe(3);
+    expect(s.lastShownAt).toBe("2026-06-06");
+    expect(s.dueOn).toBe("2026-06-13"); // 2026-06-06 + interval(box 3) = 7 days
+    expect(s.mastered).toBe(true);
+  });
+
+  it("resets the box to 0 on a miss so the word is due the same day", () => {
+    const schedules = computeVocabSchedules([
+      attempt({ started_at: "2026-06-01T10:00:00Z", details: [mk("vocab:avoir:fr2en", true)] }),
+      attempt({ started_at: "2026-06-02T10:00:00Z", details: [mk("vocab:avoir:fr2en", true)] }),
+      attempt({ started_at: "2026-06-03T10:00:00Z", details: [mk("vocab:avoir:en2fr", false)] }),
+    ]);
+    const s = schedules.get("avoir")!;
+    expect(s.box).toBe(0);
+    expect(s.dueOn).toBe("2026-06-03"); // due immediately after the miss
+    expect(s.mastered).toBe(false);
+  });
+
+  it("ignores rules and soft-deleted attempts", () => {
+    const schedules = computeVocabSchedules([
+      attempt({ kind: "rules", details: [mk("r1", false)] }),
+      attempt({ deleted_at: "2026-06-10T00:00:00Z", details: [mk("vocab:faire:fr2en", false)] }),
+      attempt({ details: [mk("vocab:dire:fr2en", true)] }),
+    ]);
+    expect(schedules.has("faire")).toBe(false);
+    expect(schedules.has("dire")).toBe(true);
+  });
+});
+
+describe("dueForReview", () => {
+  it("counts only words due on or before the given day", () => {
+    const schedules = computeVocabSchedules([
+      // être: mastered, due 2026-06-13 (not due as of 2026-06-10)
+      attempt({ started_at: "2026-06-01T10:00:00Z", details: [mk("vocab:être:fr2en", true)] }),
+      attempt({ started_at: "2026-06-03T10:00:00Z", details: [mk("vocab:être:en2fr", true)] }),
+      attempt({ started_at: "2026-06-06T10:00:00Z", details: [mk("vocab:être:fr2en", true)] }),
+      // avoir: missed on 2026-06-03, due that day
+      attempt({ started_at: "2026-06-03T10:00:00Z", details: [mk("vocab:avoir:fr2en", false)] }),
+    ]);
+    expect(dueForReview(schedules, "2026-06-10")).toBe(1); // only avoir
+    expect(dueForReview(schedules, "2026-06-13")).toBe(2); // être now due too
   });
 });
 

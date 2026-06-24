@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-
 import { Check, ChevronRight, RotateCcw, Sparkles, X } from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { syncEngine } from "@/lib/sync";
-import { cn, relativeDay } from "@/lib/utils";
+import { cn, relativeDay, todayIsoDate } from "@/lib/utils";
 import {
   checkTypedAnswer,
   clampCount,
@@ -15,7 +15,7 @@ import {
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 import { CONJ_VERBS } from "../data/conjugations";
-import { useVocabHistory } from "../hooks";
+import { useVocabHistory, useVocabSchedules } from "../hooks";
 import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
@@ -65,13 +65,25 @@ export default function TestRunner() {
 
   const count = clampCount(Number(searchParams.get("n")));
 
-  const questions = useMemo<Question[]>(
-    () =>
-      isKind(kind)
-        ? generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, { count, direction })
-        : [],
-    [kind, direction, count],
-  );
+  // Spaced-repetition schedule for vocab selection. Undefined until it loads; other
+  // kinds don't need it. Snapshotted on mount, so the in-progress test isn't biased
+  // by its own (not-yet-saved) answers.
+  const vocabSchedules = useVocabSchedules();
+  const schedulesReady = kind !== "vocab" || vocabSchedules !== undefined;
+
+  // Built once the schedule is ready, then frozen for the run — the attempts table
+  // isn't written until the test finishes, so the schedule won't shift mid-test.
+  // `schedulesReady` (not the map identity) gates the one-time build.
+  const questions = useMemo<Question[]>(() => {
+    if (!isKind(kind) || !schedulesReady) return [];
+    return generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, {
+      count,
+      direction,
+      schedules: kind === "vocab" ? vocabSchedules : undefined,
+      now: todayIsoDate(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, direction, count, schedulesReady]);
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());
 
@@ -88,6 +100,13 @@ export default function TestRunner() {
   const vocabHistory = useVocabHistory();
 
   if (!isKind(kind)) return <Navigate to="/french" replace />;
+  if (!schedulesReady) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center text-sm text-muted">
+        Loading…
+      </div>
+    );
+  }
   if (questions.length === 0) return <Navigate to="/french" replace />;
 
   const q = questions[index];
