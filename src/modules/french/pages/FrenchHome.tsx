@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { FrenchTestKind } from "@/lib/database.types";
 import { cn, relativeDay } from "@/lib/utils";
-import { useFrenchStats } from "../hooks";
+import { useFrenchStats, useVocabDueCount } from "../hooks";
 import { pct, type KindStats } from "../stats";
 import {
   KIND_LABELS,
@@ -64,6 +64,7 @@ function StatCard({ stats, label }: { stats: KindStats; label: string }) {
 export default function FrenchHome() {
   const navigate = useNavigate();
   const stats = useFrenchStats();
+  const dueCount = useVocabDueCount();
   const [dir, setDir] = useState<VocabDirection>("mixed");
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
   const [count, setCount] = useState<number>(TEST_SIZE);
@@ -105,9 +106,17 @@ export default function FrenchHome() {
           >
             <BookOpen className="h-7 w-7 shrink-0" />
             <div>
-              <div className="text-lg font-semibold">New vocab test</div>
+              <div className="text-lg font-semibold">Vocab test</div>
               <div className="text-sm opacity-80">
-                {count} words from the top {VOCAB.length.toLocaleString()}
+                {dueCount ? (
+                  <>
+                    {dueCount} due for review · {count} per test
+                  </>
+                ) : (
+                  <>
+                    {count} words from the top {VOCAB.length.toLocaleString()}
+                  </>
+                )}
               </div>
             </div>
           </button>

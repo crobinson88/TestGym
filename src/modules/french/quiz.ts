@@ -1,8 +1,10 @@
 import type { FrenchTestKind } from "@/lib/database.types";
+import { todayIsoDate } from "@/lib/utils";
 import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
 import type { Person, VerbConjugation } from "./data/conjugations";
 import { ALLER, PERSONS, PRONOUN_LABEL } from "./data/conjugations";
+import type { VocabSchedule } from "./stats";
 
 export const TEST_SIZE = 10;
 
@@ -75,6 +77,10 @@ export interface GenerateOptions {
   count?: number;
   rng?: Rng;
   direction?: VocabDirection;
+  // When supplied, vocab questions are drawn by spaced repetition (due/lapsed words
+  // first) instead of uniformly at random. `now` (today's date) drives due-ness.
+  schedules?: Map<string, VocabSchedule>;
+  now?: string;
 }
 
 // Fisher-Yates, parameterised on the rng so tests are deterministic.
@@ -152,11 +158,58 @@ export function makeVocabQuestion(
   };
 }
 
+// Pick which words a vocab test should cover using the review schedule, so wrong
+// answers resurface at the optimal frequency until they stick. Order of priority:
+//   1. due/overdue words — soonest the most-lapsed (lowest box) first, so words
+//      you keep missing come back every session until you get them right;
+//   2. brand-new words — to keep advancing through the study list once the review
+//      backlog for this session is clear;
+//   3. words seen but not yet due — soonest-due first, as light extra practice;
+//   4. mastered words — least-recently-seen, only to pad a tiny pool.
+// Equal-priority words are shuffled (stable sort preserves the shuffle) so repeat
+// sessions don't replay the same order. `now` is today's date for due-ness.
+export function selectVocab(
+  pool: readonly VocabWord[],
+  count: number,
+  rng: Rng,
+  schedules: Map<string, VocabSchedule>,
+  now: string,
+): VocabWord[] {
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const due: { w: VocabWord; s: VocabSchedule }[] = [];
+  const upcoming: { w: VocabWord; s: VocabSchedule }[] = [];
+  const mastered: { w: VocabWord; s: VocabSchedule }[] = [];
+  const fresh: VocabWord[] = [];
+
+  for (const w of shuffle(pool, rng)) {
+    const s = schedules.get(w.fr);
+    if (!s) fresh.push(w);
+    else if (s.dueOn <= now) due.push({ w, s });
+    else if (s.mastered) mastered.push({ w, s });
+    else upcoming.push({ w, s });
+  }
+
+  due.sort((a, b) => a.s.box - b.s.box || cmp(a.s.dueOn, b.s.dueOn));
+  upcoming.sort((a, b) => cmp(a.s.dueOn, b.s.dueOn));
+  mastered.sort((a, b) => cmp(a.s.lastShownAt, b.s.lastShownAt));
+
+  const ordered = [
+    ...due.map((x) => x.w),
+    ...fresh,
+    ...upcoming.map((x) => x.w),
+    ...mastered.map((x) => x.w),
+  ];
+  return ordered.slice(0, Math.min(count, pool.length));
+}
+
 export function generateVocabTest(
   pool: readonly VocabWord[],
-  { count = TEST_SIZE, rng = Math.random, direction = "mixed" }: GenerateOptions = {},
+  { count = TEST_SIZE, rng = Math.random, direction = "mixed", schedules, now }: GenerateOptions = {},
 ): Question[] {
-  return sample(pool, count, rng).map((w) => {
+  const words = schedules
+    ? selectVocab(pool, count, rng, schedules, now ?? todayIsoDate())
+    : sample(pool, count, rng);
+  return words.map((w) => {
     const dir: Direction = direction === "mixed" ? (rng() < 0.5 ? "fr2en" : "en2fr") : direction;
     return makeVocabQuestion(w, pool, rng, dir);
   });

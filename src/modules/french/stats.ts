@@ -146,6 +146,76 @@ export function isMastered(h: VocabWordHistory): boolean {
   return h.seen >= VOCAB_MASTERY_MIN_SEEN && h.correct / h.seen > VOCAB_MASTERY_THRESHOLD;
 }
 
+// Days until a word in each Leitner box is due for review again. A just-missed word
+// (box 0) resurfaces the same day; each subsequent correct answer climbs a box and
+// widens the gap, so a firmly-known word reappears rarely while a forgotten one
+// comes straight back. The last entry caps the interval.
+export const REVIEW_INTERVALS_DAYS = [0, 1, 3, 7, 16, 35] as const;
+const MAX_BOX = REVIEW_INTERVALS_DAYS.length - 1;
+
+export function reviewIntervalDays(box: number): number {
+  return REVIEW_INTERVALS_DAYS[Math.max(0, Math.min(box, MAX_BOX))];
+}
+
+// A word's spaced-repetition state, reconstructed by replaying its showings in
+// order. `box` is the current recall streak (correct answers since the last miss):
+// it climbs one per correct answer and resets to 0 on any miss, so it reflects how
+// firmly the word is held *right now*, not its lifetime rate. `dueOn` is when the
+// word next wants reviewing; `mastered` is the lifetime bar the Dashboard tracks.
+export interface VocabSchedule {
+  fr: string;
+  seen: number;
+  correct: number;
+  box: number;
+  lastShownAt: string; // date (YYYY-MM-DD) of the most recent showing
+  dueOn: string; // date the word next becomes due for review
+  mastered: boolean;
+}
+
+// Build a review schedule per vocab word from the per-question detail of every
+// attempt, replayed oldest-first so each Leitner box reflects the latest streak.
+export function computeVocabSchedules(
+  attempts: readonly FrenchAttemptRow[],
+): Map<string, VocabSchedule> {
+  const ordered = attempts
+    .filter((a) => !a.deleted_at && a.kind === "vocab")
+    .slice()
+    .sort((a, b) => (a.started_at < b.started_at ? -1 : a.started_at > b.started_at ? 1 : 0));
+
+  const map = new Map<string, VocabSchedule>();
+  for (const a of ordered) {
+    const day = a.started_at.slice(0, 10);
+    for (const d of a.details ?? []) {
+      const key = vocabKeyFromQuestionId(d.questionId);
+      if (!key) continue;
+      const s =
+        map.get(key) ??
+        { fr: key, seen: 0, correct: 0, box: 0, lastShownAt: day, dueOn: day, mastered: false };
+      s.seen += 1;
+      if (d.correct) {
+        s.correct += 1;
+        s.box = Math.min(s.box + 1, MAX_BOX);
+      } else {
+        s.box = 0;
+      }
+      s.lastShownAt = day;
+      s.dueOn = addDays(day, reviewIntervalDays(s.box));
+      s.mastered = isMastered({ seen: s.seen, correct: s.correct, lastShownAt: day });
+      map.set(key, s);
+    }
+  }
+  return map;
+}
+
+// How many seen words are due for review on or before `now` — the backlog a vocab
+// test clears before introducing new words. A mastered word that has slipped (box
+// reset to 0, due today) counts: a wrong answer always pulls a word back in.
+export function dueForReview(schedules: Map<string, VocabSchedule>, now: string): number {
+  let n = 0;
+  for (const s of schedules.values()) if (s.dueOn <= now) n += 1;
+  return n;
+}
+
 export interface VocabMastery {
   total: number; // size of the study list (top N)
   attempted: number; // distinct words shown at least once
