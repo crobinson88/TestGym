@@ -5,6 +5,7 @@ import {
   BookOpen,
   CheckSquare,
   Clock,
+  DoorClosed,
   Dumbbell,
   Heart,
   History,
@@ -36,6 +37,7 @@ const tabs: readonly Tab[] = [
   { to: "/shares", label: "Shares", icon: TrendingUp },
   { to: "/french", label: "French", icon: Languages },
   { to: "/reading", label: "Reading", icon: BookOpen },
+  { to: "/doors", label: "Doors", icon: DoorClosed },
 ];
 
 export function AppLayout() {
@@ -113,7 +115,7 @@ export function AppLayout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 backdrop-blur">
-        <div className="mx-auto grid max-w-md grid-cols-9 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto grid max-w-md grid-cols-10 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {tabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
