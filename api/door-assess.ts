@@ -5,7 +5,8 @@
 //
 // Uses Google Gemini vision. Auth reuses the app's magic-link gate (shared with
 // the other AI endpoints). The Gemini key is read from GEMINI_API_KEY (or
-// GOOGLE_API_KEY) — never hard-code it.
+// GOOGLE_API_KEY, or Google_Studio_API_Key — the name Google AI Studio's UI
+// suggests) — never hard-code it.
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import { authedUser, json, serviceClient } from "./_fireflies.js";
@@ -141,7 +142,8 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: e instanceof Error ? e.message : "init failed" }, 500);
   }
 
-  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  const apiKey =
+    process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? process.env.Google_Studio_API_Key;
   if (!apiKey) return json({ error: "missing GEMINI_API_KEY" }, 500);
 
   let body: Body;
