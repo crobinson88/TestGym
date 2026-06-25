@@ -3,22 +3,29 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   ChevronRight,
+  LineChart,
   Lightbulb,
   PiggyBank,
   Plus,
   TrendingUp,
 } from "lucide-react";
 import { cn, relativeDay } from "@/lib/utils";
-import { usePositions, useShareTrades, useTips } from "../hooks";
+import { useMarketNotes, usePositions, useShareTrades, useTips } from "../hooks";
 import { formatMoney, formatQty } from "../types";
 
 export default function SharesView() {
   const trades = useShareTrades();
   const positions = usePositions();
   const tips = useTips();
+  const marketNotes = useMarketNotes();
   const navigate = useNavigate();
 
-  if (trades === undefined || positions === undefined || tips === undefined) {
+  if (
+    trades === undefined ||
+    positions === undefined ||
+    tips === undefined ||
+    marketNotes === undefined
+  ) {
     return <div className="p-6 text-center text-muted">Loading…</div>;
   }
 
@@ -63,6 +70,26 @@ export default function SharesView() {
           {watchingTips > 0 && (
             <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
               {watchingTips} watching
+            </span>
+          )}
+          <ChevronRight className="h-5 w-5" />
+        </div>
+      </Link>
+
+      <Link
+        to="/shares/markets"
+        className="flex items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 active:bg-surface2"
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <LineChart className="h-5 w-5" />
+          </span>
+          <div className="font-semibold">Markets</div>
+        </div>
+        <div className="flex items-center gap-2 text-muted">
+          {marketNotes.length > 0 && (
+            <span className="rounded-full bg-surface2 px-2 py-0.5 text-xs font-semibold text-text">
+              {marketNotes.length}
             </span>
           )}
           <ChevronRight className="h-5 w-5" />

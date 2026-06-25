@@ -84,3 +84,28 @@ export function useTip(id?: string) {
     return db.tips.get(id);
   }, [id]);
 }
+
+// Market notes: newest noted_at first, ties broken by creation order.
+export function useMarketNotes() {
+  return useLiveQuery(async () => {
+    const all = await db.market_notes.toArray();
+    return all
+      .filter((n) => !n.deleted_at)
+      .sort((a, b) =>
+        a.noted_at < b.noted_at
+          ? 1
+          : a.noted_at > b.noted_at
+            ? -1
+            : a.created_at < b.created_at
+              ? 1
+              : -1,
+      );
+  }, []);
+}
+
+export function useMarketNote(id?: string) {
+  return useLiveQuery(async () => {
+    if (!id) return undefined;
+    return db.market_notes.get(id);
+  }, [id]);
+}

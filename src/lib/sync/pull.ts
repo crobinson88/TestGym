@@ -4,6 +4,7 @@ import type {
   CategoryRow,
   ExerciseRow,
   FrenchAttemptRow,
+  MarketNoteRow,
   MetActivityRow,
   ForecastRow,
   ReadingItemRow,
@@ -277,6 +278,18 @@ async function mergeTips(db: GymDB, rows: TipRow[]) {
   });
 }
 
+async function mergeMarketNotes(db: GymDB, rows: MarketNoteRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.market_notes, async () => {
+    for (const remote of rows) {
+      const local = await db.market_notes.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.market_notes.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -300,6 +313,7 @@ const META_KEYS: Record<SyncTable, string> = {
   french_attempts: "last_pull_french_attempts",
   reading_items: "last_pull_reading_items",
   tips: "last_pull_tips",
+  market_notes: "last_pull_market_notes",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -330,6 +344,7 @@ export function createPull({ client, db, log }: PullDeps) {
       french_attempts: 0,
       reading_items: 0,
       tips: 0,
+      market_notes: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -423,12 +438,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("reading_items", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "tips") {
           const rows = await fetchSince<TipRow>(client, "tips", since);
           await mergeTips(db, rows);
           fetched.tips = rows.length;
           if (rows.length > 0) {
             await writeMark("tips", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<MarketNoteRow>(client, "market_notes", since);
+          await mergeMarketNotes(db, rows);
+          fetched.market_notes = rows.length;
+          if (rows.length > 0) {
+            await writeMark("market_notes", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

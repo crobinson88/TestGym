@@ -6,6 +6,7 @@ import type {
   LocalExercise,
   LocalForecast,
   LocalFrenchAttempt,
+  LocalMarketNote,
   LocalReadingItem,
   LocalSet,
   LocalShareTrade,
@@ -20,6 +21,8 @@ import type {
   FrenchAttemptDetail,
   FrenchAttemptRow,
   FrenchTestKind,
+  MarketIndexKey,
+  MarketNoteRow,
   ReadingItemRow,
   SetRow,
   ShareTradeRow,
@@ -121,6 +124,14 @@ export type UpdateTipInput = Partial<AddTipInput> & {
   status?: TipStatus;
 };
 
+export interface AddMarketNoteInput {
+  indices: MarketIndexKey[];
+  body: string;
+  noted_at?: string;
+}
+
+export type UpdateMarketNoteInput = Partial<AddMarketNoteInput>;
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -166,6 +177,10 @@ function pendingReadingItem(row: ReadingItemRow): LocalReadingItem {
 }
 
 function pendingTip(row: TipRow): LocalTip {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingMarketNote(row: MarketNoteRow): LocalMarketNote {
   return { ...row, sync_status: "pending" };
 }
 
@@ -600,6 +615,56 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     notify();
   }
 
+  async function addMarketNote(input: AddMarketNoteInput): Promise<LocalMarketNote> {
+    const id = uuid();
+    const ts = now();
+    const row: MarketNoteRow = {
+      id,
+      indices: input.indices,
+      body: input.body.trim(),
+      noted_at: input.noted_at ?? todayIsoDate(),
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingMarketNote(row);
+    await db.market_notes.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateMarketNote(
+    id: string,
+    patch: UpdateMarketNoteInput,
+  ): Promise<LocalMarketNote | null> {
+    const existing = await db.market_notes.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalMarketNote = {
+      ...existing,
+      ...patch,
+      body: patch.body !== undefined ? patch.body.trim() : existing.body,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.market_notes.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function deleteMarketNote(id: string): Promise<void> {
+    const existing = await db.market_notes.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.market_notes.put({
+      ...existing,
+      deleted_at: ts,
+      updated_at: ts,
+      sync_status: "pending",
+    });
+    notify();
+  }
+
   return {
     addSet,
     updateSet,
@@ -623,6 +688,9 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addTip,
     updateTip,
     deleteTip,
+    addMarketNote,
+    updateMarketNote,
+    deleteMarketNote,
   };
 }
 
