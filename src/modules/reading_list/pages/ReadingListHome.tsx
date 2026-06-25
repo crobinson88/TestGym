@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Check, ExternalLink, Pencil, Plus } from "lucide-react";
+import { BookOpen, Check, ExternalLink, Mail, Pencil, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { syncEngine } from "@/lib/sync";
 import { useReadingItems } from "../hooks";
@@ -28,12 +28,21 @@ export default function ReadingListHome() {
     <div className="space-y-6 p-4 pb-24">
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Reading</h1>
-        <button
-          onClick={() => navigate("/reading/add")}
-          className="flex h-11 items-center gap-1.5 rounded-xl bg-accent px-3 text-sm font-semibold text-bg transition active:scale-[0.98]"
-        >
-          <Plus className="h-5 w-5" /> Add
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate("/reading/email")}
+            aria-label="Email this week's reads"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-text transition hover:bg-surface2 active:scale-[0.98]"
+          >
+            <Mail className="h-5 w-5" />
+          </button>
+          <button
+            onClick={() => navigate("/reading/add")}
+            className="flex h-11 items-center gap-1.5 rounded-xl bg-accent px-3 text-sm font-semibold text-bg transition active:scale-[0.98]"
+          >
+            <Plus className="h-5 w-5" /> Add
+          </button>
+        </div>
       </header>
 
       {items.length === 0 && (
