@@ -308,6 +308,24 @@ export interface TipRow {
   deleted_at: string | null;
 }
 
+// The market indices a note can be tagged against. Fixed client-side set (not a
+// table) — stored as stable keys in the `indices` jsonb array.
+export type MarketIndexKey = "sp500" | "asx200" | "nasdaq";
+
+// A free-text note on the markets, tagged with one or more indices. Same sync /
+// RLS / soft-delete rules as `sets`.
+export interface MarketNoteRow {
+  id: string;
+  indices: MarketIndexKey[];
+  body: string;
+  noted_at: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -435,6 +453,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<TipRow>;
+      };
+      market_notes: {
+        Row: MarketNoteRow;
+        Insert: Omit<MarketNoteRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<MarketNoteRow>;
       };
     };
   };

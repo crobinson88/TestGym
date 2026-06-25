@@ -6,6 +6,7 @@ import type {
   ExerciseRow,
   ForecastRow,
   FrenchAttemptRow,
+  MarketNoteRow,
   MetActivityRow,
   ReadingItemRow,
   SetRow,
@@ -97,6 +98,10 @@ export interface LocalTip extends TipRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalMarketNote extends MarketNoteRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -116,6 +121,7 @@ export class GymDB extends Dexie {
   french_attempts!: Table<LocalFrenchAttempt, string>;
   reading_items!: Table<LocalReadingItem, string>;
   tips!: Table<LocalTip, string>;
+  market_notes!: Table<LocalMarketNote, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -220,6 +226,9 @@ export class GymDB extends Dexie {
     });
     this.version(14).stores({
       tips: "id, ticker, status, received_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(15).stores({
+      market_notes: "id, noted_at, updated_at, sync_status, deleted_at",
     });
   }
 }

@@ -9,6 +9,8 @@ const StockView = lazy(() => import("./pages/StockView"));
 const ModelBuilder = lazy(() => import("./pages/ModelBuilder"));
 const TipsView = lazy(() => import("./pages/TipsView"));
 const AddTip = lazy(() => import("./pages/AddTip"));
+const MarketsView = lazy(() => import("./pages/MarketsView"));
+const AddMarketNote = lazy(() => import("./pages/AddMarketNote"));
 
 function Fallback() {
   return <div className="p-6 text-center text-muted">Loading…</div>;
@@ -27,6 +29,9 @@ export function sharesRoutes() {
       <Route path="tips" element={wrap(<TipsView />)} />
       <Route path="tips/add" element={wrap(<AddTip />)} />
       <Route path="tips/add/:id" element={wrap(<AddTip />)} />
+      <Route path="markets" element={wrap(<MarketsView />)} />
+      <Route path="markets/add" element={wrap(<AddMarketNote />)} />
+      <Route path="markets/add/:id" element={wrap(<AddMarketNote />)} />
       <Route path="stock/:ticker" element={wrap(<StockView />)} />
       <Route path="stock/:ticker/model" element={wrap(<ModelBuilder />)} />
       <Route path=":id" element={wrap(<TradeDetail />)} />

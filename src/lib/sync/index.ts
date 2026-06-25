@@ -22,5 +22,7 @@ export type {
   UpdateShareTradeInput,
   AddForecastInput,
   AddFrenchAttemptInput,
+  AddMarketNoteInput,
+  UpdateMarketNoteInput,
 } from "./mutations";
 export type { SyncStatusEvent } from "./types";

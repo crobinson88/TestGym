@@ -29,7 +29,8 @@ export type SyncTable =
   | "forecasts"
   | "french_attempts"
   | "reading_items"
-  | "tips";
+  | "tips"
+  | "market_notes";
 
 export const SYNC_TABLES: readonly SyncTable[] = [
   "categories",
@@ -48,6 +49,7 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   "french_attempts",
   "reading_items",
   "tips",
+  "market_notes",
 ];
 
 // Dexie store names match the Supabase table name for every table except the
@@ -69,6 +71,7 @@ export const DEXIE_TABLE: Record<SyncTable, string> = {
   french_attempts: "french_attempts",
   reading_items: "reading_items",
   tips: "tips",
+  market_notes: "market_notes",
 };
 
 export interface DrainResult {
