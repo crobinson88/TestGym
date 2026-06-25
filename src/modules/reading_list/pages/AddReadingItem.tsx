@@ -1,23 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Check, ChevronLeft, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useReadingItem } from "../hooks";
+import { fetchUrlTitle } from "../title";
 
 export default function AddReadingItem() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const existing = useReadingItem(id);
   const editing = !!id;
+  const { session } = useAuth();
+  const token = session?.access_token;
 
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fetchingTitle, setFetchingTitle] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastFetched = useRef<string | null>(null);
 
   // Populate fields once the row loads when editing.
   useEffect(() => {
@@ -28,6 +34,36 @@ export default function AddReadingItem() {
       setHydrated(true);
     }
   }, [editing, existing, hydrated]);
+
+  // Autopopulate the title from the pasted URL. Debounced; only fills an empty
+  // title so it never clobbers what the user typed, and skips while editing an
+  // existing row (which already has a title).
+  useEffect(() => {
+    const trimmed = url.trim();
+    if (!token || !trimmed || title.trim()) return;
+    let valid = false;
+    try {
+      const u = new URL(trimmed);
+      valid = u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      valid = false;
+    }
+    if (!valid || lastFetched.current === trimmed) return;
+
+    const handle = setTimeout(async () => {
+      lastFetched.current = trimmed;
+      setFetchingTitle(true);
+      try {
+        const fetched = await fetchUrlTitle(trimmed, token);
+        if (fetched) setTitle((cur) => (cur.trim() ? cur : fetched));
+      } catch {
+        // Best-effort; leave the field for manual entry.
+      } finally {
+        setFetchingTitle(false);
+      }
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [url, title, token]);
 
   const valid = url.trim().length > 0 && title.trim().length > 0;
 
@@ -96,7 +132,16 @@ export default function AddReadingItem() {
           />
         </Field>
 
-        <Field label="Title">
+        <Field
+          label="Title"
+          hint={
+            fetchingTitle ? (
+              <span className="flex items-center gap-1 text-muted">
+                <Loader2 className="h-3 w-3 animate-spin" /> Fetching…
+              </span>
+            ) : null
+          }
+        >
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -147,10 +192,21 @@ export default function AddReadingItem() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block space-y-2">
-      <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
+      <span className="flex items-center justify-between text-xs uppercase tracking-wide text-muted">
+        {label}
+        {hint}
+      </span>
       {children}
     </label>
   );
