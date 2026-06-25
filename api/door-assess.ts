@@ -3,50 +3,100 @@
 // and bow, each with an estimated deviation and a pass/marginal/fail call,
 // plus installer notes. Vision-only — nothing is persisted server-side.
 //
-// Mirrors receipt-scan.ts: one structured vision call gated by the same
-// magic-link auth as every other AI endpoint.
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+// Uses Google Gemini vision. Auth reuses the app's magic-link gate (shared with
+// the other AI endpoints). The Gemini key is read from GEMINI_API_KEY (or
+// GOOGLE_API_KEY) — never hard-code it.
+import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import { authedUser, json, serviceClient } from "./_fireflies.js";
 
 // Geometric reasoning over a single frame: give it a little headroom.
 export const maxDuration = 45;
 
+// Best general-purpose Gemini vision model. Swap to "gemini-2.5-pro" for the
+// strongest spatial reasoning at the cost of latency.
+const MODEL = "gemini-2.5-flash";
+
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type MediaType = (typeof MEDIA_TYPES)[number];
 
-// One assessed criterion. `deviation`/`unit`/`tolerance` are null when the
-// criterion could not be judged from this image (e.g. a rail is out of frame).
+// Post-parse validation of Gemini's JSON, so a malformed reply returns a clean
+// 422 instead of leaking through to the client.
 const Criterion = z.object({
-  // Estimated deviation from true. mm for a linear gap, deg for a lean/tilt.
   deviation: z.number().nullable(),
   unit: z.enum(["mm", "deg"]).nullable(),
-  // The trade tolerance the call was made against, in the same unit.
   tolerance: z.number().nullable(),
   status: z.enum(["pass", "marginal", "fail", "unknown"]),
-  // One short sentence: what was observed and where (e.g. "left stile leans
-  // ~4mm proud at the head"). Plain language, no preamble.
   detail: z.string(),
 });
 
 const Assessment = z.object({
-  // False when the frame is too blurry, too dark, too oblique, or shows no
-  // clear door — the client shows `reason` instead of results.
   assessable: z.boolean(),
   reason: z.string().nullable(),
-  // Free text: "hinged door", "sliding door", "bifold", … null if unsure.
   doorType: z.string().nullable(),
   confidence: z.enum(["low", "medium", "high"]),
   plumb: Criterion,
   level: Criterion,
   square: Criterion,
   bow: Criterion,
-  // One- or two-sentence overall verdict from the inspector.
   summary: z.string(),
-  // Actionable installer notes / remediation, most important first.
   recommendations: z.array(z.string()),
 });
+
+// Gemini structured-output schema (a subset of OpenAPI). Mirrors the zod shape
+// above; `propertyOrdering` keeps the model's fields stable.
+const criterionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    deviation: { type: Type.NUMBER, nullable: true },
+    unit: { type: Type.STRING, enum: ["mm", "deg"], nullable: true },
+    tolerance: { type: Type.NUMBER, nullable: true },
+    status: { type: Type.STRING, enum: ["pass", "marginal", "fail", "unknown"] },
+    detail: { type: Type.STRING },
+  },
+  required: ["deviation", "unit", "tolerance", "status", "detail"],
+  propertyOrdering: ["deviation", "unit", "tolerance", "status", "detail"],
+};
+
+const responseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    assessable: { type: Type.BOOLEAN },
+    reason: { type: Type.STRING, nullable: true },
+    doorType: { type: Type.STRING, nullable: true },
+    confidence: { type: Type.STRING, enum: ["low", "medium", "high"] },
+    plumb: criterionSchema,
+    level: criterionSchema,
+    square: criterionSchema,
+    bow: criterionSchema,
+    summary: { type: Type.STRING },
+    recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+  required: [
+    "assessable",
+    "reason",
+    "doorType",
+    "confidence",
+    "plumb",
+    "level",
+    "square",
+    "bow",
+    "summary",
+    "recommendations",
+  ],
+  propertyOrdering: [
+    "assessable",
+    "reason",
+    "doorType",
+    "confidence",
+    "plumb",
+    "level",
+    "square",
+    "bow",
+    "summary",
+    "recommendations",
+  ],
+};
 
 type Body = { imageBase64?: string; mediaType?: string };
 
@@ -91,6 +141,9 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: e instanceof Error ? e.message : "init failed" }, 500);
   }
 
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  if (!apiKey) return json({ error: "missing GEMINI_API_KEY" }, 500);
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -105,32 +158,41 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const anthropic = new Anthropic();
-    const result = await anthropic.messages.parse({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2000,
-      system: SYSTEM,
-      output_config: { format: zodOutputFormat(Assessment) },
-      messages: [
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
         {
           role: "user",
-          content: [
+          parts: [
+            { inlineData: { mimeType: mediaType, data: imageBase64 } },
             {
-              type: "image",
-              source: { type: "base64", media_type: mediaType as MediaType, data: imageBase64 },
-            },
-            {
-              type: "text",
               text: "Inspect this door's installation. Assess plumb, level, square and bow, and give your installer verdict.",
             },
           ],
         },
       ],
+      config: {
+        systemInstruction: SYSTEM,
+        maxOutputTokens: 2000,
+        responseMimeType: "application/json",
+        responseSchema,
+      },
     });
 
-    const parsed = result.parsed_output;
-    if (!parsed) return json({ error: "could not assess image" }, 422);
-    return json(parsed, 200);
+    const raw = response.text;
+    if (!raw) return json({ error: "could not assess image" }, 422);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return json({ error: "could not assess image" }, 422);
+    }
+
+    const validated = Assessment.safeParse(parsed);
+    if (!validated.success) return json({ error: "could not assess image" }, 422);
+    return json(validated.data, 200);
   } catch (e) {
     console.error("door-assess failed", e);
     return json({ error: e instanceof Error ? e.message : "assess failed" }, 500);
