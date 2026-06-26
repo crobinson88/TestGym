@@ -51,6 +51,15 @@ export function useStockByTicker(ticker?: string) {
   }, [ticker]);
 }
 
+// Locally-cached investor-relations document list for a ticker (or undefined
+// while loading, null when never refreshed on this device).
+export function useIrCache(ticker?: string) {
+  return useLiveQuery(async () => {
+    if (!ticker) return null;
+    return (await db.ir_cache.get(ticker.toUpperCase())) ?? null;
+  }, [ticker]);
+}
+
 export function useForecastsForTicker(ticker?: string) {
   return useLiveQuery(async () => {
     if (!ticker) return [];

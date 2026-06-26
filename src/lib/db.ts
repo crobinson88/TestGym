@@ -64,6 +64,26 @@ export interface MetaRow {
   updated_at: string;
 }
 
+// Investor-relations document, as fetched from SEC EDGAR / FMP. This is a
+// derived, regenerable cache — not user-authored content.
+export interface IrCacheDoc {
+  id: string;
+  title: string;
+  form: string | null;
+  date: string;
+  url: string;
+  source: "sec" | "fmp";
+}
+
+// Local-only cache of a ticker's IR document list. Deliberately NOT a sync
+// table: it never touches Supabase, so refreshing it can't break stock sync and
+// needs no schema migration. Re-fetched per-device on demand.
+export interface IrCacheRow {
+  ticker: string;
+  documents: IrCacheDoc[];
+  refreshed_at: string;
+}
+
 export interface LocalTimeTask extends TimeTaskRow {
   sync_status: SyncStatus;
 }
@@ -122,6 +142,7 @@ export class GymDB extends Dexie {
   reading_items!: Table<LocalReadingItem, string>;
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
+  ir_cache!: Table<IrCacheRow, string>;
 
   constructor(name = "gym-tracker") {
     super(name);
@@ -229,6 +250,9 @@ export class GymDB extends Dexie {
     });
     this.version(15).stores({
       market_notes: "id, noted_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(16).stores({
+      ir_cache: "ticker, refreshed_at",
     });
   }
 }
