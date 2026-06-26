@@ -135,6 +135,15 @@ export default function Dashboard() {
         <>
           <section>
             <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
+              Hours logged per day · last 7 days
+            </h2>
+            <div className="rounded-2xl border border-line bg-surface p-3">
+              <DailyHoursChart data={timeStats.daily} />
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
               Weekly hours · last 8 weeks
             </h2>
             <div className="rounded-2xl border border-line bg-surface p-3">
@@ -289,6 +298,34 @@ function WeeklyChart({
             radius={[0, 0, 0, 0]}
           />
         ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function DailyHoursChart({ data }: { data: HoursPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <CartesianGrid stroke="#2a2a2a" vertical={false} />
+        <XAxis
+          dataKey="date"
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          tickFormatter={(iso) => mdTick(iso as string)}
+        />
+        <YAxis
+          tick={{ fontSize: 11, fill: "#8a8a8a" }}
+          width={36}
+          allowDecimals={false}
+          tickFormatter={(v) => formatHours(v as number)}
+        />
+        <Tooltip
+          contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
+          labelStyle={{ color: "#8a8a8a" }}
+          formatter={(value) => [`${formatHours(value as number)} h`, "Hours"]}
+          labelFormatter={(label) => prettyDate(label as string)}
+        />
+        <Bar dataKey="hours" fill={HOURS_COLOR} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -141,3 +141,10 @@ export function rollingHours(
     return { date: d, hours };
   });
 }
+
+export function dailyHours(
+  perDay: ReadonlyMap<string, number>,
+  dates: readonly string[],
+): HoursPoint[] {
+  return dates.map((d) => ({ date: d, hours: perDay.get(d) ?? 0 }));
+}

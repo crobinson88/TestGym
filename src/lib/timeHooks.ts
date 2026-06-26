@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { db, type LocalTimeAllocation, type LocalTimeTask } from "./db";
 import { syncEngine } from "./sync";
 import {
+  dailyHours,
   hoursPerDay,
   nextTaskColor,
   rollingHours,
@@ -14,6 +15,7 @@ import { addDays, todayIsoDate, weekStart } from "./utils";
 
 const ROLLING_WINDOW_DAYS = 7;
 const ROLLING_SPAN_DAYS = 56;
+const DAILY_SPAN_DAYS = 7;
 const WEEKS_BACK = 8;
 
 function pokeOutbox() {
@@ -27,6 +29,7 @@ const live = (a: LocalTimeAllocation) => !a.deleted_at;
 export interface TimeDashboardStats {
   weekly: WeekHoursPoint[];
   rolling: HoursPoint[];
+  daily: HoursPoint[];
 }
 
 export function useTimeDashboardStats(): TimeDashboardStats | undefined {
@@ -51,7 +54,11 @@ export function useTimeDashboardStats(): TimeDashboardStats | undefined {
     for (let i = ROLLING_SPAN_DAYS - 1; i >= 0; i--) rollingDates.push(addDays(today, -i));
     const rolling = rollingHours(perDay, rollingDates, ROLLING_WINDOW_DAYS);
 
-    return { weekly, rolling };
+    const dailyDates: string[] = [];
+    for (let i = DAILY_SPAN_DAYS - 1; i >= 0; i--) dailyDates.push(addDays(today, -i));
+    const daily = dailyHours(perDay, dailyDates);
+
+    return { weekly, rolling, daily };
   }, []);
 }
 
