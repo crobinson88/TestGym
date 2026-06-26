@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  dailyHours,
   formatHours,
   formatMdy,
   hoursOnDate,
@@ -123,6 +124,16 @@ describe("hours aggregation (all logged hours)", () => {
     expect(weeks).toEqual([
       { week_start: "2026-05-18", hours: 0.5 },
       { week_start: "2026-05-25", hours: 1.0 },
+    ]);
+  });
+
+  it("dailyHours maps each date to its own hours, zero-filling gaps", () => {
+    const perDay = hoursPerDay(allocs);
+    const points = dailyHours(perDay, ["2026-05-24", "2026-05-25", "2026-05-26"]);
+    expect(points).toEqual([
+      { date: "2026-05-24", hours: 0 },
+      { date: "2026-05-25", hours: 0.5 },
+      { date: "2026-05-26", hours: 0.5 },
     ]);
   });
 
