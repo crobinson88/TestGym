@@ -6,12 +6,15 @@ export {
   usePositions,
   useTradesForTicker,
   useStockByTicker,
+  useIrCache,
   useTips,
   useTip,
   useMarketNotes,
   useMarketNote,
 } from "./hooks";
 export { summarizeDocuments, readUploadDoc } from "./research";
+export { fetchIrDocuments, cacheIrDocuments, formatIrDate, sourceLabel } from "./ir";
+export type { IrDocument, IrListResult, IrSources } from "./ir";
 export { MARKET_INDICES, indexLabel, isMarketIndexKey, sortIndices } from "./markets";
 export type { Position } from "./types";
 export type { ShareTradeRow, TradeCurrency, TradeSide } from "./types";

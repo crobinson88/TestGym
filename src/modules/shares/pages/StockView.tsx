@@ -8,6 +8,7 @@ import { cn, relativeDay } from "@/lib/utils";
 import { useStockByTicker, useTradesForTicker } from "../hooks";
 import { formatMoney, formatQty } from "../types";
 import { CompanyForecasts } from "../components/CompanyForecasts";
+import { IrDocuments } from "../components/IrDocuments";
 import { ResearchLibrary } from "../components/ResearchLibrary";
 import { ResearchPanel } from "../components/ResearchPanel";
 import { StockForecasts } from "../components/StockForecasts";
@@ -113,6 +114,8 @@ export default function StockView() {
         <StockForecasts ticker={ticker} trades={trades} />
 
         <CompanyForecasts ticker={ticker} trades={trades} />
+
+        <IrDocuments ticker={ticker} onInsert={insertSummary} />
 
         <ResearchLibrary ticker={ticker} stock={stock} trades={trades} />
 
