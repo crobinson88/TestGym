@@ -50,6 +50,24 @@ describe("parseFmpFilings", () => {
     expect(docs[0].source).toBe("fmp");
   });
 
+  it("reads the stable API field names (formType/filingDate)", () => {
+    const rows = [
+      {
+        symbol: "AAPL",
+        formType: "8-K",
+        filingDate: "2024-03-01 00:00:00",
+        acceptedDate: "2024-03-01 16:38:37",
+        link: "https://sec.gov/x/index.htm",
+        finalLink: "https://sec.gov/x/ll-ex99_1.htm",
+      },
+    ];
+    const docs = parseFmpFilings(rows);
+    expect(docs).toHaveLength(1);
+    expect(docs[0].form).toBe("8-K");
+    expect(docs[0].date).toBe("2024-03-01");
+    expect(docs[0].url).toBe("https://sec.gov/x/ll-ex99_1.htm");
+  });
+
   it("returns [] for non-arrays", () => {
     expect(parseFmpFilings(null)).toEqual([]);
     expect(parseFmpFilings({})).toEqual([]);

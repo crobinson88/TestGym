@@ -94,16 +94,18 @@ export function parseSecSubmissions(json: unknown, cik10: string): IrDoc[] {
   return out;
 }
 
-// FMP's sec_filings rows. Only keep entries with a real link so every item is
+// FMP's SEC-filing rows. Field names differ between the legacy v3 API
+// (`type`, `fillingDate`) and the stable API (`formType`, `filingDate`), so we
+// accept both. Only keep entries with a real link so every item is
 // viewable/summarisable.
 export function parseFmpFilings(rows: unknown): IrDoc[] {
   if (!Array.isArray(rows)) return [];
   const out: IrDoc[] = [];
   for (const r of rows as Array<Record<string, string>>) {
     const url = r.finalLink || r.link || "";
-    const date = (r.acceptedDate || r.fillingDate || r.date || "").slice(0, 10);
+    const date = (r.acceptedDate || r.filingDate || r.fillingDate || r.date || "").slice(0, 10);
     if (!url || !date) continue;
-    const form = r.type || null;
+    const form = r.formType || r.type || null;
     out.push({
       id: `fmp:${url}`,
       title: form ? `${form} (FMP)` : "SEC filing (FMP)",
@@ -147,13 +149,27 @@ async function secDocuments(ticker: string): Promise<IrDoc[]> {
   return parseSecSubmissions(await res.json(), cik);
 }
 
-async function fmpDocuments(ticker: string, key: string): Promise<IrDoc[]> {
-  const url =
-    `https://financialmodelingprep.com/api/v3/sec_filings/${encodeURIComponent(ticker)}` +
-    `?limit=${IR_MAX}&apikey=${key}`;
+async function fmpFetch(url: string): Promise<IrDoc[]> {
   const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`FMP ${res.status}`);
+  if (!res.ok) return [];
   return parseFmpFilings(await res.json());
+}
+
+async function fmpDocuments(ticker: string, key: string): Promise<IrDoc[]> {
+  const sym = encodeURIComponent(ticker);
+  // Legacy v3: per-symbol with no required date filter — available on most
+  // tiers. Falls back to the stable endpoint (needs a date range and a higher
+  // plan) only if v3 yields nothing.
+  const v3 = await fmpFetch(
+    `https://financialmodelingprep.com/api/v3/sec_filings/${sym}?limit=${IR_MAX}&apikey=${key}`,
+  );
+  if (v3.length > 0) return v3;
+  const to = new Date().toISOString().slice(0, 10);
+  const from = `${new Date().getUTCFullYear() - 3}-01-01`;
+  return fmpFetch(
+    `https://financialmodelingprep.com/stable/sec-filings-search/symbol` +
+      `?symbol=${sym}&from=${from}&to=${to}&limit=${IR_MAX}&apikey=${key}`,
+  );
 }
 
 export async function listIrDocuments(ticker: string): Promise<IrResult> {
