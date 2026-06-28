@@ -125,7 +125,7 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
   const done = counted.filter((i) => i.status === "done").length;
   const active = counted.filter(isActive).length;
   const total = counted.length;
-  const priority = counted.filter((i) => i.is_priority);
+  const priority = counted.filter((i) => i.priority_rank != null);
   return {
     total,
     done,

@@ -184,7 +184,7 @@ export function buildRow(
     due_date: it.due_date,
     time_estimate_min: null,
     status: "open",
-    is_priority: it.priority === "high",
+    priority_rank: it.priority === "high" ? 1 : null,
     notes: it.owner ? `Owner: ${it.owner}` : null,
     origin_item_id: null,
     origin_snapshot_date: null,

@@ -33,7 +33,7 @@ function makeItem(
     due_date: null,
     time_estimate_min: null,
     status: "open",
-    is_priority: false,
+    priority_rank: null,
     is_archived: false,
     snoozed_until: null,
     notes: null,
@@ -171,17 +171,17 @@ describe("rollForward", () => {
     expect(next[0].status).toBe("ready_for_testing");
   });
 
-  it("preserves is_priority on carry", async () => {
+  it("preserves priority_rank on carry", async () => {
     await seed([
       makeItem("2026-05-27", "product", {
-        is_priority: true,
+        priority_rank: 3,
         title: "Hot",
         status: "open",
       }),
     ]);
     await rollForward("2026-05-27", "2026-05-28", { db });
     const next = await listFor("2026-05-28");
-    expect(next[0].is_priority).toBe(true);
+    expect(next[0].priority_rank).toBe(3);
   });
 
   it("is idempotent on repeated runs", async () => {

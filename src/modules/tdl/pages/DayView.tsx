@@ -20,7 +20,7 @@ import {
   deleteItem,
   moveItem,
   reorderSection,
-  togglePriority,
+  setPriorityRank,
   createItem,
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
@@ -66,7 +66,9 @@ export default function DayView() {
       } else if (e.key === "p") {
         if (focusedId) {
           e.preventDefault();
-          void togglePriority(focusedId);
+          // Toggle top priority (rank 1) on/off for the focused item.
+          const focusedItem = bundle.items.find((i) => i.id === focusedId);
+          void setPriorityRank(focusedId, focusedItem?.priority_rank != null ? null : 1);
         }
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (focusedId && e.metaKey) {

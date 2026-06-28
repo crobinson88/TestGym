@@ -26,7 +26,7 @@ export interface CreateItemInput {
   position?: number;
   due_date?: string | null;
   time_estimate_min?: number | null;
-  is_priority?: boolean;
+  priority_rank?: number | null;
   is_archived?: boolean;
   snoozed_until?: string | null;
   notes?: string | null;
@@ -68,7 +68,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     due_date: input.due_date ?? null,
     time_estimate_min: input.time_estimate_min ?? null,
     status,
-    is_priority: input.is_priority ?? false,
+    priority_rank: clampRank(input.priority_rank ?? null),
     is_archived: input.is_archived ?? false,
     snoozed_until: input.snoozed_until ?? null,
     notes: input.notes ?? null,
@@ -143,10 +143,22 @@ export async function cycleStatus(id: string): Promise<LocalTdlItem | null> {
   return updateItem(id, { status: nextStatus(existing.section, existing.status) });
 }
 
-export async function togglePriority(id: string): Promise<LocalTdlItem | null> {
-  const existing = await db.tdl_items.get(id);
-  if (!existing) return null;
-  return updateItem(id, { is_priority: !existing.is_priority });
+// Priority is a 1–10 rank (1 = most important); null clears it. Ranks are not
+// unique — several items may share a number.
+export const MAX_PRIORITY_RANK = 10;
+
+export function clampRank(rank: number | null): number | null {
+  if (rank == null) return null;
+  const r = Math.round(rank);
+  if (!Number.isFinite(r) || r < 1) return null;
+  return Math.min(r, MAX_PRIORITY_RANK);
+}
+
+export async function setPriorityRank(
+  id: string,
+  rank: number | null,
+): Promise<LocalTdlItem | null> {
+  return updateItem(id, { priority_rank: clampRank(rank) });
 }
 
 export async function archiveItem(id: string): Promise<LocalTdlItem | null> {

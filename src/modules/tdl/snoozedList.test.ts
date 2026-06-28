@@ -20,7 +20,7 @@ function makeItem(
     due_date: null,
     time_estimate_min: null,
     status: "open",
-    is_priority: false,
+    priority_rank: null,
     is_archived: false,
     snoozed_until: null,
     notes: null,
