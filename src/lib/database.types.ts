@@ -124,6 +124,10 @@ export interface TdlItemRow {
   priority_rank: number | null;
   is_archived: boolean;
   snoozed_until: string | null;
+  // Marks an item we don't want to do but still need to. The reason why lives
+  // in `reluctance_reason`, surfaced under the detail panel's description.
+  is_reluctant: boolean;
+  reluctance_reason: string | null;
   notes: string | null;
   // Object paths in the private `share-images` bucket (tdl/ prefix). The detail
   // panel resolves them to signed URLs on demand.

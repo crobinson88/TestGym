@@ -267,6 +267,15 @@ export class GymDB extends Dexie {
           delete row.is_priority;
         });
     });
+    this.version(18).upgrade(async (tx) => {
+      await tx
+        .table("tdl_items")
+        .toCollection()
+        .modify((row: LocalTdlItem) => {
+          if (row.is_reluctant === undefined) row.is_reluctant = false;
+          if (row.reluctance_reason === undefined) row.reluctance_reason = null;
+        });
+    });
   }
 }
 

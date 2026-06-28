@@ -43,7 +43,11 @@ export function DayHeader({
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-bg/95 px-4 py-3 backdrop-blur">
       <div className="mb-3">
-        <TargetPies engaged={c.active} priorityEngaged={c.priorityActive} />
+        <TargetPies
+          engaged={c.active}
+          priorityEngaged={c.priorityActive}
+          reluctantDone={c.reluctantDone}
+        />
       </div>
       <div className="flex items-center gap-1">
         <Button
@@ -123,6 +127,9 @@ export function DayHeader({
           </div>
           <div className="text-[11px] tabular-nums text-muted">
             Priority {c.priorityActive}/{c.priorityTotal}
+          </div>
+          <div className="text-[11px] tabular-nums text-muted">
+            Did anyway {c.reluctantDone}/{c.reluctantTotal}
           </div>
         </div>
       </div>
