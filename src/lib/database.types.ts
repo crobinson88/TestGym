@@ -119,7 +119,9 @@ export interface TdlItemRow {
   due_date: string | null;
   time_estimate_min: number | null;
   status: TdlStatus;
-  is_priority: boolean;
+  // Priority rank: 1 (most important) … 10, or null when unranked. Ranks are
+  // not unique — several items may share a number. Carried forward day to day.
+  priority_rank: number | null;
   is_archived: boolean;
   snoozed_until: string | null;
   notes: string | null;

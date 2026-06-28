@@ -26,7 +26,7 @@ export interface CreateItemInput {
   position?: number;
   due_date?: string | null;
   time_estimate_min?: number | null;
-  is_priority?: boolean;
+  priority_rank?: number | null;
   is_archived?: boolean;
   snoozed_until?: string | null;
   notes?: string | null;
@@ -68,7 +68,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     due_date: input.due_date ?? null,
     time_estimate_min: input.time_estimate_min ?? null,
     status,
-    is_priority: input.is_priority ?? false,
+    priority_rank: clampRank(input.priority_rank ?? null),
     is_archived: input.is_archived ?? false,
     snoozed_until: input.snoozed_until ?? null,
     notes: input.notes ?? null,
@@ -143,10 +143,41 @@ export async function cycleStatus(id: string): Promise<LocalTdlItem | null> {
   return updateItem(id, { status: nextStatus(existing.section, existing.status) });
 }
 
-export async function togglePriority(id: string): Promise<LocalTdlItem | null> {
+import { MAX_PRIORITY_RANK, clampRank, usedRanks } from "./priority";
+export { MAX_PRIORITY_RANK, clampRank, usedRanks };
+
+export async function setPriorityRank(
+  id: string,
+  rank: number | null,
+): Promise<LocalTdlItem | null> {
+  const clamped = clampRank(rank);
   const existing = await db.tdl_items.get(id);
   if (!existing) return null;
-  return updateItem(id, { is_priority: !existing.is_priority });
+  if (clamped != null) {
+    // Enforce per-day uniqueness: clear this rank from any other live item on
+    // the same day before assigning it here.
+    const ts = nowIso();
+    const siblings = await db.tdl_items
+      .where("snapshot_date")
+      .equals(existing.snapshot_date)
+      .toArray();
+    const conflicts = siblings.filter(
+      (s) => s.id !== id && !s.deleted_at && s.priority_rank === clamped,
+    );
+    if (conflicts.length > 0) {
+      await db.transaction("rw", db.tdl_items, async () => {
+        for (const c of conflicts) {
+          await db.tdl_items.put({
+            ...c,
+            priority_rank: null,
+            updated_at: ts,
+            sync_status: "pending",
+          });
+        }
+      });
+    }
+  }
+  return updateItem(id, { priority_rank: clamped });
 }
 
 export async function archiveItem(id: string): Promise<LocalTdlItem | null> {

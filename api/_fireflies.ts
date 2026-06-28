@@ -184,8 +184,13 @@ export function buildRow(
     due_date: it.due_date,
     time_estimate_min: null,
     status: "open",
-    is_priority: it.priority === "high",
-    notes: it.owner ? `Owner: ${it.owner}` : null,
+    // Ranks are unique per day, so imported items start unranked rather than
+    // colliding on rank 1; a high-priority flag is noted below instead.
+    priority_rank: null,
+    notes:
+      [it.owner ? `Owner: ${it.owner}` : null, it.priority === "high" ? "Priority: high" : null]
+        .filter(Boolean)
+        .join("\n") || null,
     origin_item_id: null,
     origin_snapshot_date: null,
     created_at: now,

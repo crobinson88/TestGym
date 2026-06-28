@@ -64,7 +64,7 @@ export async function rollForward(
       due_date: prev.is_recurring ? null : prev.due_date,
       time_estimate_min: prev.is_recurring ? null : prev.time_estimate_min,
       status: carryStatusFor(prev),
-      is_priority: prev.is_priority,
+      priority_rank: prev.priority_rank,
       is_archived: false,
       snoozed_until: prev.is_recurring ? null : prev.snoozed_until,
       notes: null,

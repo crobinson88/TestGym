@@ -19,7 +19,7 @@ function makeItem(over: Partial<TdlItemRow> = {}, section: TdlSection = "follow_
     due_date: null,
     time_estimate_min: null,
     status: "open",
-    is_priority: false,
+    priority_rank: null,
     is_archived: false,
     snoozed_until: null,
     notes: null,
@@ -54,9 +54,9 @@ describe("dayCompletion", () => {
     expect(c.active).toBe(0);
   });
 
-  it("counts a priority done item toward the priority total even when archived", () => {
+  it("counts a ranked done item toward the priority total even when archived", () => {
     const c = dayCompletion([
-      makeItem({ status: "done", is_archived: true, is_priority: true }),
+      makeItem({ status: "done", is_archived: true, priority_rank: 3 }),
     ]);
     expect(c.priorityTotal).toBe(1);
     expect(c.priorityActive).toBe(1);

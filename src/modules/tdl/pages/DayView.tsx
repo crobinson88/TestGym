@@ -20,7 +20,8 @@ import {
   deleteItem,
   moveItem,
   reorderSection,
-  togglePriority,
+  setPriorityRank,
+  usedRanks,
   createItem,
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
@@ -66,7 +67,9 @@ export default function DayView() {
       } else if (e.key === "p") {
         if (focusedId) {
           e.preventDefault();
-          void togglePriority(focusedId);
+          // Toggle top priority (rank 1) on/off for the focused item.
+          const focusedItem = bundle.items.find((i) => i.id === focusedId);
+          void setPriorityRank(focusedId, focusedItem?.priority_rank != null ? null : 1);
         }
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (focusedId && e.metaKey) {
@@ -128,6 +131,7 @@ export default function DayView() {
   }
 
   const empty = bundle.items.length === 0;
+  const takenRanks = usedRanks(bundle.items);
 
   const liveKeys = new Set(categories.map((c) => c.key));
   const orphanSections = Object.keys(bundle.bySection).filter(
@@ -215,6 +219,7 @@ export default function DayView() {
                     recurring={lists.recurring}
                     dated={lists.dated}
                     focusedId={focusedId}
+                    takenRanks={takenRanks}
                     forceExpanded={searching}
                   />
                 );

@@ -7,7 +7,6 @@ import {
   Check,
   ChevronRight,
   Clock,
-  Flag,
   FolderInput,
   GripVertical,
   MoreVertical,
@@ -25,8 +24,9 @@ import {
   cycleStatus,
   deleteItem,
   moveItemToSection,
+  setPriorityRank,
+  MAX_PRIORITY_RANK,
   snoozeItem,
-  togglePriority,
   unsnoozeItem,
   updateItem,
 } from "../repo";
@@ -39,10 +39,12 @@ export function ItemRow({
   item,
   categories,
   focused,
+  takenRanks,
 }: {
   item: LocalTdlItem;
   categories: SectionConfig[];
   focused?: boolean;
+  takenRanks: Set<number>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
@@ -128,17 +130,27 @@ export function ItemRow({
           {item.time_estimate_min != null ? item.time_estimate_min : <Clock className="h-4 w-4" />}
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => void togglePriority(item.id)}
+      <select
+        value={item.priority_rank ?? ""}
+        onChange={(e) => {
+          const v = e.currentTarget.value;
+          void setPriorityRank(item.id, v === "" ? null : Number(v));
+        }}
+        aria-label={item.priority_rank != null ? `Priority rank ${item.priority_rank}` : "Set priority rank"}
+        title={item.priority_rank != null ? `Priority ${item.priority_rank}` : "Set priority rank"}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-          item.is_priority ? "text-warn" : "text-muted hover:text-text",
+          "h-9 w-9 shrink-0 cursor-pointer appearance-none rounded-lg bg-transparent text-center text-sm font-semibold tabular-nums outline-none focus:bg-surface2",
+          item.priority_rank != null ? "text-warn" : "text-muted hover:text-text",
         )}
-        aria-label={item.is_priority ? "Unset priority" : "Set priority"}
       >
-        <Flag className={cn("h-4 w-4", item.is_priority && "fill-warn")} />
-      </button>
+        <option value="">—</option>
+        {Array.from({ length: MAX_PRIORITY_RANK }, (_, i) => i + 1).map((n) => (
+          <option key={n} value={n} disabled={takenRanks.has(n) && n !== item.priority_rank}>
+            {n}
+            {takenRanks.has(n) && n !== item.priority_rank ? " (taken)" : ""}
+          </option>
+        ))}
+      </select>
       <div className="min-w-0 flex-1">
         {editing ? (
           <Input

@@ -254,6 +254,19 @@ export class GymDB extends Dexie {
     this.version(16).stores({
       ir_cache: "ticker, refreshed_at",
     });
+    // Priority flag → priority rank. Carry a flagged item over as rank 1 (most
+    // important); unflagged items become unranked (null).
+    this.version(17).upgrade(async (tx) => {
+      await tx
+        .table("tdl_items")
+        .toCollection()
+        .modify((row: LocalTdlItem & { is_priority?: boolean }) => {
+          if (row.priority_rank === undefined) {
+            row.priority_rank = row.is_priority ? 1 : null;
+          }
+          delete row.is_priority;
+        });
+    });
   }
 }
 

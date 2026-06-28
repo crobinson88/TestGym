@@ -18,6 +18,7 @@ export function SectionColumn({
   recurring,
   dated,
   focusedId,
+  takenRanks,
   forceExpanded = false,
 }: {
   cfg: SectionConfig;
@@ -26,6 +27,7 @@ export function SectionColumn({
   recurring: LocalTdlItem[];
   dated: LocalTdlItem[];
   focusedId?: string;
+  takenRanks: Set<number>;
   forceExpanded?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
@@ -158,6 +160,7 @@ export function SectionColumn({
                   item={item}
                   categories={categories}
                   focused={focusedId === item.id}
+                  takenRanks={takenRanks}
                 />
               ))}
             </ul>
@@ -176,6 +179,7 @@ export function SectionColumn({
               item={item}
               categories={categories}
               focused={focusedId === item.id}
+              takenRanks={takenRanks}
             />
           ))}
         </ul>
