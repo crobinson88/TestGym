@@ -10,6 +10,7 @@ import type {
   ReadingItemRow,
   SetRow,
   ShareTradeRow,
+  SmokingLogRow,
   StockRow,
   TipRow,
   TdlCategoryRow,
@@ -290,6 +291,18 @@ async function mergeMarketNotes(db: GymDB, rows: MarketNoteRow[]) {
   });
 }
 
+async function mergeSmokingLogs(db: GymDB, rows: SmokingLogRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.smoking_logs, async () => {
+    for (const remote of rows) {
+      const local = await db.smoking_logs.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.smoking_logs.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -314,6 +327,7 @@ const META_KEYS: Record<SyncTable, string> = {
   reading_items: "last_pull_reading_items",
   tips: "last_pull_tips",
   market_notes: "last_pull_market_notes",
+  smoking_logs: "last_pull_smoking_logs",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -345,6 +359,7 @@ export function createPull({ client, db, log }: PullDeps) {
       reading_items: 0,
       tips: 0,
       market_notes: 0,
+      smoking_logs: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -445,12 +460,19 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("tips", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "market_notes") {
           const rows = await fetchSince<MarketNoteRow>(client, "market_notes", since);
           await mergeMarketNotes(db, rows);
           fetched.market_notes = rows.length;
           if (rows.length > 0) {
             await writeMark("market_notes", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<SmokingLogRow>(client, "smoking_logs", since);
+          await mergeSmokingLogs(db, rows);
+          fetched.smoking_logs = rows.length;
+          if (rows.length > 0) {
+            await writeMark("smoking_logs", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

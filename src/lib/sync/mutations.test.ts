@@ -150,3 +150,58 @@ describe("mutations.addSet", () => {
     expect(after?.sync_status).toBe("pending");
   });
 });
+
+describe("mutations.setSmoked", () => {
+  it("creates one pending row for the day with stable client_id=id", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const row = await m.setSmoked("2026-06-28", true);
+    expect(row?.smoked).toBe(true);
+    expect(row?.log_date).toBe("2026-06-28");
+    expect(row?.sync_status).toBe("pending");
+    expect(row?.client_id).toBe(row?.id);
+
+    const live = (await db.smoking_logs.toArray()).filter((r) => !r.deleted_at);
+    expect(live).toHaveLength(1);
+  });
+
+  it("updates the existing day row instead of creating a second one", async () => {
+    db = await newTestDb();
+    let t = 1_700_000_000_000;
+    const m = createMutations({ db, now: () => new Date(++t).toISOString() });
+
+    const first = await m.setSmoked("2026-06-28", true);
+    const second = await m.setSmoked("2026-06-28", false);
+
+    expect(second?.id).toBe(first?.id);
+    expect(second?.smoked).toBe(false);
+    expect((second?.updated_at ?? "") > (first?.updated_at ?? "")).toBe(true);
+
+    const all = await db.smoking_logs.toArray();
+    expect(all).toHaveLength(1);
+  });
+
+  it("clears the mark by soft-deleting the day's live rows", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const row = await m.setSmoked("2026-06-28", true);
+    const cleared = await m.setSmoked("2026-06-28", null);
+    expect(cleared).toBeNull();
+
+    const after = await db.smoking_logs.get(row!.id);
+    expect(after?.deleted_at).not.toBeNull();
+    expect(after?.sync_status).toBe("pending");
+
+    const live = (await db.smoking_logs.toArray()).filter((r) => !r.deleted_at);
+    expect(live).toHaveLength(0);
+  });
+
+  it("clearing an already-unmarked day is a no-op", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    expect(await m.setSmoked("2026-06-28", null)).toBeNull();
+    expect(await db.smoking_logs.count()).toBe(0);
+  });
+});

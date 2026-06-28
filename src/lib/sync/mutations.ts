@@ -10,6 +10,7 @@ import type {
   LocalReadingItem,
   LocalSet,
   LocalShareTrade,
+  LocalSmokingLog,
   LocalStock,
   LocalTip,
 } from "../db";
@@ -26,6 +27,7 @@ import type {
   ReadingItemRow,
   SetRow,
   ShareTradeRow,
+  SmokingLogRow,
   StockRow,
   TipRow,
   TipStatus,
@@ -181,6 +183,10 @@ function pendingTip(row: TipRow): LocalTip {
 }
 
 function pendingMarketNote(row: MarketNoteRow): LocalMarketNote {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingSmokingLog(row: SmokingLogRow): LocalSmokingLog {
   return { ...row, sync_status: "pending" };
 }
 
@@ -665,6 +671,63 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     notify();
   }
 
+  // The smoking flag is one live row per day. `smoked` true/false marks the day;
+  // `null` clears the mark (soft-deletes the live row). Updates the existing live
+  // row when there is one, otherwise creates it.
+  async function setSmoked(
+    date: string,
+    smoked: boolean | null,
+  ): Promise<LocalSmokingLog | null> {
+    const all = await db.smoking_logs.toArray();
+    const live = all
+      .filter((r) => r.log_date === date && !r.deleted_at)
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+    const existing = live[0];
+    const ts = now();
+
+    if (smoked === null) {
+      if (!existing) return null;
+      // Soft-delete every live row for the day, not just the newest, so stray
+      // duplicates from offline races can't leave the day looking marked.
+      for (const row of live) {
+        await db.smoking_logs.put({
+          ...row,
+          deleted_at: ts,
+          updated_at: ts,
+          sync_status: "pending",
+        });
+      }
+      notify();
+      return null;
+    }
+
+    if (existing) {
+      const updated: LocalSmokingLog = {
+        ...existing,
+        smoked,
+        updated_at: ts,
+        sync_status: "pending",
+      };
+      await db.smoking_logs.put(updated);
+      notify();
+      return updated;
+    }
+
+    const id = uuid();
+    const row: SmokingLogRow = {
+      id,
+      log_date: date,
+      smoked,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingSmokingLog(row);
+    await db.smoking_logs.put(local);
+    notify();
+    return local;
+  }
+
   return {
     addSet,
     updateSet,
@@ -691,6 +754,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addMarketNote,
     updateMarketNote,
     deleteMarketNote,
+    setSmoked,
   };
 }
 

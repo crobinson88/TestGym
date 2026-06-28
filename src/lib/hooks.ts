@@ -126,6 +126,38 @@ export function useTodayCardioSessions() {
   return useCardioSessionsForDate(todayIsoDate());
 }
 
+// The day's smoking flag: `true` (smoked), `false` (smoke-free), or `null` when
+// the day is unmarked. Resolves to the newest live row if offline races left
+// more than one.
+export function useSmokingForDate(date: string): boolean | null | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.smoking_logs.where("log_date").equals(date).toArray();
+    const live = rows
+      .filter((r) => !r.deleted_at)
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+    return live[0]?.smoked ?? null;
+  }, [date]);
+}
+
+// All marked days as a date -> smoked map, deduped to the newest live row per
+// date. Feeds the Stats smoking calendar; unmarked days are simply absent.
+export function useSmokingLogMap(): Map<string, boolean> | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.smoking_logs.toArray();
+    const byDate = new Map<string, { smoked: boolean; updated_at: string }>();
+    for (const r of rows) {
+      if (r.deleted_at) continue;
+      const prev = byDate.get(r.log_date);
+      if (!prev || r.updated_at > prev.updated_at) {
+        byDate.set(r.log_date, { smoked: r.smoked, updated_at: r.updated_at });
+      }
+    }
+    const out = new Map<string, boolean>();
+    for (const [date, v] of byDate) out.set(date, v.smoked);
+    return out;
+  }, []);
+}
+
 export interface TodayScore {
   setsCount: number;
   liftingVolume: number;

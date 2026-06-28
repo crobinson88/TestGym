@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Trash2, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Cigarette,
+  CigaretteOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { syncEngine } from "@/lib/sync";
 import {
@@ -9,6 +17,7 @@ import {
   useCardioSessionsForDate,
   useScoreForDate,
   useSetsForDate,
+  useSmokingForDate,
   useMetActivities,
 } from "@/lib/hooks";
 import {
@@ -35,6 +44,7 @@ export function Today() {
   const cardio = useCardioSessionsForDate(selectedDate);
   const activities = useMetActivities();
   const score = useScoreForDate(selectedDate);
+  const smoked = useSmokingForDate(selectedDate);
 
   if (
     sets === undefined ||
@@ -42,7 +52,8 @@ export function Today() {
     categories === undefined ||
     cardio === undefined ||
     activities === undefined ||
-    score === undefined
+    score === undefined ||
+    smoked === undefined
   ) {
     return <div className="p-6 text-center text-muted">Loading...</div>;
   }
@@ -155,6 +166,8 @@ export function Today() {
             </div>
           </div>
         </div>
+
+        <SmokingTracker date={selectedDate} smoked={smoked} />
       </header>
 
       {nothingLogged && (
@@ -205,6 +218,53 @@ export function Today() {
             </ul>
           </section>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SmokingTracker({
+  date,
+  smoked,
+}: {
+  date: string;
+  smoked: boolean | null;
+}) {
+  async function set(next: boolean) {
+    // Tapping the active choice again clears the mark for the day.
+    await syncEngine.mutations.setSmoked(date, smoked === next ? null : next);
+  }
+
+  return (
+    <div className="mt-3 rounded-2xl border border-line bg-surface p-3">
+      <div className="text-xs uppercase tracking-wide text-muted">Smoking</div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button
+          onClick={() => set(false)}
+          aria-pressed={smoked === false}
+          className={cn(
+            "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-medium transition",
+            smoked === false
+              ? "border-success bg-success/15 text-success"
+              : "border-line text-muted hover:bg-surface2",
+          )}
+        >
+          <CigaretteOff className="h-4 w-4" />
+          Smoke-free
+        </button>
+        <button
+          onClick={() => set(true)}
+          aria-pressed={smoked === true}
+          className={cn(
+            "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-medium transition",
+            smoked === true
+              ? "border-danger bg-danger/15 text-danger"
+              : "border-line text-muted hover:bg-surface2",
+          )}
+        >
+          <Cigarette className="h-4 w-4" />
+          Smoked
+        </button>
       </div>
     </div>
   );

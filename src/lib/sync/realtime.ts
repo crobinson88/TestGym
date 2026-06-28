@@ -11,6 +11,7 @@ import type {
   ReadingItemRow,
   SetRow,
   ShareTradeRow,
+  SmokingLogRow,
   StockRow,
   TipRow,
   TdlCategoryRow,
@@ -39,7 +40,8 @@ type AnyRow =
   | FrenchAttemptRow
   | ReadingItemRow
   | TipRow
-  | MarketNoteRow;
+  | MarketNoteRow
+  | SmokingLogRow;
 
 export interface MergeResult {
   applied: boolean;

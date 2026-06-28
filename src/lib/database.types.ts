@@ -332,6 +332,21 @@ export interface MarketNoteRow {
   deleted_at: string | null;
 }
 
+// One day's smoking flag. `smoked` is true on a smoking day, false on a
+// smoke-free day; the absence of a live row means the day is unmarked. One live
+// row per `log_date` is kept (deduped client-side). Same sync / RLS /
+// soft-delete rules as `sets`.
+export interface SmokingLogRow {
+  id: string;
+  log_date: string;
+  smoked: boolean;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -467,6 +482,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<MarketNoteRow>;
+      };
+      smoking_logs: {
+        Row: SmokingLogRow;
+        Insert: Omit<SmokingLogRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<SmokingLogRow>;
       };
     };
   };

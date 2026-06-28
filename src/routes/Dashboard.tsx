@@ -13,13 +13,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { downloadSetsCsv } from "@/lib/csv";
-import { useDashboardStats, type WeekVolumePoint } from "@/lib/hooks";
+import { useDashboardStats, useSmokingLogMap, type WeekVolumePoint } from "@/lib/hooks";
 import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
-import { formatFull, formatVolume, prettyDate } from "@/lib/utils";
+import { cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
 import {
   useFrenchWeeklyAccuracy,
   useVocabMastery,
@@ -49,6 +49,7 @@ const FALLBACK_COLOR = "#8a8a8a";
 
 export default function Dashboard() {
   const stats = useDashboardStats();
+  const smokingLogs = useSmokingLogMap();
   const timeStats = useTimeDashboardStats();
   const frenchAccuracy = useFrenchWeeklyAccuracy();
   const vocabMastery = useVocabMastery();
@@ -207,6 +208,15 @@ export default function Dashboard() {
         </section>
       )}
 
+      {smokingLogs && (
+        <section>
+          <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Smoking</h2>
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <SmokingCalendar logs={smokingLogs} />
+          </div>
+        </section>
+      )}
+
       <section>
         <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">All-time</h2>
         <div className="grid grid-cols-3 gap-3">
@@ -238,6 +248,110 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: s
       <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+const MONTH_YEAR = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function SmokingCalendar({ logs }: { logs: Map<string, boolean> }) {
+  const today = todayIsoDate();
+  const [ty, tm] = today.split("-").map((p) => parseInt(p, 10));
+  const [view, setView] = useState({ year: ty, month: tm });
+  const { year, month } = view;
+
+  // Monday-first leading blanks + one cell per day of the visible month.
+  const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const lead = firstDow === 0 ? 6 : firstDow - 1;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells: (string | null)[] = [];
+  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(`${year}-${pad2(month)}-${pad2(d)}`);
+
+  let freeDays = 0;
+  let smokedDays = 0;
+  for (const iso of cells) {
+    if (!iso) continue;
+    const v = logs.get(iso);
+    if (v === true) smokedDays++;
+    else if (v === false) freeDays++;
+  }
+
+  const atCurrentMonth = year === ty && month === tm;
+  const prevMonth = () =>
+    setView((v) => (v.month === 1 ? { year: v.year - 1, month: 12 } : { year: v.year, month: v.month - 1 }));
+  const nextMonth = () =>
+    setView((v) => (v.month === 12 ? { year: v.year + 1, month: 1 } : { year: v.year, month: v.month + 1 }));
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <button
+          onClick={prevMonth}
+          aria-label="Previous month"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface2"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div className="text-sm font-semibold">
+          {MONTH_YEAR.format(new Date(year, month - 1, 1))}
+        </div>
+        <button
+          onClick={nextMonth}
+          disabled={atCurrentMonth}
+          aria-label="Next month"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface2 disabled:opacity-30"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {WEEKDAY_LABELS.map((w, i) => (
+          <div key={i} className="pb-1 text-center text-[10px] font-medium uppercase text-muted">
+            {w}
+          </div>
+        ))}
+        {cells.map((iso, i) => {
+          if (!iso) return <div key={`b${i}`} />;
+          const day = parseInt(iso.slice(8), 10);
+          const future = iso > today;
+          const v = logs.get(iso);
+          return (
+            <div
+              key={iso}
+              className={cn(
+                "flex aspect-square items-center justify-center rounded-md border text-xs tabular-nums",
+                future
+                  ? "border-transparent text-muted/30"
+                  : v === false
+                    ? "border-success/40 bg-success/20 font-semibold text-success"
+                    : v === true
+                      ? "border-danger/40 bg-danger/20 font-semibold text-danger"
+                      : "border-line/60 bg-surface2 text-muted",
+              )}
+              title={`${prettyDate(iso)}: ${
+                v === false ? "smoke-free" : v === true ? "smoked" : "no data"
+              }`}
+            >
+              {day}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line/70 pt-3 text-xs text-muted">
+        <span className="font-medium text-success">{freeDays} smoke-free</span>
+        <span className="font-medium text-danger">{smokedDays} smoked</span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm border border-line/60 bg-surface2" /> no data
+        </span>
+      </div>
     </div>
   );
 }
