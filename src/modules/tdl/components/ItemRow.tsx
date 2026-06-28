@@ -186,9 +186,6 @@ export function ItemRow({
             <span className={cn("min-w-0", detailOpen ? "whitespace-normal break-words" : "truncate")}>
               {item.title}
             </span>
-            {item.is_reluctant && (
-              <ThumbsDown className="h-3.5 w-3.5 shrink-0 text-warn" aria-label="Don't want to do" />
-            )}
             {hasDetail && <StickyNote className="h-3.5 w-3.5 shrink-0 text-muted" />}
           </button>
         )}
@@ -224,6 +221,14 @@ export function ItemRow({
         className="shrink-0"
         onClick={() => void cycleStatus(item.id)}
       />
+      {item.is_reluctant && (
+        <span
+          className="flex h-9 w-5 shrink-0 items-center justify-center text-warn"
+          title="Don't want to do"
+        >
+          <ThumbsDown className="h-4 w-4" aria-label="Don't want to do" />
+        </span>
+      )}
       <div className="relative shrink-0">
         <button
           type="button"

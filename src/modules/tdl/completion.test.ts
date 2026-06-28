@@ -63,6 +63,17 @@ describe("dayCompletion", () => {
     expect(c.priorityTotal).toBe(1);
     expect(c.priorityActive).toBe(1);
   });
+
+  it("tallies reluctant items by total vs done", () => {
+    const c = dayCompletion([
+      makeItem({ status: "open", is_reluctant: true }),
+      makeItem({ status: "worked_today", is_reluctant: true }),
+      makeItem({ status: "done", is_reluctant: true }),
+      makeItem({ status: "done" }),
+    ]);
+    expect(c.reluctantTotal).toBe(3);
+    expect(c.reluctantDone).toBe(1);
+  });
 });
 
 describe("sectionStatusCounts", () => {

@@ -2,6 +2,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
 export const ACTION_TARGET = 30;
 export const PRIORITY_TARGET = 5;
+export const RELUCTANT_TARGET = 5;
 
 function TargetPie({
   label,
@@ -63,14 +64,17 @@ function TargetPie({
 export function TargetPies({
   engaged,
   priorityEngaged,
+  reluctantDone,
 }: {
   engaged: number;
   priorityEngaged: number;
+  reluctantDone: number;
 }) {
   return (
-    <div className="flex items-start justify-center gap-8">
+    <div className="flex items-start justify-center gap-6">
       <TargetPie label="Action Items" value={engaged} target={ACTION_TARGET} color="#22d3ee" />
       <TargetPie label="Priority" value={priorityEngaged} target={PRIORITY_TARGET} color="#f59e0b" />
+      <TargetPie label="Did Anyway" value={reluctantDone} target={RELUCTANT_TARGET} color="#a78bfa" />
     </div>
   );
 }

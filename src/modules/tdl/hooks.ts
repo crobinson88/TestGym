@@ -105,6 +105,9 @@ export interface DayCompletion {
   activeRatio: number;
   priorityTotal: number;
   priorityActive: number;
+  // "Don't want to do" items: how many exist today vs how many are finished.
+  reluctantTotal: number;
+  reluctantDone: number;
 }
 
 export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
@@ -126,6 +129,7 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
   const active = counted.filter(isActive).length;
   const total = counted.length;
   const priority = counted.filter((i) => i.priority_rank != null);
+  const reluctant = counted.filter((i) => i.is_reluctant);
   return {
     total,
     done,
@@ -134,6 +138,8 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
     activeRatio: total === 0 ? 0 : active / total,
     priorityTotal: priority.length,
     priorityActive: priority.filter(isActive).length,
+    reluctantTotal: reluctant.length,
+    reluctantDone: reluctant.filter((i) => i.status === "done").length,
   };
 }
 
