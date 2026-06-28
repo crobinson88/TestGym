@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, FileText, ImageIcon, Library, Link2, Plus, Upload, X } from "lucide-react";
+import {
+  ExternalLink,
+  FileText,
+  Highlighter,
+  ImageIcon,
+  Library,
+  Link2,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
@@ -28,7 +38,16 @@ function normDoc(d: unknown): StockDocument {
     mediaType: o.mediaType ?? "application/octet-stream",
     addedAt: o.addedAt ?? "",
     addedBy: o.addedBy ?? null,
+    // Preserve annotation fields — every write re-maps documents through here,
+    // so dropping them would silently wipe a doc's highlights/comments.
+    ...(o.annotations ? { annotations: o.annotations } : {}),
+    ...(o.flatPath ? { flatPath: o.flatPath } : {}),
+    ...(o.annotatedFrom ? { annotatedFrom: o.annotatedFrom } : {}),
   };
+}
+
+function isPdf(doc: StockDocument): boolean {
+  return doc.mediaType === "application/pdf" || doc.name.toLowerCase().endsWith(".pdf");
 }
 
 export function ResearchLibrary({
@@ -63,9 +82,14 @@ export function ResearchLibrary({
     return out;
   }, [trades]);
 
-  // Sign every stored object (stock docs + trade images) in one batch.
+  // Sign every stored object (stock docs + their flattened copies + trade
+  // images) in one batch.
   const allPaths = useMemo(
-    () => [...documents.map((d) => d.path), ...tradeImages.map((i) => i.path)],
+    () => [
+      ...documents.map((d) => d.path),
+      ...documents.map((d) => d.flatPath).filter((p): p is string => !!p),
+      ...tradeImages.map((i) => i.path),
+    ],
     [documents, tradeImages],
   );
   const pathKey = allPaths.join("|");
@@ -172,23 +196,51 @@ export function ResearchLibrary({
 
       <div className="space-y-2">
         <span className="text-xs uppercase tracking-wide text-muted">General notes · documents</span>
-        {documents.map((doc) => (
-          <Row key={doc.path} onRemove={() => removeDoc(doc)} disabled={busy}>
-            <div className="flex items-center justify-between gap-2">
-              <a
-                href={urls[doc.path]}
-                target="_blank"
-                rel="noreferrer"
-                className="flex min-w-0 items-center gap-2"
-                aria-disabled={!urls[doc.path]}
-              >
-                <FileText className="h-4 w-4 shrink-0 text-muted" />
-                <span className="truncate">{doc.name}</span>
-              </a>
-              <Provenance at={doc.addedAt} by={doc.addedBy} />
-            </div>
-          </Row>
-        ))}
+        {documents.map((doc) => {
+          const marks = doc.annotations?.length ?? 0;
+          return (
+            <Row key={doc.path} onRemove={() => removeDoc(doc)} disabled={busy}>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <a
+                    href={urls[doc.path]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex min-w-0 items-center gap-2"
+                    aria-disabled={!urls[doc.path]}
+                  >
+                    <FileText className="h-4 w-4 shrink-0 text-muted" />
+                    <span className="truncate">{doc.name}</span>
+                  </a>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isPdf(doc) && (
+                      <Link
+                        to={`/shares/stock/${encodeURIComponent(ticker)}/annotate?src=doc&doc=${encodeURIComponent(doc.path)}`}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-accent hover:bg-surface"
+                        aria-label={marks > 0 ? "Edit annotations" : "Annotate"}
+                      >
+                        <Highlighter className="h-4 w-4" />
+                      </Link>
+                    )}
+                    <Provenance at={doc.addedAt} by={doc.addedBy} />
+                  </div>
+                </div>
+                {marks > 0 && (
+                  <a
+                    href={doc.flatPath ? urls[doc.flatPath] : undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 pl-6 text-xs text-muted hover:text-accent"
+                    aria-disabled={!doc.flatPath || !urls[doc.flatPath]}
+                  >
+                    <Highlighter className="h-3 w-3" />
+                    {marks} mark{marks === 1 ? "" : "s"} · open annotated copy
+                  </a>
+                )}
+              </div>
+            </Row>
+          );
+        })}
         <label className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-surface2 text-sm font-medium text-text transition active:scale-[0.98]">
           <Upload className="h-4 w-4 text-accent" />
           {uploading ? "Uploading…" : "Upload document"}
