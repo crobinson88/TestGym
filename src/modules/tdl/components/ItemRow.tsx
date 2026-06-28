@@ -12,6 +12,7 @@ import {
   MoreVertical,
   Pencil,
   StickyNote,
+  ThumbsDown,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   deleteItem,
   moveItemToSection,
   setPriorityRank,
+  setReluctant,
   MAX_PRIORITY_RANK,
   snoozeItem,
   unsnoozeItem,
@@ -184,6 +186,9 @@ export function ItemRow({
             <span className={cn("min-w-0", detailOpen ? "whitespace-normal break-words" : "truncate")}>
               {item.title}
             </span>
+            {item.is_reluctant && (
+              <ThumbsDown className="h-3.5 w-3.5 shrink-0 text-warn" aria-label="Don't want to do" />
+            )}
             {hasDetail && <StickyNote className="h-3.5 w-3.5 shrink-0 text-muted" />}
           </button>
         )}
@@ -254,6 +259,20 @@ export function ItemRow({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
             >
               <StickyNote className="h-4 w-4" /> Details
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !item.is_reluctant;
+                void setReluctant(item.id, next);
+                // Marking it open the detail so the reason can be recorded.
+                if (next) setDetailOpen(true);
+                setMenu(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+            >
+              <ThumbsDown className="h-4 w-4" />{" "}
+              {item.is_reluctant ? "Clear don't-want-to-do" : "Don't want to do"}
             </button>
             <button
               type="button"

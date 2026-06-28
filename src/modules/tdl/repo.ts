@@ -29,6 +29,8 @@ export interface CreateItemInput {
   priority_rank?: number | null;
   is_archived?: boolean;
   snoozed_until?: string | null;
+  is_reluctant?: boolean;
+  reluctance_reason?: string | null;
   notes?: string | null;
   images?: string[];
   status?: TdlStatus;
@@ -71,6 +73,8 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     priority_rank: clampRank(input.priority_rank ?? null),
     is_archived: input.is_archived ?? false,
     snoozed_until: input.snoozed_until ?? null,
+    is_reluctant: input.is_reluctant ?? false,
+    reluctance_reason: input.reluctance_reason ?? null,
     notes: input.notes ?? null,
     images: input.images ?? [],
     origin_item_id: input.origin_item_id ?? null,
@@ -178,6 +182,26 @@ export async function setPriorityRank(
     }
   }
   return updateItem(id, { priority_rank: clamped });
+}
+
+// Flag an item as one we don't want to do (but still need to). Clearing the
+// flag also clears the recorded reason.
+export async function setReluctant(
+  id: string,
+  reluctant: boolean,
+): Promise<LocalTdlItem | null> {
+  return updateItem(
+    id,
+    reluctant ? { is_reluctant: true } : { is_reluctant: false, reluctance_reason: null },
+  );
+}
+
+export async function setReluctanceReason(
+  id: string,
+  reason: string | null,
+): Promise<LocalTdlItem | null> {
+  const next = reason?.trim() ? reason.trim() : null;
+  return updateItem(id, { reluctance_reason: next });
 }
 
 export async function archiveItem(id: string): Promise<LocalTdlItem | null> {

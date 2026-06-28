@@ -43,6 +43,8 @@ function item(section: string, over: Partial<TdlItemRow> = {}): LocalTdlItem {
     priority_rank: null,
     is_archived: false,
     snoozed_until: null,
+    is_reluctant: false,
+    reluctance_reason: null,
     notes: null,
     images: [],
     origin_item_id: null,

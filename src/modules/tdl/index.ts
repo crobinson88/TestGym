@@ -22,6 +22,8 @@ export {
   updateItem,
   deleteItem,
   setPriorityRank,
+  setReluctant,
+  setReluctanceReason,
   MAX_PRIORITY_RANK,
   cycleStatus,
   moveItem,
