@@ -285,6 +285,14 @@ export class GymDB extends Dexie {
     this.version(19).stores({
       smoking_logs: "id, log_date, updated_at, sync_status, deleted_at",
     });
+    this.version(20).upgrade(async (tx) => {
+      await tx
+        .table("exercises")
+        .toCollection()
+        .modify((row: LocalExercise) => {
+          if (row.ready_for_increase === undefined) row.ready_for_increase = false;
+        });
+    });
   }
 }
 

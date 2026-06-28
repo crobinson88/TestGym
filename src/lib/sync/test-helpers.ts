@@ -36,6 +36,7 @@ export function makeExercise(category_id: string, over: Partial<ExerciseRow> = {
     name: "Lat Pulldown",
     category_id,
     is_archived: false,
+    ready_for_increase: false,
     created_at: ts,
     updated_at: ts,
     deleted_at: null,

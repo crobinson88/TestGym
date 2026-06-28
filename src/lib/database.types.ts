@@ -14,6 +14,8 @@ export interface ExerciseRow {
   name: string;
   category_id: string;
   is_archived: boolean;
+  // Flags an exercise the user judges ready to move up in weight next session.
+  ready_for_increase: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

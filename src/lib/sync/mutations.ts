@@ -270,6 +270,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       name: input.name,
       category_id: input.category_id,
       is_archived: true,
+      ready_for_increase: false,
       ...baseRowDefaults(ts),
     };
     const local = pendingExercise(row);
@@ -288,6 +289,42 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     const updated: LocalExercise = {
       ...existing,
       is_archived: !active,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.exercises.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function renameExercise(
+    id: string,
+    name: string,
+  ): Promise<LocalExercise | null> {
+    const existing = await db.exercises.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalExercise = {
+      ...existing,
+      name: name.trim(),
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.exercises.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function setExerciseReadyForIncrease(
+    id: string,
+    ready: boolean,
+  ): Promise<LocalExercise | null> {
+    const existing = await db.exercises.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalExercise = {
+      ...existing,
+      ready_for_increase: ready,
       updated_at: ts,
       sync_status: "pending",
     };
@@ -734,6 +771,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     deleteSet,
     addExercise,
     setExerciseActive,
+    renameExercise,
+    setExerciseReadyForIncrease,
     addCategory,
     addCardioSession,
     deleteCardioSession,
