@@ -1,6 +1,17 @@
 import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Minus, Plus, Power, Trash2, Trophy } from "lucide-react";
+import {
+  ChevronLeft,
+  Check,
+  Minus,
+  Pencil,
+  Plus,
+  Power,
+  Trash2,
+  TrendingUp,
+  Trophy,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RestTimer } from "@/components/RestTimer";
@@ -250,6 +261,7 @@ function ExerciseStep({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   if (!exercises) return <Loading />;
 
@@ -282,23 +294,49 @@ function ExerciseStep({
         <Empty>No exercises in this category yet.</Empty>
       )}
       <ul className="space-y-2">
-        {exercises.map((e) => (
-          <li key={e.id} className="flex items-stretch gap-2">
-            <ExerciseTile
-              id={e.id}
-              name={e.name}
-              active={!e.is_archived}
-              onPick={() => onPick(e.id)}
-            />
-            <ActiveToggle
-              active={!e.is_archived}
-              name={e.name}
-              onToggle={() =>
-                syncEngine.mutations.setExerciseActive(e.id, e.is_archived)
-              }
-            />
-          </li>
-        ))}
+        {exercises.map((e) =>
+          editingId === e.id ? (
+            <li key={e.id}>
+              <RenameForm
+                current={e.name}
+                siblings={exercises.filter((x) => x.id !== e.id)}
+                onCancel={() => setEditingId(null)}
+                onSave={async (next) => {
+                  await syncEngine.mutations.renameExercise(e.id, next);
+                  setEditingId(null);
+                }}
+              />
+            </li>
+          ) : (
+            <li key={e.id} className="flex items-stretch gap-2">
+              <ExerciseTile
+                id={e.id}
+                name={e.name}
+                active={!e.is_archived}
+                readyForIncrease={!!e.ready_for_increase}
+                onPick={() => onPick(e.id)}
+              />
+              <EditButton name={e.name} onEdit={() => setEditingId(e.id)} />
+              <IncreaseToggle
+                ready={!!e.ready_for_increase}
+                name={e.name}
+                onToggle={() =>
+                  syncEngine.mutations.setExerciseReadyForIncrease(
+                    e.id,
+                    !e.ready_for_increase,
+                  )
+                }
+              />
+              <ActiveToggle
+                active={!e.is_archived}
+                name={e.name}
+                onToggle={() =>
+                  syncEngine.mutations.setExerciseActive(e.id, e.is_archived)
+                }
+              />
+            </li>
+          ),
+        )}
       </ul>
       {!adding && (
         <button
@@ -358,11 +396,13 @@ function ExerciseTile({
   id,
   name,
   active,
+  readyForIncrease,
   onPick,
 }: {
   id: string;
   name: string;
   active: boolean;
+  readyForIncrease: boolean;
   onPick: () => void;
 }) {
   const last = useLastSet(id);
@@ -388,16 +428,141 @@ function ExerciseTile({
         tone,
       )}
     >
-      <span className="flex items-center gap-2 text-base font-medium">
-        {name}
+      <span className="flex min-w-0 items-center gap-2 text-base font-medium">
+        <span className="truncate">{name}</span>
+        {readyForIncrease && (
+          <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-warn">
+            <TrendingUp className="h-3.5 w-3.5" />
+            level up
+          </span>
+        )}
         {active && todayCount > 0 && (
-          <span className="text-xs font-semibold text-success">
+          <span className="shrink-0 text-xs font-semibold text-success">
             {todayCount} today
           </span>
         )}
       </span>
-      <span className="text-sm text-muted">{subline}</span>
+      <span className="shrink-0 text-sm text-muted">{subline}</span>
     </button>
+  );
+}
+
+function EditButton({ name, onEdit }: { name: string; onEdit: () => void }) {
+  return (
+    <button
+      onClick={onEdit}
+      aria-label={`Rename ${name}`}
+      title="Rename"
+      className="flex w-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-surface text-muted transition active:scale-[0.96] hover:bg-surface2"
+    >
+      <Pencil className="h-5 w-5" />
+    </button>
+  );
+}
+
+function IncreaseToggle({
+  ready,
+  name,
+  onToggle,
+}: {
+  ready: boolean;
+  name: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-pressed={ready}
+      aria-label={`Mark ${name} ${ready ? "not " : ""}ready for a weight increase`}
+      title={
+        ready
+          ? "Ready for a weight increase — tap to clear"
+          : "Tap to mark ready for a weight increase"
+      }
+      className={cn(
+        "flex w-12 shrink-0 items-center justify-center rounded-2xl border transition active:scale-[0.96]",
+        ready
+          ? "border-warn/50 bg-warn/10 text-warn"
+          : "border-line bg-surface text-muted hover:bg-surface2",
+      )}
+    >
+      <TrendingUp className="h-5 w-5" />
+    </button>
+  );
+}
+
+function RenameForm({
+  current,
+  siblings,
+  onSave,
+  onCancel,
+}: {
+  current: string;
+  siblings: { name: string }[];
+  onSave: (name: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (trimmed === current) {
+      onCancel();
+      return;
+    }
+    if (siblings.some((s) => s.name.toLowerCase() === trimmed.toLowerCase())) {
+      setError("That exercise already exists in this category.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(trimmed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="space-y-3 rounded-2xl border border-line bg-surface p-4"
+    >
+      <label className="block space-y-2">
+        <span className="text-sm text-muted">Exercise name</span>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+          disabled={busy}
+          maxLength={64}
+        />
+      </label>
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button type="submit" size="md" disabled={busy || !name.trim()}>
+          {busy ? "Saving..." : "Save name"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="md"
+          onClick={onCancel}
+          disabled={busy}
+        >
+          <X className="mr-1 h-4 w-4" />
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 

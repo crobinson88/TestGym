@@ -86,6 +86,42 @@ describe("mutations.addSet", () => {
     expect(await m.setExerciseActive("missing", true)).toBeNull();
   });
 
+  it("renameExercise trims the name and marks pending", async () => {
+    db = await newTestDb();
+    const cat = makeCategory();
+    const ex = makeExercise(cat.id, { name: "Lat Pulldown" });
+    await db.categories.put({ ...cat, sync_status: "synced" });
+    await db.exercises.put({ ...ex, sync_status: "synced" });
+
+    const m = createMutations({ db });
+
+    const renamed = await m.renameExercise(ex.id, "  Cable Row  ");
+    expect(renamed?.name).toBe("Cable Row");
+    expect(renamed?.sync_status).toBe("pending");
+
+    expect(await m.renameExercise("missing", "x")).toBeNull();
+  });
+
+  it("setExerciseReadyForIncrease toggles the flag and marks pending", async () => {
+    db = await newTestDb();
+    const cat = makeCategory();
+    const ex = makeExercise(cat.id, { ready_for_increase: false });
+    await db.categories.put({ ...cat, sync_status: "synced" });
+    await db.exercises.put({ ...ex, sync_status: "synced" });
+
+    const m = createMutations({ db });
+
+    const on = await m.setExerciseReadyForIncrease(ex.id, true);
+    expect(on?.ready_for_increase).toBe(true);
+    expect(on?.sync_status).toBe("pending");
+
+    const off = await m.setExerciseReadyForIncrease(ex.id, false);
+    expect(off?.ready_for_increase).toBe(false);
+    expect(off?.sync_status).toBe("pending");
+
+    expect(await m.setExerciseReadyForIncrease("missing", true)).toBeNull();
+  });
+
   it("addCardioSession snapshots met_value and computes met_minutes", async () => {
     db = await newTestDb();
     const act = makeMetActivity({ met_value: 9.8 });
