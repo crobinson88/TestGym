@@ -1,8 +1,11 @@
 // Byte proxy for the PDF annotator. Investor-relations filings live on remote
 // hosts (SEC EDGAR, FMP) that block cross-origin browser fetches and require a
-// declared User-Agent, so the client can't pull the PDF itself. This streams a
-// single PDF back to the annotator. Auth reuses the app's magic-link gate.
+// declared User-Agent, so the client can't pull the document itself. PDFs are
+// streamed straight through; HTML filings are reflowed into a PDF server-side
+// (see _htmlpdf) so the annotator can open them too. Auth reuses the app's
+// magic-link gate.
 import { authedUser, serviceClient, json } from "./_fireflies.js";
+import { htmlToPdf } from "./_htmlpdf.js";
 
 export const maxDuration = 30;
 
@@ -41,12 +44,33 @@ export async function POST(request: Request): Promise<Response> {
   const contentType = upstream.headers.get("content-type") ?? "";
   const buf = Buffer.from(await upstream.arrayBuffer());
   // Sniff the magic bytes too: some hosts mislabel the content-type.
-  const looksPdf = contentType.includes("application/pdf") || buf.subarray(0, 5).toString("latin1") === "%PDF-";
-  if (!looksPdf) {
-    return json({ error: "not a PDF — only PDF filings can be annotated" }, 415);
-  }
-  if (buf.byteLength > MAX_PDF_BYTES) return json({ error: "PDF too large" }, 413);
+  const looksPdf =
+    contentType.includes("application/pdf") || buf.subarray(0, 5).toString("latin1") === "%PDF-";
 
+  if (looksPdf) {
+    if (buf.byteLength > MAX_PDF_BYTES) return json({ error: "PDF too large" }, 413);
+    return pdfResponse(buf);
+  }
+
+  // Reflow HTML/text filings into a PDF so they can be annotated too.
+  const looksHtml =
+    contentType.includes("text/html") ||
+    contentType.includes("text/plain") ||
+    contentType.includes("application/xhtml") ||
+    /^\s*<(?:!doctype|html|\?xml|head|body|div|p|table|span|font)/i.test(buf.subarray(0, 256).toString("utf8"));
+  if (looksHtml) {
+    try {
+      const pdf = await htmlToPdf(buf.toString("utf8"), url);
+      return pdfResponse(Buffer.from(pdf));
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "HTML conversion failed" }, 502);
+    }
+  }
+
+  return json({ error: "unsupported document type — only PDF and HTML filings can be annotated" }, 415);
+}
+
+function pdfResponse(buf: Buffer): Response {
   return new Response(buf, {
     status: 200,
     headers: {
