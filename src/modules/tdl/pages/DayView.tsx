@@ -21,6 +21,7 @@ import {
   moveItem,
   reorderSection,
   setPriorityRank,
+  usedRanks,
   createItem,
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
@@ -130,6 +131,7 @@ export default function DayView() {
   }
 
   const empty = bundle.items.length === 0;
+  const takenRanks = usedRanks(bundle.items);
 
   const liveKeys = new Set(categories.map((c) => c.key));
   const orphanSections = Object.keys(bundle.bySection).filter(
@@ -217,6 +219,7 @@ export default function DayView() {
                     recurring={lists.recurring}
                     dated={lists.dated}
                     focusedId={focusedId}
+                    takenRanks={takenRanks}
                     forceExpanded={searching}
                   />
                 );

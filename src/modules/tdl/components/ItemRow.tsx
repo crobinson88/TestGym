@@ -39,10 +39,12 @@ export function ItemRow({
   item,
   categories,
   focused,
+  takenRanks,
 }: {
   item: LocalTdlItem;
   categories: SectionConfig[];
   focused?: boolean;
+  takenRanks: Set<number>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
@@ -143,8 +145,9 @@ export function ItemRow({
       >
         <option value="">—</option>
         {Array.from({ length: MAX_PRIORITY_RANK }, (_, i) => i + 1).map((n) => (
-          <option key={n} value={n}>
+          <option key={n} value={n} disabled={takenRanks.has(n) && n !== item.priority_rank}>
             {n}
+            {takenRanks.has(n) && n !== item.priority_rank ? " (taken)" : ""}
           </option>
         ))}
       </select>
