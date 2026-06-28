@@ -11,6 +11,7 @@ import type {
   ReadingItemRow,
   SetRow,
   ShareTradeRow,
+  SmokingLogRow,
   StockRow,
   TipRow,
   TdlCategoryRow,
@@ -122,6 +123,10 @@ export interface LocalMarketNote extends MarketNoteRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalSmokingLog extends SmokingLogRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -142,6 +147,7 @@ export class GymDB extends Dexie {
   reading_items!: Table<LocalReadingItem, string>;
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
+  smoking_logs!: Table<LocalSmokingLog, string>;
   ir_cache!: Table<IrCacheRow, string>;
 
   constructor(name = "gym-tracker") {
@@ -275,6 +281,9 @@ export class GymDB extends Dexie {
           if (row.is_reluctant === undefined) row.is_reluctant = false;
           if (row.reluctance_reason === undefined) row.reluctance_reason = null;
         });
+    });
+    this.version(19).stores({
+      smoking_logs: "id, log_date, updated_at, sync_status, deleted_at",
     });
   }
 }

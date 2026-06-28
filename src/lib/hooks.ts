@@ -126,6 +126,19 @@ export function useTodayCardioSessions() {
   return useCardioSessionsForDate(todayIsoDate());
 }
 
+// The day's smoking flag: `true` (smoked), `false` (smoke-free), or `null` when
+// the day is unmarked. Resolves to the newest live row if offline races left
+// more than one.
+export function useSmokingForDate(date: string): boolean | null | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.smoking_logs.where("log_date").equals(date).toArray();
+    const live = rows
+      .filter((r) => !r.deleted_at)
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+    return live[0]?.smoked ?? null;
+  }, [date]);
+}
+
 export interface TodayScore {
   setsCount: number;
   liftingVolume: number;
