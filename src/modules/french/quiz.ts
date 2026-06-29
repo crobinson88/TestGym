@@ -198,7 +198,14 @@ export function selectVocab(
     else upcoming.push({ w, s });
   }
 
-  due.sort((a, b) => a.s.box - b.s.box || cmp(a.s.dueOn, b.s.dueOn));
+  // Most-lapsed (lowest box) first; within a box, the most-recently-missed word
+  // leads (lastShownAt desc) so a word you just got wrong jumps to the top of the
+  // queue and gets retested in the very next test, then most-overdue as a final
+  // tiebreaker.
+  due.sort(
+    (a, b) =>
+      a.s.box - b.s.box || cmp(b.s.lastShownAt, a.s.lastShownAt) || cmp(a.s.dueOn, b.s.dueOn),
+  );
   upcoming.sort((a, b) => cmp(a.s.dueOn, b.s.dueOn));
   mastered.sort((a, b) => cmp(a.s.lastShownAt, b.s.lastShownAt));
 

@@ -145,6 +145,17 @@ describe("selectVocab", () => {
     expect(out[1].fr).toBe("avoir");
   });
 
+  it("puts a just-missed word at the top of the queue, ahead of older misses", () => {
+    const schedules = new Map([
+      // both reset to box 0 by a wrong answer, but être was missed today
+      ["avoir", sched({ fr: "avoir", box: 0, dueOn: "2026-06-05", lastShownAt: "2026-06-04" })],
+      ["être", sched({ fr: "être", box: 0, dueOn: NOW, lastShownAt: NOW })],
+    ]);
+    const out = selectVocab(VOCAB, 6, lcg(9), schedules, NOW);
+    expect(out[0].fr).toBe("être"); // freshest miss leads, despite being least overdue
+    expect(out[1].fr).toBe("avoir");
+  });
+
   it("sinks mastered (not-due) words to the back of the queue", () => {
     const schedules = new Map([
       ["avoir", sched({ fr: "avoir", dueOn: "2026-06-09" })],
