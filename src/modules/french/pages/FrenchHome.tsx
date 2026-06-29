@@ -19,6 +19,7 @@ import {
   KIND_LABELS,
   LISTENING_SIZES,
   LISTENING_SPEEDS,
+  LISTENING_WORDS_PER_ROUND,
   TEST_SIZE,
   TEST_SIZES,
   type ListeningSpeed,
@@ -75,6 +76,7 @@ export default function FrenchHome() {
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
   const [count, setCount] = useState<number>(TEST_SIZE);
   const [listenCount, setListenCount] = useState<number>(10);
+  const [wordsPerRound, setWordsPerRound] = useState<number>(1);
   const [speed, setSpeed] = useState<ListeningSpeed>("normal");
 
   return (
@@ -185,35 +187,64 @@ export default function FrenchHome() {
         </button>
         <div className="space-y-2">
           <button
-            onClick={() => navigate(`/french/test/listening?n=${listenCount}&speed=${speed}`)}
+            onClick={() =>
+              navigate(
+                `/french/test/listening?n=${listenCount}&words=${wordsPerRound}&speed=${speed}`,
+              )
+            }
             className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
           >
             <Headphones className="h-7 w-7 shrink-0 text-accent" />
             <div>
               <div className="text-lg font-semibold">Listening test</div>
               <div className="text-sm text-muted">
-                {listenDue
-                  ? `${listenDue} due for review · ${listenCount} per test`
-                  : `Hear ${listenCount} French word${listenCount === 1 ? "" : "s"}, pick what you heard`}
+                {wordsPerRound > 1
+                  ? `Hear ${listenCount} French phrase${listenCount === 1 ? "" : "s"} of ${wordsPerRound} words`
+                  : listenDue
+                    ? `${listenDue} due for review · ${listenCount} per test`
+                    : `Hear ${listenCount} French word${listenCount === 1 ? "" : "s"}, pick what you heard`}
               </div>
             </div>
           </button>
-          <div className="flex gap-2" role="group" aria-label="Listening test length">
-            {LISTENING_SIZES.map((n) => (
-              <button
-                key={n}
-                onClick={() => setListenCount(n)}
-                aria-pressed={listenCount === n}
-                className={cn(
-                  "flex-1 rounded-xl border px-2 py-2 text-sm font-semibold tabular-nums transition",
-                  listenCount === n
-                    ? "border-accent bg-accent/15 text-accent"
-                    : "border-line bg-surface text-muted",
-                )}
-              >
-                {n}
-              </button>
-            ))}
+          <div className="space-y-1">
+            <div className="px-1 text-xs uppercase tracking-wider text-muted">Rounds per test</div>
+            <div className="flex gap-2" role="group" aria-label="Rounds per test">
+              {LISTENING_SIZES.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setListenCount(n)}
+                  aria-pressed={listenCount === n}
+                  className={cn(
+                    "flex-1 rounded-xl border px-2 py-2 text-sm font-semibold tabular-nums transition",
+                    listenCount === n
+                      ? "border-accent bg-accent/15 text-accent"
+                      : "border-line bg-surface text-muted",
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="px-1 text-xs uppercase tracking-wider text-muted">Words per round</div>
+            <div className="flex gap-2" role="group" aria-label="Words per round">
+              {LISTENING_WORDS_PER_ROUND.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setWordsPerRound(n)}
+                  aria-pressed={wordsPerRound === n}
+                  className={cn(
+                    "flex-1 rounded-xl border px-2 py-2 text-sm font-semibold tabular-nums transition",
+                    wordsPerRound === n
+                      ? "border-accent bg-accent/15 text-accent"
+                      : "border-line bg-surface text-muted",
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex gap-2" role="group" aria-label="Listening speed">
             {LISTENING_SPEEDS.map((s) => (
