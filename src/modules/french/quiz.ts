@@ -39,6 +39,18 @@ export const LISTENING_SPEEDS: { value: ListeningSpeed; label: string; rate: num
 // a quick ear check, up to a longer run.
 export const LISTENING_SIZES = [1, 5, 10, 20] as const;
 
+// How many words each listening round speaks. 1 = the classic single-word drill
+// (feeds the per-word spaced-repetition schedule); >1 strings that many words into
+// a spoken phrase to practise picking words out of connected speech.
+export const LISTENING_WORDS_PER_ROUND = [1, 2, 3, 4] as const;
+
+// Coerce a (possibly user-supplied) words-per-round into the offered range,
+// defaulting to a single word.
+export function clampWordsPerRound(n: number | null | undefined): number {
+  if (!n || !Number.isFinite(n)) return 1;
+  return Math.min(4, Math.max(1, Math.floor(n)));
+}
+
 // Map a (possibly missing) speed key to its utterance rate, defaulting to normal.
 export function speedRate(speed: string | null | undefined): number {
   return LISTENING_SPEEDS.find((s) => s.value === speed)?.rate ?? 1;
@@ -103,6 +115,8 @@ export interface GenerateOptions {
   // first) instead of uniformly at random. `now` (today's date) drives due-ness.
   schedules?: Map<string, VocabSchedule>;
   now?: string;
+  // Listening only: words spoken per round. >1 builds multi-word phrase questions.
+  wordsPerRound?: number;
 }
 
 // Fisher-Yates, parameterised on the rng so tests are deterministic.
@@ -289,14 +303,61 @@ export function makeListeningQuestion(
   };
 }
 
+// A multi-word listening question: `words` are spoken in sequence as one phrase
+// and the learner picks the phrase they heard from four French phrase choices.
+// Identity is by the whole phrase, so it uses a `phrase:` id prefix — kept out of
+// the per-word listening schedule (which only tracks `listen:` single words), so
+// phrase practice is connected-speech comprehension, not the per-word SR drill.
+export function makeListeningPhraseQuestion(
+  words: readonly VocabWord[],
+  pool: readonly VocabWord[],
+  rng: Rng,
+): Question {
+  const n = words.length;
+  const phrase = words.map((w) => w.fr).join(" ");
+  const gloss = words.map((w) => w.en).join(" · ");
+  // Distractor phrases: random n-word combos from the pool, distinct from the
+  // correct phrase and each other. Guarded so a tiny pool can't loop forever.
+  const distractors: string[] = [];
+  for (let guard = 0; guard < 50 && distractors.length < 3; guard++) {
+    const cand = sample(pool, n, rng)
+      .map((w) => w.fr)
+      .join(" ");
+    if (cand !== phrase && !distractors.includes(cand)) distractors.push(cand);
+  }
+  const { choices, answer } = buildChoices(phrase, distractors, 4, rng);
+  return {
+    id: `phrase:${phrase}`,
+    prompt: phrase,
+    sub: `Which phrase did you hear? (${n} words)`,
+    choices,
+    answer,
+    explanation: `${phrase} — ${gloss}`,
+    audioText: phrase,
+  };
+}
+
 export function generateListeningTest(
   pool: readonly VocabWord[],
-  { count = TEST_SIZE, rng = Math.random, schedules, now }: GenerateOptions = {},
+  { count = TEST_SIZE, rng = Math.random, schedules, now, wordsPerRound }: GenerateOptions = {},
 ): Question[] {
-  const words = schedules
-    ? selectVocab(pool, count, rng, schedules, now ?? todayIsoDate())
-    : sample(pool, count, rng);
-  return words.map((w) => makeListeningQuestion(w, pool, rng));
+  const perRound = clampWordsPerRound(wordsPerRound);
+  const pick = (n: number) =>
+    schedules ? selectVocab(pool, n, rng, schedules, now ?? todayIsoDate()) : sample(pool, n, rng);
+
+  if (perRound <= 1) {
+    return pick(count).map((w) => makeListeningQuestion(w, pool, rng));
+  }
+
+  // Gather count × perRound words, then chunk them into one phrase per round.
+  // A trailing partial chunk (only when the pool is smaller than requested) is
+  // dropped so every round speaks a full-length phrase.
+  const words = pick(count * perRound);
+  const rounds: Question[] = [];
+  for (let i = 0; i + perRound <= words.length; i += perRound) {
+    rounds.push(makeListeningPhraseQuestion(words.slice(i, i + perRound), pool, rng));
+  }
+  return rounds;
 }
 
 export function makeRuleQuestion(rule: RuleQuestion, rng: Rng): Question {

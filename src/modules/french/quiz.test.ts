@@ -4,12 +4,14 @@ import type { RuleQuestion } from "./data/rules";
 import {
   checkTypedAnswer,
   clampCount,
+  clampWordsPerRound,
   generateConjugationTest,
   generateListeningTest,
   generateRulesTest,
   generateTest,
   generateVocabTest,
   makeConjugationQuestion,
+  makeListeningPhraseQuestion,
   makeListeningQuestion,
   makeRuleQuestion,
   makeVocabQuestion,
@@ -277,6 +279,37 @@ describe("listening test", () => {
     expect(test).toHaveLength(1);
     expect(test[0].id).toBe("listen:avoir"); // the due word resurfaces
   });
+
+  it("wordsPerRound = 1 still produces single-word listen questions", () => {
+    const test = generateListeningTest(VOCAB, { count: 3, rng: lcg(6), wordsPerRound: 1 });
+    expect(test).toHaveLength(3);
+    // Single-word rounds keep the listen: prefix and each speak one vocab word.
+    expect(test.every((q) => q.id.startsWith("listen:"))).toBe(true);
+    expect(test.every((q) => VOCAB.some((w) => w.fr === q.audioText))).toBe(true);
+  });
+
+  it("makeListeningPhraseQuestion speaks a multi-word phrase with four phrase choices", () => {
+    const words = [VOCAB[0], VOCAB[2], VOCAB[4]]; // être / le chien / grand
+    const q = makeListeningPhraseQuestion(words, VOCAB, lcg(2));
+    expect(q.audioText).toBe("être le chien grand");
+    expect(q.id).toBe("phrase:être le chien grand");
+    expect(q.sub).toBe("Which phrase did you hear? (3 words)");
+    expect(q.choices).toHaveLength(4);
+    expect(q.choices[q.answer]).toBe("être le chien grand"); // the heard phrase is the answer
+    expect(new Set(q.choices).size).toBe(4); // no duplicate choices
+    // Every choice is a 3-word phrase drawn from the French vocab.
+    for (const c of q.choices) {
+      const parts = c.split(" ");
+      expect(parts.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("generates wordsPerRound-word phrase rounds, kept out of the per-word schedule", () => {
+    const test = generateListeningTest(VOCAB, { count: 2, rng: lcg(7), wordsPerRound: 2 });
+    expect(test).toHaveLength(2);
+    // phrase ids never match the listen: schedule prefix, so they don't pollute SR.
+    expect(test.every((q) => q.id.startsWith("phrase:") && q.audioText!.includes(" "))).toBe(true);
+  });
 });
 
 describe("speedRate", () => {
@@ -326,6 +359,22 @@ describe("clampCount", () => {
   it("clamps to the guard-rail bounds", () => {
     expect(clampCount(-3)).toBe(1);
     expect(clampCount(999)).toBe(50);
+  });
+});
+
+describe("clampWordsPerRound", () => {
+  it("defaults a missing/invalid value to a single word", () => {
+    expect(clampWordsPerRound(null)).toBe(1);
+    expect(clampWordsPerRound(NaN)).toBe(1);
+    expect(clampWordsPerRound(0)).toBe(1);
+  });
+
+  it("keeps valid values, floors fractions, and clamps to 1..4", () => {
+    expect(clampWordsPerRound(2)).toBe(2);
+    expect(clampWordsPerRound(4)).toBe(4);
+    expect(clampWordsPerRound(3.8)).toBe(3);
+    expect(clampWordsPerRound(-2)).toBe(1);
+    expect(clampWordsPerRound(99)).toBe(4);
   });
 });
 

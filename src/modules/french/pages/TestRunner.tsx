@@ -7,6 +7,7 @@ import { cn, relativeDay, todayIsoDate } from "@/lib/utils";
 import {
   checkTypedAnswer,
   clampCount,
+  clampWordsPerRound,
   generateTest,
   KIND_LABELS,
   speedRate,
@@ -67,6 +68,9 @@ export default function TestRunner() {
 
   const count = clampCount(Number(searchParams.get("n")));
 
+  // Listening only: words spoken per round (>1 = multi-word phrase rounds).
+  const wordsPerRound = clampWordsPerRound(Number(searchParams.get("words")));
+
   // Playback rate for the listening test (1 = normal); ignored by other kinds.
   const rate = speedRate(searchParams.get("speed"));
 
@@ -87,11 +91,12 @@ export default function TestRunner() {
     return generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, {
       count,
       direction,
+      wordsPerRound,
       schedules: needsSchedule ? schedules : undefined,
       now: todayIsoDate(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, direction, count, schedulesReady]);
+  }, [kind, direction, count, wordsPerRound, schedulesReady]);
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());
 
@@ -233,7 +238,7 @@ export default function TestRunner() {
             type="button"
             onClick={() => speakFrench(q.audioText!, rate)}
             className="mt-4 flex h-28 w-28 items-center justify-center rounded-full bg-accent/15 text-accent transition active:scale-95"
-            aria-label="Play the word"
+            aria-label="Replay audio"
           >
             <Volume2 className="h-12 w-12" />
           </button>
