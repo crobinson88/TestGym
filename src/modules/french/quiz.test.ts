@@ -160,6 +160,31 @@ describe("selectVocab", () => {
     expect(selectVocab(VOCAB, 100, lcg(4), empty, NOW)).toHaveLength(VOCAB.length);
     expect(selectVocab(VOCAB, 3, lcg(4), empty, NOW)).toHaveLength(3);
   });
+
+  it("mixes new words in even when the review backlog could fill the test", () => {
+    // Every word but one is due — the whole test could be reviews. The remaining
+    // word (whichever is left unscheduled) must still get a slot.
+    const due = VOCAB.slice(0, VOCAB.length - 1);
+    const schedules = new Map(
+      due.map((w) => [w.fr, sched({ fr: w.fr, dueOn: "2026-06-09" })] as const),
+    );
+    const out = selectVocab(VOCAB, 4, lcg(7), schedules, NOW);
+    expect(out).toHaveLength(4);
+    const newWords = out.filter((w) => !schedules.has(w.fr));
+    expect(newWords.length).toBeGreaterThan(0); // a brand-new word made the cut
+    expect(out.some((w) => schedules.has(w.fr))).toBe(true); // reviews still lead
+  });
+
+  it("uses every due review when there's no new word to reserve a slot for", () => {
+    // All six words are due and scheduled, so nothing is "new" — the reservation
+    // collapses and the test is pure review.
+    const schedules = new Map(
+      VOCAB.map((w) => [w.fr, sched({ fr: w.fr, dueOn: "2026-06-09" })] as const),
+    );
+    const out = selectVocab(VOCAB, 4, lcg(8), schedules, NOW);
+    expect(out).toHaveLength(4);
+    expect(out.every((w) => schedules.has(w.fr))).toBe(true);
+  });
 });
 
 describe("generateVocabTest with a schedule", () => {

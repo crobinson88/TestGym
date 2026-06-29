@@ -158,14 +158,23 @@ export function makeVocabQuestion(
   };
 }
 
+// Share of every test held open for brand-new words, so vocabulary keeps
+// advancing even when the spaced-repetition backlog could fill the whole test on
+// its own. The rest of the test goes to due reviews first; new words top up the
+// remainder, so a test always mixes retesting with new material.
+export const NEW_WORD_RATIO = 0.3;
+
 // Pick which words a vocab test should cover using the review schedule, so wrong
-// answers resurface at the optimal frequency until they stick. Order of priority:
+// answers resurface at the optimal frequency until they stick, while new words
+// keep coming. Each test reserves up to NEW_WORD_RATIO of its slots for brand-new
+// words (when any remain) and gives the rest to reviews. Order of priority:
 //   1. due/overdue words — soonest the most-lapsed (lowest box) first, so words
-//      you keep missing come back every session until you get them right;
-//   2. brand-new words — to keep advancing through the study list once the review
-//      backlog for this session is clear;
-//   3. words seen but not yet due — soonest-due first, as light extra practice;
-//   4. mastered words — least-recently-seen, only to pad a tiny pool.
+//      you keep missing come back every session until you get them right — but
+//      capped so the new-word reservation survives a large backlog;
+//   2. brand-new words — mixed in every session, not just once the backlog clears;
+//   3. any due words beyond the cap — the rest of the review backlog;
+//   4. words seen but not yet due — soonest-due first, as light extra practice;
+//   5. mastered words — least-recently-seen, only to pad a tiny pool.
 // Equal-priority words are shuffled (stable sort preserves the shuffle) so repeat
 // sessions don't replay the same order. `now` is today's date for due-ness.
 export function selectVocab(
@@ -193,13 +202,23 @@ export function selectVocab(
   upcoming.sort((a, b) => cmp(a.s.dueOn, b.s.dueOn));
   mastered.sort((a, b) => cmp(a.s.lastShownAt, b.s.lastShownAt));
 
+  const target = Math.min(count, pool.length);
+  // Reserve new-word slots only when there are new words to learn; cap the review
+  // block so those slots survive a backlog that would otherwise fill the test.
+  const newReserve = Math.min(fresh.length, Math.round(target * NEW_WORD_RATIO));
+  // How many due reviews lead the test before new words; the rest of the backlog
+  // (if any) trails the new words to fill out the remaining slots.
+  const reviewLed = Math.min(due.length, target - newReserve);
+
+  const dueWords = due.map((x) => x.w);
   const ordered = [
-    ...due.map((x) => x.w),
+    ...dueWords.slice(0, reviewLed),
     ...fresh,
+    ...dueWords.slice(reviewLed),
     ...upcoming.map((x) => x.w),
     ...mastered.map((x) => x.w),
   ];
-  return ordered.slice(0, Math.min(count, pool.length));
+  return ordered.slice(0, target);
 }
 
 export function generateVocabTest(
