@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Settings, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
@@ -97,13 +97,29 @@ export function TimeTracking() {
       <div className="space-y-3">
         <div className="rounded-2xl border border-line bg-surface p-4">
           <label className="block text-xs uppercase tracking-wide text-muted">Date</label>
-          <div className="mt-1 flex items-center gap-3">
+          <div className="mt-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDate(addDays(date, -1))}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface2 text-muted hover:text-text"
+              aria-label="Previous day"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value || todayIsoDate())}
               className="h-12 flex-1 rounded-xl border border-line bg-surface2 px-3 text-base text-text"
             />
+            <button
+              type="button"
+              onClick={() => setDate(addDays(date, 1))}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface2 text-muted hover:text-text"
+              aria-label="Next day"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
             <span className="text-base tabular-nums text-muted">{formatMdy(date)}</span>
           </div>
         </div>
