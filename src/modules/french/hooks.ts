@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { addDays, todayIsoDate, weekStart } from "@/lib/utils";
 import {
+  computeListeningSchedules,
   computeStats,
   computeVocabHistory,
   computeVocabSchedules,
@@ -51,6 +52,22 @@ export function useVocabDueCount() {
   return useLiveQuery(async () => {
     const all = await db.french_attempts.toArray();
     return dueForReview(computeVocabSchedules(all), todayIsoDate());
+  }, []);
+}
+
+// Listening test's own spaced-repetition schedule (independent of vocab).
+export function useListeningSchedules() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return computeListeningSchedules(all);
+  }, []);
+}
+
+// Words due for review in the listening queue today.
+export function useListeningDueCount() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return dueForReview(computeListeningSchedules(all), todayIsoDate());
   }, []);
 }
 

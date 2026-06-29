@@ -25,7 +25,7 @@ export interface FrenchStats {
   missed: MissedItem[];
 }
 
-const KINDS: FrenchTestKind[] = ["vocab", "rules", "conjug"];
+const KINDS: FrenchTestKind[] = ["vocab", "rules", "conjug", "listening"];
 
 function emptyKind(kind: FrenchTestKind): KindStats {
   return {
@@ -51,6 +51,7 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
     vocab: emptyKind("vocab"),
     rules: emptyKind("rules"),
     conjug: emptyKind("conjug"),
+    listening: emptyKind("listening"),
   };
 
   const missedMap = new Map<string, MissedItem>();
@@ -115,6 +116,14 @@ export function vocabKeyFromQuestionId(questionId: string): string | null {
   return parts.slice(1, -1).join(":");
 }
 
+// Pull the French word out of a listening questionId (`listen:{fr}`). Returns null
+// for any other id.
+export function listenKeyFromQuestionId(questionId: string): string | null {
+  const parts = questionId.split(":");
+  if (parts[0] !== "listen" || parts.length < 2) return null;
+  return parts.slice(1).join(":");
+}
+
 // Build a map of every vocab word the learner has been tested on, so a running
 // test can flag each prompt as new or show its prior recall.
 export function computeVocabHistory(
@@ -172,13 +181,16 @@ export interface VocabSchedule {
   mastered: boolean;
 }
 
-// Build a review schedule per vocab word from the per-question detail of every
-// attempt, replayed oldest-first so each Leitner box reflects the latest streak.
-export function computeVocabSchedules(
+// Build a per-word review schedule by replaying every matching attempt's question
+// detail oldest-first, so each Leitner box reflects the latest streak. Parameterised
+// on the kind + questionId parser so vocab and listening keep independent histories.
+function computeSchedules(
   attempts: readonly FrenchAttemptRow[],
+  kind: FrenchTestKind,
+  keyOf: (questionId: string) => string | null,
 ): Map<string, VocabSchedule> {
   const ordered = attempts
-    .filter((a) => !a.deleted_at && a.kind === "vocab")
+    .filter((a) => !a.deleted_at && a.kind === kind)
     .slice()
     .sort((a, b) => (a.started_at < b.started_at ? -1 : a.started_at > b.started_at ? 1 : 0));
 
@@ -186,7 +198,7 @@ export function computeVocabSchedules(
   for (const a of ordered) {
     const day = a.started_at.slice(0, 10);
     for (const d of a.details ?? []) {
-      const key = vocabKeyFromQuestionId(d.questionId);
+      const key = keyOf(d.questionId);
       if (!key) continue;
       const s =
         map.get(key) ??
@@ -205,6 +217,21 @@ export function computeVocabSchedules(
     }
   }
   return map;
+}
+
+// Spaced-repetition schedule from the written vocab tests.
+export function computeVocabSchedules(
+  attempts: readonly FrenchAttemptRow[],
+): Map<string, VocabSchedule> {
+  return computeSchedules(attempts, "vocab", vocabKeyFromQuestionId);
+}
+
+// Spaced-repetition schedule from the listening tests — kept separate from vocab so
+// hearing a word and reading it build independent review queues.
+export function computeListeningSchedules(
+  attempts: readonly FrenchAttemptRow[],
+): Map<string, VocabSchedule> {
+  return computeSchedules(attempts, "listening", listenKeyFromQuestionId);
 }
 
 // How many seen words are due for review on or before `now` — the backlog a vocab
@@ -272,6 +299,7 @@ export interface WeekAccuracyPoint {
   vocab: number | null;
   rules: number | null;
   conjug: number | null;
+  listening: number | null;
 }
 
 // Bucket attempts into the supplied (chronological) week starts and compute
@@ -286,6 +314,7 @@ export function weeklyAccuracy(
       vocab: { correct: 0, total: 0 },
       rules: { correct: 0, total: 0 },
       conjug: { correct: 0, total: 0 },
+      listening: { correct: 0, total: 0 },
     });
   }
 
@@ -304,6 +333,12 @@ export function weeklyAccuracy(
 
   return weekStarts.map((ws) => {
     const b = buckets.get(ws)!;
-    return { week_start: ws, vocab: rate(b.vocab), rules: rate(b.rules), conjug: rate(b.conjug) };
+    return {
+      week_start: ws,
+      vocab: rate(b.vocab),
+      rules: rate(b.rules),
+      conjug: rate(b.conjug),
+      listening: rate(b.listening),
+    };
   });
 }

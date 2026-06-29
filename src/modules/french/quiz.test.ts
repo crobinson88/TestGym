@@ -5,14 +5,18 @@ import {
   checkTypedAnswer,
   clampCount,
   generateConjugationTest,
+  generateListeningTest,
   generateRulesTest,
+  generateTest,
   generateVocabTest,
   makeConjugationQuestion,
+  makeListeningQuestion,
   makeRuleQuestion,
   makeVocabQuestion,
   normalizeAnswer,
   selectVocab,
   shuffle,
+  speedRate,
 } from "./quiz";
 import { CONJ_VERBS } from "./data/conjugations";
 import type { VocabSchedule } from "./stats";
@@ -145,6 +149,17 @@ describe("selectVocab", () => {
     expect(out[1].fr).toBe("avoir");
   });
 
+  it("puts a just-missed word at the top of the queue, ahead of older misses", () => {
+    const schedules = new Map([
+      // both reset to box 0 by a wrong answer, but être was missed today
+      ["avoir", sched({ fr: "avoir", box: 0, dueOn: "2026-06-05", lastShownAt: "2026-06-04" })],
+      ["être", sched({ fr: "être", box: 0, dueOn: NOW, lastShownAt: NOW })],
+    ]);
+    const out = selectVocab(VOCAB, 6, lcg(9), schedules, NOW);
+    expect(out[0].fr).toBe("être"); // freshest miss leads, despite being least overdue
+    expect(out[1].fr).toBe("avoir");
+  });
+
   it("sinks mastered (not-due) words to the back of the queue", () => {
     const schedules = new Map([
       ["avoir", sched({ fr: "avoir", dueOn: "2026-06-09" })],
@@ -159,6 +174,31 @@ describe("selectVocab", () => {
     const empty = new Map<string, VocabSchedule>();
     expect(selectVocab(VOCAB, 100, lcg(4), empty, NOW)).toHaveLength(VOCAB.length);
     expect(selectVocab(VOCAB, 3, lcg(4), empty, NOW)).toHaveLength(3);
+  });
+
+  it("mixes new words in even when the review backlog could fill the test", () => {
+    // Every word but one is due — the whole test could be reviews. The remaining
+    // word (whichever is left unscheduled) must still get a slot.
+    const due = VOCAB.slice(0, VOCAB.length - 1);
+    const schedules = new Map(
+      due.map((w) => [w.fr, sched({ fr: w.fr, dueOn: "2026-06-09" })] as const),
+    );
+    const out = selectVocab(VOCAB, 4, lcg(7), schedules, NOW);
+    expect(out).toHaveLength(4);
+    const newWords = out.filter((w) => !schedules.has(w.fr));
+    expect(newWords.length).toBeGreaterThan(0); // a brand-new word made the cut
+    expect(out.some((w) => schedules.has(w.fr))).toBe(true); // reviews still lead
+  });
+
+  it("uses every due review when there's no new word to reserve a slot for", () => {
+    // All six words are due and scheduled, so nothing is "new" — the reservation
+    // collapses and the test is pure review.
+    const schedules = new Map(
+      VOCAB.map((w) => [w.fr, sched({ fr: w.fr, dueOn: "2026-06-09" })] as const),
+    );
+    const out = selectVocab(VOCAB, 4, lcg(8), schedules, NOW);
+    expect(out).toHaveLength(4);
+    expect(out.every((w) => schedules.has(w.fr))).toBe(true);
   });
 });
 
@@ -210,6 +250,42 @@ describe("checkTypedAnswer", () => {
     expect(checkTypedAnswer("house", "dog")).toBe(false);
     expect(checkTypedAnswer("", "dog")).toBe(false);
     expect(checkTypedAnswer("   ", "dog")).toBe(false);
+  });
+});
+
+describe("listening test", () => {
+  it("makes an audio-prompted question with four French choices", () => {
+    const word = VOCAB[0]; // être
+    const q = makeListeningQuestion(word, VOCAB, lcg(1));
+    expect(q.id).toBe("listen:être");
+    expect(q.audioText).toBe("être"); // the word is spoken, not shown
+    expect(q.choices).toHaveLength(4);
+    expect(q.choices[q.answer]).toBe("être");
+    expect(q.choices.every((c) => VOCAB.some((w) => w.fr === c))).toBe(true); // French choices
+    expect(q.sub).toBe("Which word did you hear?");
+  });
+
+  it("generateTest('listening') produces audio questions of the requested count", () => {
+    const test = generateTest("listening", VOCAB, RULES, CONJ_VERBS, { count: 4, rng: lcg(3) });
+    expect(test).toHaveLength(4);
+    expect(test.every((q) => q.audioText && q.id.startsWith("listen:"))).toBe(true);
+  });
+
+  it("uses the spaced-repetition schedule when one is supplied", () => {
+    const schedules = new Map([["avoir", sched({ fr: "avoir", dueOn: "2026-06-09" })]]);
+    const test = generateListeningTest(VOCAB, { count: 1, rng: lcg(5), schedules, now: NOW });
+    expect(test).toHaveLength(1);
+    expect(test[0].id).toBe("listen:avoir"); // the due word resurfaces
+  });
+});
+
+describe("speedRate", () => {
+  it("maps speed keys to utterance rates and defaults to normal", () => {
+    expect(speedRate("normal")).toBe(1);
+    expect(speedRate("slow")).toBe(0.7);
+    expect(speedRate("very-slow")).toBe(0.5);
+    expect(speedRate(null)).toBe(1);
+    expect(speedRate("bogus")).toBe(1);
   });
 });
 

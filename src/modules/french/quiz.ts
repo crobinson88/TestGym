@@ -23,7 +23,26 @@ export const KIND_LABELS: Record<FrenchTestKind, string> = {
   vocab: "Vocab",
   rules: "Rules",
   conjug: "Conjugation",
+  listening: "Listening",
 };
+
+// Playback speeds offered for the listening test. `rate` is the SpeechSynthesis
+// utterance rate (1 = normal); lower is slower for picking words out of speech.
+export type ListeningSpeed = "normal" | "slow" | "very-slow";
+export const LISTENING_SPEEDS: { value: ListeningSpeed; label: string; rate: number }[] = [
+  { value: "normal", label: "Normal", rate: 1 },
+  { value: "slow", label: "Slow", rate: 0.7 },
+  { value: "very-slow", label: "Very slow", rate: 0.5 },
+];
+
+// Word counts offered for the listening test — includes a single-word option for
+// a quick ear check, up to a longer run.
+export const LISTENING_SIZES = [1, 5, 10, 20] as const;
+
+// Map a (possibly missing) speed key to its utterance rate, defaulting to normal.
+export function speedRate(speed: string | null | undefined): number {
+  return LISTENING_SPEEDS.find((s) => s.value === speed)?.rate ?? 1;
+}
 
 export type Rng = () => number;
 
@@ -36,6 +55,9 @@ export interface Question {
   choices: string[];
   answer: number;
   explanation: string | null;
+  // When set, the prompt is spoken (French TTS) rather than shown as text — the
+  // learner identifies the word by ear. The runner hides `prompt` until answered.
+  audioText?: string;
 }
 
 // fr2en = show the French word, pick the English. en2fr = the reverse.
@@ -158,14 +180,23 @@ export function makeVocabQuestion(
   };
 }
 
+// Share of every test held open for brand-new words, so vocabulary keeps
+// advancing even when the spaced-repetition backlog could fill the whole test on
+// its own. The rest of the test goes to due reviews first; new words top up the
+// remainder, so a test always mixes retesting with new material.
+export const NEW_WORD_RATIO = 0.3;
+
 // Pick which words a vocab test should cover using the review schedule, so wrong
-// answers resurface at the optimal frequency until they stick. Order of priority:
+// answers resurface at the optimal frequency until they stick, while new words
+// keep coming. Each test reserves up to NEW_WORD_RATIO of its slots for brand-new
+// words (when any remain) and gives the rest to reviews. Order of priority:
 //   1. due/overdue words — soonest the most-lapsed (lowest box) first, so words
-//      you keep missing come back every session until you get them right;
-//   2. brand-new words — to keep advancing through the study list once the review
-//      backlog for this session is clear;
-//   3. words seen but not yet due — soonest-due first, as light extra practice;
-//   4. mastered words — least-recently-seen, only to pad a tiny pool.
+//      you keep missing come back every session until you get them right — but
+//      capped so the new-word reservation survives a large backlog;
+//   2. brand-new words — mixed in every session, not just once the backlog clears;
+//   3. any due words beyond the cap — the rest of the review backlog;
+//   4. words seen but not yet due — soonest-due first, as light extra practice;
+//   5. mastered words — least-recently-seen, only to pad a tiny pool.
 // Equal-priority words are shuffled (stable sort preserves the shuffle) so repeat
 // sessions don't replay the same order. `now` is today's date for due-ness.
 export function selectVocab(
@@ -189,17 +220,34 @@ export function selectVocab(
     else upcoming.push({ w, s });
   }
 
-  due.sort((a, b) => a.s.box - b.s.box || cmp(a.s.dueOn, b.s.dueOn));
+  // Most-lapsed (lowest box) first; within a box, the most-recently-missed word
+  // leads (lastShownAt desc) so a word you just got wrong jumps to the top of the
+  // queue and gets retested in the very next test, then most-overdue as a final
+  // tiebreaker.
+  due.sort(
+    (a, b) =>
+      a.s.box - b.s.box || cmp(b.s.lastShownAt, a.s.lastShownAt) || cmp(a.s.dueOn, b.s.dueOn),
+  );
   upcoming.sort((a, b) => cmp(a.s.dueOn, b.s.dueOn));
   mastered.sort((a, b) => cmp(a.s.lastShownAt, b.s.lastShownAt));
 
+  const target = Math.min(count, pool.length);
+  // Reserve new-word slots only when there are new words to learn; cap the review
+  // block so those slots survive a backlog that would otherwise fill the test.
+  const newReserve = Math.min(fresh.length, Math.round(target * NEW_WORD_RATIO));
+  // How many due reviews lead the test before new words; the rest of the backlog
+  // (if any) trails the new words to fill out the remaining slots.
+  const reviewLed = Math.min(due.length, target - newReserve);
+
+  const dueWords = due.map((x) => x.w);
   const ordered = [
-    ...due.map((x) => x.w),
+    ...dueWords.slice(0, reviewLed),
     ...fresh,
+    ...dueWords.slice(reviewLed),
     ...upcoming.map((x) => x.w),
     ...mastered.map((x) => x.w),
   ];
-  return ordered.slice(0, Math.min(count, pool.length));
+  return ordered.slice(0, target);
 }
 
 export function generateVocabTest(
@@ -213,6 +261,42 @@ export function generateVocabTest(
     const dir: Direction = direction === "mixed" ? (rng() < 0.5 ? "fr2en" : "en2fr") : direction;
     return makeVocabQuestion(w, pool, rng, dir);
   });
+}
+
+// A listening question: the French word is spoken (audioText) and the learner
+// picks it from four French choices. Same spaced-repetition selection as vocab,
+// but identity is by ear — so the prompt text stays hidden until answered.
+export function makeListeningQuestion(
+  word: VocabWord,
+  pool: readonly VocabWord[],
+  rng: Rng,
+): Question {
+  const others = pool.filter((w) => w.fr !== word.fr);
+  const { choices, answer } = buildChoices(
+    word.fr,
+    others.map((w) => w.fr),
+    4,
+    rng,
+  );
+  return {
+    id: `listen:${word.fr}`,
+    prompt: word.fr,
+    sub: "Which word did you hear?",
+    choices,
+    answer,
+    explanation: `${word.fr} = ${word.en}`,
+    audioText: word.fr,
+  };
+}
+
+export function generateListeningTest(
+  pool: readonly VocabWord[],
+  { count = TEST_SIZE, rng = Math.random, schedules, now }: GenerateOptions = {},
+): Question[] {
+  const words = schedules
+    ? selectVocab(pool, count, rng, schedules, now ?? todayIsoDate())
+    : sample(pool, count, rng);
+  return words.map((w) => makeListeningQuestion(w, pool, rng));
 }
 
 export function makeRuleQuestion(rule: RuleQuestion, rng: Rng): Question {
@@ -312,6 +396,7 @@ export function generateTest(
   opts: GenerateOptions = {},
 ): Question[] {
   if (kind === "vocab") return generateVocabTest(vocab, opts);
+  if (kind === "listening") return generateListeningTest(vocab, opts);
   if (kind === "rules") return generateRulesTest(rules, opts);
   return generateConjugationTest(conjugations, { count: opts.count, rng: opts.rng });
 }
