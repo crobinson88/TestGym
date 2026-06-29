@@ -1,5 +1,16 @@
 import { useState } from "react";
-import { Building2, Check, Copy, ExternalLink, FileText, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  Building2,
+  Check,
+  Copy,
+  ExternalLink,
+  FileText,
+  Highlighter,
+  Plus,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth";
 import {
@@ -27,6 +38,7 @@ export function IrDocuments({
   onInsert: (text: string) => void;
 }) {
   const { session } = useAuth();
+  const navigate = useNavigate();
   const cache = useIrCache(ticker);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +147,19 @@ export function IrDocuments({
                   >
                     <ExternalLink className="h-4 w-4" />
                   </a>
+                  <button
+                    onClick={() =>
+                      navigate(
+                        `/shares/stock/${encodeURIComponent(ticker)}/annotate?src=ir` +
+                          `&url=${encodeURIComponent(doc.url)}&title=${encodeURIComponent(doc.title)}`,
+                      )
+                    }
+                    disabled={!doc.url}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-accent hover:bg-surface disabled:opacity-40"
+                    aria-label="Annotate & save to library"
+                  >
+                    <Highlighter className="h-4 w-4" />
+                  </button>
                   <button
                     onClick={() => summarise(doc)}
                     disabled={busyId !== null}

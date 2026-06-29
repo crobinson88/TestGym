@@ -7,6 +7,7 @@ const AddHolding = lazy(() => import("./pages/AddHolding"));
 const TradeDetail = lazy(() => import("./pages/TradeDetail"));
 const StockView = lazy(() => import("./pages/StockView"));
 const ModelBuilder = lazy(() => import("./pages/ModelBuilder"));
+const AnnotateDoc = lazy(() => import("./pages/AnnotateDoc"));
 const TipsView = lazy(() => import("./pages/TipsView"));
 const AddTip = lazy(() => import("./pages/AddTip"));
 const MarketsView = lazy(() => import("./pages/MarketsView"));
@@ -34,6 +35,7 @@ export function sharesRoutes() {
       <Route path="markets/add/:id" element={wrap(<AddMarketNote />)} />
       <Route path="stock/:ticker" element={wrap(<StockView />)} />
       <Route path="stock/:ticker/model" element={wrap(<ModelBuilder />)} />
+      <Route path="stock/:ticker/annotate" element={wrap(<AnnotateDoc />)} />
       <Route path=":id" element={wrap(<TradeDetail />)} />
     </Route>
   );

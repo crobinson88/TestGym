@@ -183,12 +183,39 @@ export interface TradeModel {
   path: string | null;
 }
 
+// A highlight or comment placed on a PDF document. Coordinates are normalised
+// to [0..1] of the page box with a top-left origin, so they survive re-render at
+// any device width. Stored on the document row so annotations are re-editable
+// and a flattened copy can be regenerated from the clean base PDF.
+export interface DocAnnotation {
+  id: string;
+  page: number; // 1-based
+  type: "highlight" | "comment";
+  // Highlighted region; a comment uses the single point in `x`/`y`.
+  rect?: { x: number; y: number; w: number; h: number };
+  x?: number;
+  y?: number;
+  color?: string; // hex, highlights only
+  text?: string; // comment body
+  addedAt: string;
+  addedBy: string | null;
+}
+
 export interface StockDocument {
   path: string;
   name: string;
   mediaType: string;
   addedAt: string;
   addedBy: string | null;
+  // Annotation support (additive — older rows omit these).
+  // `path` always points at the clean base PDF; `annotations` is the editable
+  // overlay; `flatPath` is a flattened copy with the marks burned in (portable,
+  // opens in any viewer). Re-editing re-flattens from the base, never the flat.
+  annotations?: DocAnnotation[];
+  flatPath?: string;
+  // Provenance of an annotated copy: the original library doc path, or
+  // `ir:<url>` when the source was a remote investor-relations filing.
+  annotatedFrom?: string;
 }
 
 export interface StockLink {
