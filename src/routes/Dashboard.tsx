@@ -32,6 +32,7 @@ const HOURS_COLOR = "#22d3ee";
 const VOCAB_COLOR = "#22d3ee";
 const RULES_COLOR = "#a855f7";
 const CONJUG_COLOR = "#f59e0b";
+const LISTENING_COLOR = "#f472b6";
 const MASTERY_COLOR = "#34d399";
 
 function mdTick(iso: string): string {
@@ -169,7 +170,9 @@ export default function Dashboard() {
             French accuracy · last 8 weeks
           </h2>
           <div className="rounded-2xl border border-line bg-surface p-3">
-            {frenchAccuracy.some((d) => d.vocab !== null || d.rules !== null || d.conjug !== null) ? (
+            {frenchAccuracy.some(
+              (d) => d.vocab !== null || d.rules !== null || d.conjug !== null || d.listening !== null,
+            ) ? (
               <FrenchAccuracyChart data={frenchAccuracy} />
             ) : (
               <div className="py-10 text-center text-sm text-muted">
@@ -519,6 +522,15 @@ function FrenchAccuracyChart({ data }: { data: WeekAccuracyPoint[] }) {
           dataKey="conjug"
           name="Conjugation"
           stroke={CONJUG_COLOR}
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          connectNulls
+        />
+        <Line
+          type="monotone"
+          dataKey="listening"
+          name="Listening"
+          stroke={LISTENING_COLOR}
           strokeWidth={2}
           dot={{ r: 3 }}
           connectNulls

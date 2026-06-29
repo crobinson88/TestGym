@@ -4,6 +4,7 @@ import {
   BookMarked,
   BookOpen,
   ChevronRight,
+  Headphones,
   MessageCircle,
   Repeat,
   ScrollText,
@@ -12,12 +13,15 @@ import {
 } from "lucide-react";
 import type { FrenchTestKind } from "@/lib/database.types";
 import { cn, relativeDay } from "@/lib/utils";
-import { useFrenchStats, useVocabDueCount } from "../hooks";
+import { useFrenchStats, useListeningDueCount, useVocabDueCount } from "../hooks";
 import { pct, type KindStats } from "../stats";
 import {
   KIND_LABELS,
+  LISTENING_SIZES,
+  LISTENING_SPEEDS,
   TEST_SIZE,
   TEST_SIZES,
+  type ListeningSpeed,
   type VocabAnswerMode,
   type VocabDirection,
 } from "../quiz";
@@ -30,6 +34,7 @@ const KIND_VISUAL: Record<FrenchTestKind, { Icon: typeof BookOpen; tint: string 
   vocab: { Icon: BookOpen, tint: "bg-accent/15 text-accent" },
   rules: { Icon: ScrollText, tint: "bg-success/15 text-success" },
   conjug: { Icon: Repeat, tint: "bg-warn/15 text-warn" },
+  listening: { Icon: Headphones, tint: "bg-accent/15 text-accent" },
 };
 
 const DIRECTIONS: { value: VocabDirection; label: string }[] = [
@@ -65,9 +70,12 @@ export default function FrenchHome() {
   const navigate = useNavigate();
   const stats = useFrenchStats();
   const dueCount = useVocabDueCount();
+  const listenDue = useListeningDueCount();
   const [dir, setDir] = useState<VocabDirection>("mixed");
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
   const [count, setCount] = useState<number>(TEST_SIZE);
+  const [listenCount, setListenCount] = useState<number>(10);
+  const [speed, setSpeed] = useState<ListeningSpeed>("normal");
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -175,6 +183,56 @@ export default function FrenchHome() {
             <div className="text-sm text-muted">{count} prompts · present + near future</div>
           </div>
         </button>
+        <div className="space-y-2">
+          <button
+            onClick={() => navigate(`/french/test/listening?n=${listenCount}&speed=${speed}`)}
+            className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+          >
+            <Headphones className="h-7 w-7 shrink-0 text-accent" />
+            <div>
+              <div className="text-lg font-semibold">Listening test</div>
+              <div className="text-sm text-muted">
+                {listenDue
+                  ? `${listenDue} due for review · ${listenCount} per test`
+                  : `Hear ${listenCount} French word${listenCount === 1 ? "" : "s"}, pick what you heard`}
+              </div>
+            </div>
+          </button>
+          <div className="flex gap-2" role="group" aria-label="Listening test length">
+            {LISTENING_SIZES.map((n) => (
+              <button
+                key={n}
+                onClick={() => setListenCount(n)}
+                aria-pressed={listenCount === n}
+                className={cn(
+                  "flex-1 rounded-xl border px-2 py-2 text-sm font-semibold tabular-nums transition",
+                  listenCount === n
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2" role="group" aria-label="Listening speed">
+            {LISTENING_SPEEDS.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setSpeed(s.value)}
+                aria-pressed={speed === s.value}
+                className={cn(
+                  "flex-1 rounded-xl border px-2 py-2 text-sm font-medium transition",
+                  speed === s.value
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button
           onClick={() => navigate("/french/rules")}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-3.5 text-left transition active:scale-[0.98]"
@@ -204,8 +262,9 @@ export default function FrenchHome() {
         {stats === undefined ? (
           <div className="text-sm text-muted">Loading…</div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <StatCard stats={stats.byKind.vocab} label={KIND_LABELS.vocab} />
+            <StatCard stats={stats.byKind.listening} label={KIND_LABELS.listening} />
             <StatCard stats={stats.byKind.rules} label={KIND_LABELS.rules} />
             <StatCard stats={stats.byKind.conjug} label={KIND_LABELS.conjug} />
           </div>

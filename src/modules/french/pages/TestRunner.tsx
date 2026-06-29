@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, ChevronRight, RotateCcw, Sparkles, X } from "lucide-react";
+import { Check, ChevronRight, RotateCcw, Sparkles, Volume2, X } from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay, todayIsoDate } from "@/lib/utils";
@@ -9,17 +9,19 @@ import {
   clampCount,
   generateTest,
   KIND_LABELS,
+  speedRate,
   type Question,
   type VocabDirection,
 } from "../quiz";
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 import { CONJ_VERBS } from "../data/conjugations";
-import { useVocabHistory, useVocabSchedules } from "../hooks";
+import { useListeningSchedules, useVocabHistory, useVocabSchedules } from "../hooks";
+import { cancelSpeech, speakFrench } from "../speech";
 import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
-  return k === "vocab" || k === "rules" || k === "conjug";
+  return k === "vocab" || k === "rules" || k === "conjug" || k === "listening";
 }
 
 // Flags the current vocab prompt as new, or shows its prior recall (times shown,
@@ -65,11 +67,17 @@ export default function TestRunner() {
 
   const count = clampCount(Number(searchParams.get("n")));
 
-  // Spaced-repetition schedule for vocab selection. Undefined until it loads; other
-  // kinds don't need it. Snapshotted on mount, so the in-progress test isn't biased
-  // by its own (not-yet-saved) answers.
+  // Playback rate for the listening test (1 = normal); ignored by other kinds.
+  const rate = speedRate(searchParams.get("speed"));
+
+  // Spaced-repetition schedule for vocab and listening selection — each kind has its
+  // own. Undefined until it loads; other kinds don't need it. Snapshotted on mount,
+  // so the in-progress test isn't biased by its own (not-yet-saved) answers.
   const vocabSchedules = useVocabSchedules();
-  const schedulesReady = kind !== "vocab" || vocabSchedules !== undefined;
+  const listeningSchedules = useListeningSchedules();
+  const schedules = kind === "listening" ? listeningSchedules : vocabSchedules;
+  const needsSchedule = kind === "vocab" || kind === "listening";
+  const schedulesReady = !needsSchedule || schedules !== undefined;
 
   // Built once the schedule is ready, then frozen for the run — the attempts table
   // isn't written until the test finishes, so the schedule won't shift mid-test.
@@ -79,7 +87,7 @@ export default function TestRunner() {
     return generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, {
       count,
       direction,
-      schedules: kind === "vocab" ? vocabSchedules : undefined,
+      schedules: needsSchedule ? schedules : undefined,
       now: todayIsoDate(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,6 +106,16 @@ export default function TestRunner() {
   // Snapshotted on mount; the in-progress test isn't persisted until it finishes,
   // so this reflects prior tests only — each prompt's "seen before" is honest.
   const vocabHistory = useVocabHistory();
+
+  // Speak each listening prompt as it appears (and on replay-by-advancing). Cancels
+  // any in-flight utterance when the question changes or the runner unmounts.
+  useEffect(() => {
+    if (finished) return;
+    const cur = questions[index];
+    if (cur?.audioText) speakFrench(cur.audioText, rate);
+    return () => cancelSpeech();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, finished, questions]);
 
   if (!isKind(kind)) return <Navigate to="/french" replace />;
   if (!schedulesReady) {
@@ -208,11 +226,27 @@ export default function TestRunner() {
         />
       </div>
 
-      <div className="mt-6 mb-8">
-        <div className="text-xs uppercase tracking-wider text-muted">{q.sub}</div>
-        <h2 className="mt-2 text-3xl font-bold leading-tight">{q.prompt}</h2>
-        {kind === "vocab" && <WordHistoryBadge questionId={q.id} history={vocabHistory} />}
-      </div>
+      {q.audioText ? (
+        <div className="mt-6 mb-8 flex flex-col items-center text-center">
+          <div className="text-xs uppercase tracking-wider text-muted">{q.sub}</div>
+          <button
+            type="button"
+            onClick={() => speakFrench(q.audioText!, rate)}
+            className="mt-4 flex h-28 w-28 items-center justify-center rounded-full bg-accent/15 text-accent transition active:scale-95"
+            aria-label="Play the word"
+          >
+            <Volume2 className="h-12 w-12" />
+          </button>
+          <div className="mt-3 text-sm text-muted">Tap to replay</div>
+          {answered && <div className="mt-4 text-2xl font-bold">{q.prompt}</div>}
+        </div>
+      ) : (
+        <div className="mt-6 mb-8">
+          <div className="text-xs uppercase tracking-wider text-muted">{q.sub}</div>
+          <h2 className="mt-2 text-3xl font-bold leading-tight">{q.prompt}</h2>
+          {kind === "vocab" && <WordHistoryBadge questionId={q.id} history={vocabHistory} />}
+        </div>
+      )}
 
       {typing ? (
         <div className="flex flex-col gap-3">

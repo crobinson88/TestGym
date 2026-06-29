@@ -5,14 +5,18 @@ import {
   checkTypedAnswer,
   clampCount,
   generateConjugationTest,
+  generateListeningTest,
   generateRulesTest,
+  generateTest,
   generateVocabTest,
   makeConjugationQuestion,
+  makeListeningQuestion,
   makeRuleQuestion,
   makeVocabQuestion,
   normalizeAnswer,
   selectVocab,
   shuffle,
+  speedRate,
 } from "./quiz";
 import { CONJ_VERBS } from "./data/conjugations";
 import type { VocabSchedule } from "./stats";
@@ -246,6 +250,42 @@ describe("checkTypedAnswer", () => {
     expect(checkTypedAnswer("house", "dog")).toBe(false);
     expect(checkTypedAnswer("", "dog")).toBe(false);
     expect(checkTypedAnswer("   ", "dog")).toBe(false);
+  });
+});
+
+describe("listening test", () => {
+  it("makes an audio-prompted question with four French choices", () => {
+    const word = VOCAB[0]; // être
+    const q = makeListeningQuestion(word, VOCAB, lcg(1));
+    expect(q.id).toBe("listen:être");
+    expect(q.audioText).toBe("être"); // the word is spoken, not shown
+    expect(q.choices).toHaveLength(4);
+    expect(q.choices[q.answer]).toBe("être");
+    expect(q.choices.every((c) => VOCAB.some((w) => w.fr === c))).toBe(true); // French choices
+    expect(q.sub).toBe("Which word did you hear?");
+  });
+
+  it("generateTest('listening') produces audio questions of the requested count", () => {
+    const test = generateTest("listening", VOCAB, RULES, CONJ_VERBS, { count: 4, rng: lcg(3) });
+    expect(test).toHaveLength(4);
+    expect(test.every((q) => q.audioText && q.id.startsWith("listen:"))).toBe(true);
+  });
+
+  it("uses the spaced-repetition schedule when one is supplied", () => {
+    const schedules = new Map([["avoir", sched({ fr: "avoir", dueOn: "2026-06-09" })]]);
+    const test = generateListeningTest(VOCAB, { count: 1, rng: lcg(5), schedules, now: NOW });
+    expect(test).toHaveLength(1);
+    expect(test[0].id).toBe("listen:avoir"); // the due word resurfaces
+  });
+});
+
+describe("speedRate", () => {
+  it("maps speed keys to utterance rates and defaults to normal", () => {
+    expect(speedRate("normal")).toBe(1);
+    expect(speedRate("slow")).toBe(0.7);
+    expect(speedRate("very-slow")).toBe(0.5);
+    expect(speedRate(null)).toBe(1);
+    expect(speedRate("bogus")).toBe(1);
   });
 });
 

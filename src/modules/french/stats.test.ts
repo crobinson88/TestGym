@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { FrenchAttemptRow } from "@/lib/database.types";
 import {
+  computeListeningSchedules,
   computeStats,
   computeVocabHistory,
   computeVocabSchedules,
   dueForReview,
+  listenKeyFromQuestionId,
   reviewIntervalDays,
   REVIEW_INTERVALS_DAYS,
   vocabKeyFromQuestionId,
@@ -233,6 +235,37 @@ describe("computeVocabSchedules", () => {
     ]);
     expect(schedules.has("faire")).toBe(false);
     expect(schedules.has("dire")).toBe(true);
+  });
+});
+
+describe("listenKeyFromQuestionId", () => {
+  it("extracts the French word from a listening id and ignores others", () => {
+    expect(listenKeyFromQuestionId("listen:être")).toBe("être");
+    expect(listenKeyFromQuestionId("listen:le chien")).toBe("le chien");
+    expect(listenKeyFromQuestionId("vocab:être:fr2en")).toBeNull();
+    expect(listenKeyFromQuestionId("listen")).toBeNull();
+  });
+});
+
+describe("computeListeningSchedules", () => {
+  it("builds a schedule from listening attempts, independent of vocab", () => {
+    const schedules = computeListeningSchedules([
+      attempt({
+        kind: "listening",
+        started_at: "2026-06-03T10:00:00Z",
+        details: [mk("listen:avoir", false)],
+      }),
+      // a vocab attempt for the same word must not leak into the listening schedule
+      attempt({
+        kind: "vocab",
+        started_at: "2026-06-04T10:00:00Z",
+        details: [mk("vocab:avoir:fr2en", true)],
+      }),
+    ]);
+    const s = schedules.get("avoir")!;
+    expect(s.box).toBe(0); // only the listening miss counted
+    expect(s.seen).toBe(1);
+    expect(s.dueOn).toBe("2026-06-03");
   });
 });
 

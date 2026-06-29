@@ -23,7 +23,26 @@ export const KIND_LABELS: Record<FrenchTestKind, string> = {
   vocab: "Vocab",
   rules: "Rules",
   conjug: "Conjugation",
+  listening: "Listening",
 };
+
+// Playback speeds offered for the listening test. `rate` is the SpeechSynthesis
+// utterance rate (1 = normal); lower is slower for picking words out of speech.
+export type ListeningSpeed = "normal" | "slow" | "very-slow";
+export const LISTENING_SPEEDS: { value: ListeningSpeed; label: string; rate: number }[] = [
+  { value: "normal", label: "Normal", rate: 1 },
+  { value: "slow", label: "Slow", rate: 0.7 },
+  { value: "very-slow", label: "Very slow", rate: 0.5 },
+];
+
+// Word counts offered for the listening test — includes a single-word option for
+// a quick ear check, up to a longer run.
+export const LISTENING_SIZES = [1, 5, 10, 20] as const;
+
+// Map a (possibly missing) speed key to its utterance rate, defaulting to normal.
+export function speedRate(speed: string | null | undefined): number {
+  return LISTENING_SPEEDS.find((s) => s.value === speed)?.rate ?? 1;
+}
 
 export type Rng = () => number;
 
@@ -36,6 +55,9 @@ export interface Question {
   choices: string[];
   answer: number;
   explanation: string | null;
+  // When set, the prompt is spoken (French TTS) rather than shown as text — the
+  // learner identifies the word by ear. The runner hides `prompt` until answered.
+  audioText?: string;
 }
 
 // fr2en = show the French word, pick the English. en2fr = the reverse.
@@ -241,6 +263,42 @@ export function generateVocabTest(
   });
 }
 
+// A listening question: the French word is spoken (audioText) and the learner
+// picks it from four French choices. Same spaced-repetition selection as vocab,
+// but identity is by ear — so the prompt text stays hidden until answered.
+export function makeListeningQuestion(
+  word: VocabWord,
+  pool: readonly VocabWord[],
+  rng: Rng,
+): Question {
+  const others = pool.filter((w) => w.fr !== word.fr);
+  const { choices, answer } = buildChoices(
+    word.fr,
+    others.map((w) => w.fr),
+    4,
+    rng,
+  );
+  return {
+    id: `listen:${word.fr}`,
+    prompt: word.fr,
+    sub: "Which word did you hear?",
+    choices,
+    answer,
+    explanation: `${word.fr} = ${word.en}`,
+    audioText: word.fr,
+  };
+}
+
+export function generateListeningTest(
+  pool: readonly VocabWord[],
+  { count = TEST_SIZE, rng = Math.random, schedules, now }: GenerateOptions = {},
+): Question[] {
+  const words = schedules
+    ? selectVocab(pool, count, rng, schedules, now ?? todayIsoDate())
+    : sample(pool, count, rng);
+  return words.map((w) => makeListeningQuestion(w, pool, rng));
+}
+
 export function makeRuleQuestion(rule: RuleQuestion, rng: Rng): Question {
   const correct = rule.choices[rule.answer];
   const shuffled = shuffle(rule.choices, rng);
@@ -338,6 +396,7 @@ export function generateTest(
   opts: GenerateOptions = {},
 ): Question[] {
   if (kind === "vocab") return generateVocabTest(vocab, opts);
+  if (kind === "listening") return generateListeningTest(vocab, opts);
   if (kind === "rules") return generateRulesTest(rules, opts);
   return generateConjugationTest(conjugations, { count: opts.count, rng: opts.rng });
 }
