@@ -5,6 +5,7 @@ import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay, todayIsoDate } from "@/lib/utils";
 import {
+  checkOrder,
   checkTypedAnswer,
   clampCount,
   clampWordsPerRound,
@@ -104,6 +105,10 @@ export default function TestRunner() {
   const [picked, setPicked] = useState<number | null>(null);
   const [typed, setTyped] = useState("");
   const [typedResult, setTypedResult] = useState<boolean | null>(null);
+  // Word-assembly (listening) state: indices into q.choices placed so far, in
+  // order, plus the graded result once the learner checks.
+  const [built, setBuilt] = useState<number[]>([]);
+  const [orderResult, setOrderResult] = useState<boolean | null>(null);
   const [details, setDetails] = useState<FrenchAttemptDetail[]>([]);
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -135,6 +140,7 @@ export default function TestRunner() {
   const q = questions[index];
   const correct = details.filter((d) => d.correct).length;
   const expected = q.choices[q.answer];
+  const isOrdering = q.sequence != null;
 
   function choose(choice: number) {
     if (picked !== null) return;
@@ -152,12 +158,24 @@ export default function TestRunner() {
     setDetails((prev) => [...prev, { questionId: q.id, prompt: q.prompt, correct: ok }]);
   }
 
+  function submitOrder() {
+    if (orderResult !== null || !q.sequence || built.length !== q.sequence.length) return;
+    const ok = checkOrder(
+      built.map((i) => q.choices[i]),
+      q.sequence,
+    );
+    setOrderResult(ok);
+    setDetails((prev) => [...prev, { questionId: q.id, prompt: q.prompt, correct: ok }]);
+  }
+
   async function next() {
     if (index + 1 < questions.length) {
       setIndex((i) => i + 1);
       setPicked(null);
       setTyped("");
       setTypedResult(null);
+      setBuilt([]);
+      setOrderResult(null);
       return;
     }
     setFinished(true);
@@ -211,7 +229,11 @@ export default function TestRunner() {
     );
   }
 
-  const answered = typing ? typedResult !== null : picked !== null;
+  const answered = typing
+    ? typedResult !== null
+    : isOrdering
+      ? orderResult !== null
+      : picked !== null;
 
   return (
     <div className="flex min-h-[70vh] flex-col p-4 pb-24">
@@ -308,6 +330,102 @@ export default function TestRunner() {
             >
               Check
             </button>
+          )}
+        </div>
+      ) : isOrdering ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex min-h-[3.5rem] flex-wrap content-start items-center gap-2 rounded-2xl border border-line bg-surface2 p-3">
+            {built.length === 0 ? (
+              <span className="px-1 text-sm text-muted">
+                Tap the words below in the order you heard them
+              </span>
+            ) : (
+              built.map((ci, pos) => {
+                const state = !answered
+                  ? "idle"
+                  : q.choices[ci] === q.sequence![pos]
+                    ? "correct"
+                    : "wrong";
+                return (
+                  <button
+                    key={pos}
+                    onClick={() => setBuilt((b) => b.filter((_, p) => p !== pos))}
+                    disabled={answered}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-base font-medium transition",
+                      state === "idle" && "border-accent bg-accent/15 text-accent active:scale-95",
+                      state === "correct" && "border-success bg-success/15 text-success",
+                      state === "wrong" && "border-warn bg-warn/15 text-warn",
+                    )}
+                  >
+                    <span className="text-xs tabular-nums opacity-60">{pos + 1}</span>
+                    {q.choices[ci]}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {q.choices.map((choice, i) => {
+              const used = built.includes(i);
+              return (
+                <button
+                  key={i}
+                  onClick={() => setBuilt((b) => (b.includes(i) ? b : [...b, i]))}
+                  disabled={answered || used}
+                  className={cn(
+                    "min-h-[3rem] rounded-xl border px-4 py-2 text-base font-medium transition",
+                    used
+                      ? "border-line bg-surface opacity-30"
+                      : "border-line bg-surface active:scale-95",
+                  )}
+                >
+                  {choice}
+                </button>
+              );
+            })}
+          </div>
+
+          {answered ? (
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-2xl border px-4 py-3 text-base font-medium",
+                orderResult
+                  ? "border-success bg-success/15 text-success"
+                  : "border-warn bg-warn/15 text-warn",
+              )}
+            >
+              {orderResult ? (
+                <Check className="h-5 w-5 shrink-0" />
+              ) : (
+                <X className="h-5 w-5 shrink-0" />
+              )}
+              <span>{orderResult ? "Correct" : `Answer: ${q.sequence!.join(" ")}`}</span>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              {built.length > 0 && (
+                <button
+                  onClick={() => setBuilt([])}
+                  className="flex h-12 items-center justify-center rounded-2xl border border-line bg-surface px-5 font-semibold text-muted transition active:scale-[0.99]"
+                >
+                  Clear
+                </button>
+              )}
+              <button
+                onClick={submitOrder}
+                disabled={built.length !== q.sequence!.length}
+                className={cn(
+                  "flex h-12 flex-1 items-center justify-center rounded-2xl font-semibold transition active:scale-[0.99]",
+                  built.length !== q.sequence!.length
+                    ? "bg-surface2 text-muted"
+                    : "border border-accent bg-surface text-accent",
+                )}
+              >
+                Check
+              </button>
+            </div>
           )}
         </div>
       ) : (

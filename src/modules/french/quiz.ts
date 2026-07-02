@@ -70,6 +70,11 @@ export interface Question {
   // When set, the prompt is spoken (French TTS) rather than shown as text — the
   // learner identifies the word by ear. The runner hides `prompt` until answered.
   audioText?: string;
+  // When set, this is a word-assembly question: `choices` is a shuffled word bank
+  // (the spoken words plus distractors) and the learner taps words to reproduce
+  // `sequence` — the spoken words, in the order they were said. Correct only if the
+  // built list matches `sequence` exactly. `answer` is unused for these.
+  sequence?: string[];
 }
 
 // fr2en = show the French word, pick the English. en2fr = the reverse.
@@ -105,6 +110,12 @@ export function checkTypedAnswer(input: string, expected: string): boolean {
     .map((v) => v.trim())
     .filter(Boolean)
     .some((v) => v === typed || stripTo(v) === stripTo(typed));
+}
+
+// A word-assembly answer is correct only if the built word list reproduces the
+// spoken sequence exactly — same words, same order.
+export function checkOrder(built: readonly string[], sequence: readonly string[]): boolean {
+  return built.length === sequence.length && built.every((w, i) => w === sequence[i]);
 }
 
 export interface GenerateOptions {
@@ -277,62 +288,49 @@ export function generateVocabTest(
   });
 }
 
-// A listening question: the French word is spoken (audioText) and the learner
-// picks it from four French choices. Same spaced-repetition selection as vocab,
-// but identity is by ear — so the prompt text stays hidden until answered.
-export function makeListeningQuestion(
-  word: VocabWord,
-  pool: readonly VocabWord[],
-  rng: Rng,
-): Question {
-  const others = pool.filter((w) => w.fr !== word.fr);
-  const { choices, answer } = buildChoices(
-    word.fr,
-    others.map((w) => w.fr),
-    4,
-    rng,
-  );
-  return {
-    id: `listen:${word.fr}`,
-    prompt: word.fr,
-    sub: "Which word did you hear?",
-    choices,
-    answer,
-    explanation: `${word.fr} = ${word.en}`,
-    audioText: word.fr,
-  };
-}
+// How many extra (wrong) words pad the word bank of a listening round, on top of
+// the words actually spoken. A bigger bank makes picking the right words harder.
+export const LISTENING_ORDER_DISTRACTORS = 4;
 
-// A multi-word listening question: `words` are spoken in sequence as one phrase
-// and the learner picks the phrase they heard from four French phrase choices.
-// Identity is by the whole phrase, so it uses a `phrase:` id prefix — kept out of
-// the per-word listening schedule (which only tracks `listen:` single words), so
-// phrase practice is connected-speech comprehension, not the per-word SR drill.
-export function makeListeningPhraseQuestion(
+// A listening round: `words` are spoken in sequence (one word, or a short phrase)
+// and the learner reproduces them by tapping from a shuffled word bank — the
+// spoken words mixed with `LISTENING_ORDER_DISTRACTORS` decoys. They must pick the
+// right words AND place them in the order heard (`sequence`), so identity is by
+// ear and the prompt text stays hidden until answered.
+//
+// A single-word round keeps the `listen:` id prefix so it feeds the per-word
+// spaced-repetition schedule; a multi-word round uses a `phrase:` prefix, kept out
+// of that schedule (connected-speech practice, not the per-word drill).
+export function makeListeningOrderingQuestion(
   words: readonly VocabWord[],
   pool: readonly VocabWord[],
   rng: Rng,
 ): Question {
   const n = words.length;
-  const phrase = words.map((w) => w.fr).join(" ");
+  const sequence = words.map((w) => w.fr);
+  const phrase = sequence.join(" ");
   const gloss = words.map((w) => w.en).join(" · ");
-  // Distractor phrases: random n-word combos from the pool, distinct from the
-  // correct phrase and each other. Guarded so a tiny pool can't loop forever.
+
+  // Decoy words: distinct French words from the pool that aren't in the sequence.
+  const used = new Set(sequence.map((s) => s.toLowerCase()));
   const distractors: string[] = [];
-  for (let guard = 0; guard < 50 && distractors.length < 3; guard++) {
-    const cand = sample(pool, n, rng)
-      .map((w) => w.fr)
-      .join(" ");
-    if (cand !== phrase && !distractors.includes(cand)) distractors.push(cand);
+  for (const w of shuffle(pool, rng)) {
+    const key = w.fr.toLowerCase();
+    if (used.has(key)) continue;
+    used.add(key);
+    distractors.push(w.fr);
+    if (distractors.length >= LISTENING_ORDER_DISTRACTORS) break;
   }
-  const { choices, answer } = buildChoices(phrase, distractors, 4, rng);
+
+  const single = n === 1;
   return {
-    id: `phrase:${phrase}`,
+    id: single ? `listen:${sequence[0]}` : `phrase:${phrase}`,
     prompt: phrase,
-    sub: `Which phrase did you hear? (${n} words)`,
-    choices,
-    answer,
-    explanation: `${phrase} — ${gloss}`,
+    sub: single ? "Tap the word you heard" : `Build the phrase you heard (${n} words)`,
+    choices: shuffle([...sequence, ...distractors], rng),
+    answer: 0, // unused — ordering questions grade against `sequence`
+    sequence,
+    explanation: single ? `${phrase} = ${gloss}` : `${phrase} — ${gloss}`,
     audioText: phrase,
   };
 }
@@ -346,7 +344,7 @@ export function generateListeningTest(
     schedules ? selectVocab(pool, n, rng, schedules, now ?? todayIsoDate()) : sample(pool, n, rng);
 
   if (perRound <= 1) {
-    return pick(count).map((w) => makeListeningQuestion(w, pool, rng));
+    return pick(count).map((w) => makeListeningOrderingQuestion([w], pool, rng));
   }
 
   // Gather count × perRound words, then chunk them into one phrase per round.
@@ -355,7 +353,7 @@ export function generateListeningTest(
   const words = pick(count * perRound);
   const rounds: Question[] = [];
   for (let i = 0; i + perRound <= words.length; i += perRound) {
-    rounds.push(makeListeningPhraseQuestion(words.slice(i, i + perRound), pool, rng));
+    rounds.push(makeListeningOrderingQuestion(words.slice(i, i + perRound), pool, rng));
   }
   return rounds;
 }
