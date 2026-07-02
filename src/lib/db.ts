@@ -293,6 +293,14 @@ export class GymDB extends Dexie {
           if (row.ready_for_increase === undefined) row.ready_for_increase = false;
         });
     });
+    this.version(21).upgrade(async (tx) => {
+      await tx
+        .table("market_notes")
+        .toCollection()
+        .modify((row: LocalMarketNote) => {
+          if (row.research === undefined) row.research = [];
+        });
+    });
   }
 }
 

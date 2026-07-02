@@ -87,6 +87,50 @@ export async function seedModelAssumptions(
   return parsed.assumptions;
 }
 
+export interface MarketValidateInput {
+  prompt: string;
+  note?: string;
+  indices?: string[];
+}
+
+export interface MarketValidateSource {
+  title: string;
+  url: string;
+}
+
+export interface MarketValidateResult {
+  result: string;
+  sources: MarketValidateSource[];
+}
+
+// Run a web-grounded validation of a market note's thesis. Returns Claude's
+// write-up plus the sources it consulted.
+export async function validateMarketNote(
+  input: MarketValidateInput,
+  token: string,
+): Promise<MarketValidateResult> {
+  const res = await fetch("/api/market-validate", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const text = await res.text();
+  let parsed: { result?: string; sources?: MarketValidateSource[]; error?: string } | null;
+  try {
+    parsed = JSON.parse(text) as {
+      result?: string;
+      sources?: MarketValidateSource[];
+      error?: string;
+    };
+  } catch {
+    parsed = null;
+  }
+  if (!res.ok || !parsed?.result) {
+    throw new Error(parsed?.error ?? `Validation failed (${res.status})`);
+  }
+  return { result: parsed.result, sources: parsed.sources ?? [] };
+}
+
 export async function summarizeDocuments(input: SummarizeInput, token: string): Promise<string> {
   const res = await fetch("/api/stock-summarize", {
     method: "POST",

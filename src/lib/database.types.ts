@@ -347,6 +347,22 @@ export interface TipRow {
 // table) — stored as stable keys in the `indices` jsonb array.
 export type MarketIndexKey = "sp500" | "asx200" | "nasdaq";
 
+// A source Claude cited while validating a note.
+export interface MarketNoteResearchSource {
+  title: string;
+  url: string;
+}
+
+// One AI-research run against a note: the (possibly edited) prompt, Claude's
+// grounded write-up, and the sources it consulted. Stored in `research`.
+export interface MarketNoteResearch {
+  id: string;
+  prompt: string;
+  result: string;
+  sources: MarketNoteResearchSource[];
+  created_at: string;
+}
+
 // A free-text note on the markets, tagged with one or more indices. Same sync /
 // RLS / soft-delete rules as `sets`.
 export interface MarketNoteRow {
@@ -354,6 +370,7 @@ export interface MarketNoteRow {
   indices: MarketIndexKey[];
   body: string;
   noted_at: string;
+  research: MarketNoteResearch[];
   client_id: string | null;
   user_id: string | null;
   created_at: string;
