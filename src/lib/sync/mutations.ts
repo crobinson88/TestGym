@@ -24,6 +24,7 @@ import type {
   FrenchTestKind,
   MarketIndexKey,
   MarketNoteRow,
+  MarketNoteResearch,
   ReadingItemRow,
   SetRow,
   ShareTradeRow,
@@ -666,6 +667,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       indices: input.indices,
       body: input.body.trim(),
       noted_at: input.noted_at ?? todayIsoDate(),
+      research: [],
       client_id: id,
       user_id: null,
       ...baseRowDefaults(ts),
@@ -706,6 +708,25 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       sync_status: "pending",
     });
     notify();
+  }
+
+  // Prepend an AI-research run to a note's research log (newest first).
+  async function addMarketNoteResearch(
+    id: string,
+    entry: MarketNoteResearch,
+  ): Promise<LocalMarketNote | null> {
+    const existing = await db.market_notes.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalMarketNote = {
+      ...existing,
+      research: [entry, ...(existing.research ?? [])],
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.market_notes.put(updated);
+    notify();
+    return updated;
   }
 
   // The smoking flag is one live row per day. `smoked` true/false marks the day;
@@ -793,6 +814,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addMarketNote,
     updateMarketNote,
     deleteMarketNote,
+    addMarketNoteResearch,
     setSmoked,
   };
 }
