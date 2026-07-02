@@ -199,7 +199,7 @@ export default function FrenchHome() {
               <div className="text-lg font-semibold">Listening test</div>
               <div className="text-sm text-muted">
                 {wordsPerRound > 1
-                  ? `Hear ${listenCount} French phrase${listenCount === 1 ? "" : "s"} of ${wordsPerRound} words`
+                  ? `Hear a ${wordsPerRound}-word phrase, rebuild it in order · ${listenCount} per test`
                   : listenDue
                     ? `${listenDue} due for review · ${listenCount} per test`
                     : `Hear ${listenCount} French word${listenCount === 1 ? "" : "s"}, pick what you heard`}

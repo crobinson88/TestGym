@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
 import {
+  checkOrder,
   checkTypedAnswer,
   clampCount,
   clampWordsPerRound,
@@ -11,8 +12,7 @@ import {
   generateTest,
   generateVocabTest,
   makeConjugationQuestion,
-  makeListeningPhraseQuestion,
-  makeListeningQuestion,
+  makeListeningOrderingQuestion,
   makeRuleQuestion,
   makeVocabQuestion,
   normalizeAnswer,
@@ -256,21 +256,23 @@ describe("checkTypedAnswer", () => {
 });
 
 describe("listening test", () => {
-  it("makes an audio-prompted question with four French choices", () => {
+  it("makes a single-word round the learner reproduces from a word bank", () => {
     const word = VOCAB[0]; // être
-    const q = makeListeningQuestion(word, VOCAB, lcg(1));
+    const q = makeListeningOrderingQuestion([word], VOCAB, lcg(1));
     expect(q.id).toBe("listen:être");
     expect(q.audioText).toBe("être"); // the word is spoken, not shown
-    expect(q.choices).toHaveLength(4);
-    expect(q.choices[q.answer]).toBe("être");
-    expect(q.choices.every((c) => VOCAB.some((w) => w.fr === c))).toBe(true); // French choices
-    expect(q.sub).toBe("Which word did you hear?");
+    expect(q.sequence).toEqual(["être"]); // the correct build is just the word
+    expect(q.sub).toBe("Tap the word you heard");
+    // The bank is the spoken word plus decoys, all drawn from the French vocab.
+    expect(q.choices).toContain("être");
+    expect(q.choices.every((c) => VOCAB.some((w) => w.fr === c))).toBe(true);
+    expect(new Set(q.choices).size).toBe(q.choices.length); // no duplicate bank words
   });
 
   it("generateTest('listening') produces audio questions of the requested count", () => {
     const test = generateTest("listening", VOCAB, RULES, CONJ_VERBS, { count: 4, rng: lcg(3) });
     expect(test).toHaveLength(4);
-    expect(test.every((q) => q.audioText && q.id.startsWith("listen:"))).toBe(true);
+    expect(test.every((q) => q.audioText && q.id.startsWith("listen:") && q.sequence)).toBe(true);
   });
 
   it("uses the spaced-repetition schedule when one is supplied", () => {
@@ -286,29 +288,41 @@ describe("listening test", () => {
     // Single-word rounds keep the listen: prefix and each speak one vocab word.
     expect(test.every((q) => q.id.startsWith("listen:"))).toBe(true);
     expect(test.every((q) => VOCAB.some((w) => w.fr === q.audioText))).toBe(true);
+    expect(test.every((q) => q.sequence!.length === 1)).toBe(true);
   });
 
-  it("makeListeningPhraseQuestion speaks a multi-word phrase with four phrase choices", () => {
+  it("makeListeningOrderingQuestion builds a multi-word phrase round with an ordered bank", () => {
     const words = [VOCAB[0], VOCAB[2], VOCAB[4]]; // être / le chien / grand
-    const q = makeListeningPhraseQuestion(words, VOCAB, lcg(2));
+    const q = makeListeningOrderingQuestion(words, VOCAB, lcg(2));
     expect(q.audioText).toBe("être le chien grand");
     expect(q.id).toBe("phrase:être le chien grand");
-    expect(q.sub).toBe("Which phrase did you hear? (3 words)");
-    expect(q.choices).toHaveLength(4);
-    expect(q.choices[q.answer]).toBe("être le chien grand"); // the heard phrase is the answer
-    expect(new Set(q.choices).size).toBe(4); // no duplicate choices
-    // Every choice is a 3-word phrase drawn from the French vocab.
-    for (const c of q.choices) {
-      const parts = c.split(" ");
-      expect(parts.length).toBeGreaterThanOrEqual(3);
-    }
+    expect(q.sub).toBe("Build the phrase you heard (3 words)");
+    expect(q.sequence).toEqual(["être", "le chien", "grand"]); // the order heard
+    // The bank holds the spoken words plus decoys, no duplicates, all French vocab.
+    for (const w of q.sequence!) expect(q.choices).toContain(w);
+    expect(new Set(q.choices).size).toBe(q.choices.length);
+    expect(q.choices.every((c) => VOCAB.some((w) => w.fr === c))).toBe(true);
+    expect(q.choices.length).toBeGreaterThan(q.sequence!.length); // decoys were added
   });
 
   it("generates wordsPerRound-word phrase rounds, kept out of the per-word schedule", () => {
     const test = generateListeningTest(VOCAB, { count: 2, rng: lcg(7), wordsPerRound: 2 });
     expect(test).toHaveLength(2);
     // phrase ids never match the listen: schedule prefix, so they don't pollute SR.
-    expect(test.every((q) => q.id.startsWith("phrase:") && q.audioText!.includes(" "))).toBe(true);
+    expect(test.every((q) => q.id.startsWith("phrase:") && q.sequence!.length === 2)).toBe(true);
+  });
+});
+
+describe("checkOrder", () => {
+  it("accepts the exact spoken sequence", () => {
+    expect(checkOrder(["le chien", "grand"], ["le chien", "grand"])).toBe(true);
+  });
+
+  it("rejects a wrong order, wrong words, or the wrong length", () => {
+    expect(checkOrder(["grand", "le chien"], ["le chien", "grand"])).toBe(false);
+    expect(checkOrder(["le chien", "vite"], ["le chien", "grand"])).toBe(false);
+    expect(checkOrder(["le chien"], ["le chien", "grand"])).toBe(false);
+    expect(checkOrder([], ["le chien"])).toBe(false);
   });
 });
 
