@@ -13,10 +13,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { downloadSetsCsv } from "@/lib/csv";
-import { useDashboardStats, useSmokingLogMap, type WeekVolumePoint } from "@/lib/hooks";
+import { syncEngine } from "@/lib/sync";
+import {
+  useDashboardStats,
+  useSmokingLogMap,
+  type SmokingDay,
+  type WeekVolumePoint,
+} from "@/lib/hooks";
 import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
 import { cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
@@ -262,10 +269,11 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function SmokingCalendar({ logs }: { logs: Map<string, boolean> }) {
+function SmokingCalendar({ logs }: { logs: Map<string, SmokingDay> }) {
   const today = todayIsoDate();
   const [ty, tm] = today.split("-").map((p) => parseInt(p, 10));
   const [view, setView] = useState({ year: ty, month: tm });
+  const [selected, setSelected] = useState<string | null>(null);
   const { year, month } = view;
 
   // Monday-first leading blanks + one cell per day of the visible month.
@@ -278,24 +286,35 @@ function SmokingCalendar({ logs }: { logs: Map<string, boolean> }) {
 
   let freeDays = 0;
   let smokedDays = 0;
+  let cigarettes = 0;
   for (const iso of cells) {
     if (!iso) continue;
     const v = logs.get(iso);
-    if (v === true) smokedDays++;
-    else if (v === false) freeDays++;
+    if (!v) continue;
+    if (v.smoked) {
+      smokedDays++;
+      cigarettes += v.cigarettes ?? 0;
+    } else {
+      freeDays++;
+    }
   }
 
   const atCurrentMonth = year === ty && month === tm;
-  const prevMonth = () =>
-    setView((v) => (v.month === 1 ? { year: v.year - 1, month: 12 } : { year: v.year, month: v.month - 1 }));
-  const nextMonth = () =>
-    setView((v) => (v.month === 12 ? { year: v.year + 1, month: 1 } : { year: v.year, month: v.month + 1 }));
+  const changeMonth = (delta: 1 | -1) => {
+    setSelected(null);
+    setView((v) => {
+      const next = v.month + delta;
+      if (next < 1) return { year: v.year - 1, month: 12 };
+      if (next > 12) return { year: v.year + 1, month: 1 };
+      return { year: v.year, month: next };
+    });
+  };
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <button
-          onClick={prevMonth}
+          onClick={() => changeMonth(-1)}
           aria-label="Previous month"
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface2"
         >
@@ -305,7 +324,7 @@ function SmokingCalendar({ logs }: { logs: Map<string, boolean> }) {
           {MONTH_YEAR.format(new Date(year, month - 1, 1))}
         </div>
         <button
-          onClick={nextMonth}
+          onClick={() => changeMonth(1)}
           disabled={atCurrentMonth}
           aria-label="Next month"
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface2 disabled:opacity-30"
@@ -325,35 +344,133 @@ function SmokingCalendar({ logs }: { logs: Map<string, boolean> }) {
           const day = parseInt(iso.slice(8), 10);
           const future = iso > today;
           const v = logs.get(iso);
+          if (future) {
+            return (
+              <div
+                key={iso}
+                className="flex aspect-square items-center justify-center rounded-md border border-transparent text-xs tabular-nums text-muted/30"
+              >
+                {day}
+              </div>
+            );
+          }
+          const hasCount = v?.smoked && v.cigarettes != null;
           return (
-            <div
+            <button
               key={iso}
+              onClick={() => setSelected((s) => (s === iso ? null : iso))}
               className={cn(
-                "flex aspect-square items-center justify-center rounded-md border text-xs tabular-nums",
-                future
-                  ? "border-transparent text-muted/30"
-                  : v === false
-                    ? "border-success/40 bg-success/20 font-semibold text-success"
-                    : v === true
-                      ? "border-danger/40 bg-danger/20 font-semibold text-danger"
-                      : "border-line/60 bg-surface2 text-muted",
+                "flex aspect-square flex-col items-center justify-center rounded-md border text-xs tabular-nums transition",
+                v?.smoked === false
+                  ? "border-success/40 bg-success/20 font-semibold text-success"
+                  : v?.smoked
+                    ? "border-danger/40 bg-danger/20 font-semibold text-danger"
+                    : "border-line/60 bg-surface2 text-muted hover:bg-surface",
+                selected === iso && "ring-2 ring-accent",
               )}
               title={`${prettyDate(iso)}: ${
-                v === false ? "smoke-free" : v === true ? "smoked" : "no data"
+                v?.smoked === false
+                  ? "smoke-free"
+                  : v?.smoked
+                    ? `smoked${v.cigarettes != null ? ` (${v.cigarettes})` : ""}`
+                    : "no data"
               }`}
             >
-              {day}
-            </div>
+              <span className={cn(hasCount && "leading-none")}>{day}</span>
+              {hasCount && (
+                <span className="text-[9px] font-normal leading-none opacity-80">
+                  {v!.cigarettes}
+                </span>
+              )}
+            </button>
           );
         })}
       </div>
 
+      {selected && (
+        <SmokingDayEditor
+          key={selected}
+          date={selected}
+          entry={logs.get(selected)}
+          onClose={() => setSelected(null)}
+        />
+      )}
+
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line/70 pt-3 text-xs text-muted">
         <span className="font-medium text-success">{freeDays} smoke-free</span>
         <span className="font-medium text-danger">{smokedDays} smoked</span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm border border-line/60 bg-surface2" /> no data
-        </span>
+        <span className="font-medium">{cigarettes} cigarettes</span>
+      </div>
+      {!selected && (
+        <div className="mt-1 text-center text-[11px] text-muted">
+          Tap a day to log cigarettes
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmokingDayEditor({
+  date,
+  entry,
+  onClose,
+}: {
+  date: string;
+  entry: SmokingDay | undefined;
+  onClose: () => void;
+}) {
+  const [count, setCount] = useState<number>(entry?.cigarettes ?? 0);
+
+  const save = async (n: number | null) => {
+    await syncEngine.mutations.setCigaretteCount(date, n);
+    onClose();
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-surface2/60 p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-semibold">{prettyDate(date)}</div>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface2"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex items-center justify-center gap-3">
+        <button
+          onClick={() => setCount((c) => Math.max(0, c - 1))}
+          aria-label="Decrease"
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-line text-muted hover:bg-surface2"
+        >
+          <Minus className="h-5 w-5" />
+        </button>
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={count}
+          onChange={(e) => setCount(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+          className="w-20 text-center text-lg font-semibold tabular-nums"
+          aria-label="Cigarettes"
+        />
+        <button
+          onClick={() => setCount((c) => c + 1)}
+          aria-label="Increase"
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-line text-muted hover:bg-surface2"
+        >
+          <Plus className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="mt-1 text-center text-xs text-muted">cigarettes · 0 = smoke-free</div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button variant="primary" onClick={() => save(count)}>
+          Save
+        </Button>
+        <Button variant="secondary" onClick={() => save(null)} disabled={!entry}>
+          Clear
+        </Button>
       </div>
     </div>
   );

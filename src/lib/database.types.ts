@@ -378,14 +378,17 @@ export interface MarketNoteRow {
   deleted_at: string | null;
 }
 
-// One day's smoking flag. `smoked` is true on a smoking day, false on a
-// smoke-free day; the absence of a live row means the day is unmarked. One live
-// row per `log_date` is kept (deduped client-side). Same sync / RLS /
-// soft-delete rules as `sets`.
+// One day's smoking record. `smoked` is true on a smoking day, false on a
+// smoke-free day; the absence of a live row means the day is unmarked.
+// `cigarettes` is how many were smoked that day: null when the count is unknown
+// (day marked "Smoked" without a number), 0 on a smoke-free day. One live row
+// per `log_date` is kept (deduped client-side). Same sync / RLS / soft-delete
+// rules as `sets`.
 export interface SmokingLogRow {
   id: string;
   log_date: string;
   smoked: boolean;
+  cigarettes: number | null;
   client_id: string | null;
   user_id: string | null;
   created_at: string;
