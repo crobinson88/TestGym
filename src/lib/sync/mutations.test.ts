@@ -240,4 +240,81 @@ describe("mutations.setSmoked", () => {
     expect(await m.setSmoked("2026-06-28", null)).toBeNull();
     expect(await db.smoking_logs.count()).toBe(0);
   });
+
+  it("marks smoke-free as 0 cigarettes and a smoking day as unknown", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const free = await m.setSmoked("2026-06-28", false);
+    expect(free?.cigarettes).toBe(0);
+
+    const smoked = await m.setSmoked("2026-06-28", true);
+    expect(smoked?.cigarettes).toBeNull();
+  });
+});
+
+describe("mutations.setCigaretteCount", () => {
+  it("a positive count marks the day smoked and stores the count", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const row = await m.setCigaretteCount("2026-06-28", 7);
+    expect(row?.smoked).toBe(true);
+    expect(row?.cigarettes).toBe(7);
+    expect(row?.client_id).toBe(row?.id);
+
+    const live = (await db.smoking_logs.toArray()).filter((r) => !r.deleted_at);
+    expect(live).toHaveLength(1);
+  });
+
+  it("a zero count marks the day smoke-free", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const row = await m.setCigaretteCount("2026-06-28", 0);
+    expect(row?.smoked).toBe(false);
+    expect(row?.cigarettes).toBe(0);
+  });
+
+  it("floors and clamps a fractional or negative count", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    expect((await m.setCigaretteCount("2026-06-28", 3.9))?.cigarettes).toBe(3);
+    expect((await m.setCigaretteCount("2026-06-29", -2))?.cigarettes).toBe(0);
+  });
+
+  it("updates the day's existing live row instead of creating a second", async () => {
+    db = await newTestDb();
+    let t = 1_700_000_000_000;
+    const m = createMutations({ db, now: () => new Date(++t).toISOString() });
+
+    const first = await m.setCigaretteCount("2026-06-28", 3);
+    const second = await m.setCigaretteCount("2026-06-28", 5);
+
+    expect(second?.id).toBe(first?.id);
+    expect(second?.cigarettes).toBe(5);
+    expect(await db.smoking_logs.count()).toBe(1);
+  });
+
+  it("preserves the count when toggling smoked from the Today flow", async () => {
+    db = await newTestDb();
+    let t = 1_700_000_000_000;
+    const m = createMutations({ db, now: () => new Date(++t).toISOString() });
+
+    await m.setCigaretteCount("2026-06-28", 4);
+    const smoked = await m.setSmoked("2026-06-28", true);
+    expect(smoked?.cigarettes).toBe(4);
+  });
+
+  it("clears the mark when passed null", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    await m.setCigaretteCount("2026-06-28", 4);
+    expect(await m.setCigaretteCount("2026-06-28", null)).toBeNull();
+
+    const live = (await db.smoking_logs.toArray()).filter((r) => !r.deleted_at);
+    expect(live).toHaveLength(0);
+  });
 });

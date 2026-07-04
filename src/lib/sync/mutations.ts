@@ -729,40 +729,47 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return updated;
   }
 
-  // The smoking flag is one live row per day. `smoked` true/false marks the day;
-  // `null` clears the mark (soft-deletes the live row). Updates the existing live
-  // row when there is one, otherwise creates it.
-  async function setSmoked(
-    date: string,
-    smoked: boolean | null,
-  ): Promise<LocalSmokingLog | null> {
+  // The day's live smoking rows (newest first). One live row per day is kept, but
+  // offline races can leave duplicates, so callers resolve the newest and clean
+  // up the rest.
+  async function liveSmokingRows(date: string): Promise<LocalSmokingLog[]> {
     const all = await db.smoking_logs.toArray();
-    const live = all
+    return all
       .filter((r) => r.log_date === date && !r.deleted_at)
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-    const existing = live[0];
+  }
+
+  // Soft-delete every live row for the day (not just the newest) so stray
+  // duplicates can't leave the day looking marked.
+  async function clearSmoking(live: LocalSmokingLog[]): Promise<null> {
+    if (live.length === 0) return null;
     const ts = now();
-
-    if (smoked === null) {
-      if (!existing) return null;
-      // Soft-delete every live row for the day, not just the newest, so stray
-      // duplicates from offline races can't leave the day looking marked.
-      for (const row of live) {
-        await db.smoking_logs.put({
-          ...row,
-          deleted_at: ts,
-          updated_at: ts,
-          sync_status: "pending",
-        });
-      }
-      notify();
-      return null;
+    for (const row of live) {
+      await db.smoking_logs.put({
+        ...row,
+        deleted_at: ts,
+        updated_at: ts,
+        sync_status: "pending",
+      });
     }
+    notify();
+    return null;
+  }
 
+  // Write the day's `smoked` flag and `cigarettes` count, updating the existing
+  // live row when there is one, otherwise creating it.
+  async function writeSmoking(
+    date: string,
+    smoked: boolean,
+    cigarettes: number | null,
+    existing?: LocalSmokingLog,
+  ): Promise<LocalSmokingLog> {
+    const ts = now();
     if (existing) {
       const updated: LocalSmokingLog = {
         ...existing,
         smoked,
+        cigarettes,
         updated_at: ts,
         sync_status: "pending",
       };
@@ -770,12 +777,12 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       notify();
       return updated;
     }
-
     const id = uuid();
     const row: SmokingLogRow = {
       id,
       log_date: date,
       smoked,
+      cigarettes,
       client_id: id,
       user_id: null,
       ...baseRowDefaults(ts),
@@ -784,6 +791,35 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     await db.smoking_logs.put(local);
     notify();
     return local;
+  }
+
+  // The Today toggle: mark the day smoked/smoke-free, or `null` to clear the mark.
+  // A smoke-free day is 0 cigarettes; a smoking day keeps any count already
+  // entered (from the Stats calendar), otherwise leaves it unknown (null).
+  async function setSmoked(
+    date: string,
+    smoked: boolean | null,
+  ): Promise<LocalSmokingLog | null> {
+    const live = await liveSmokingRows(date);
+    if (smoked === null) return clearSmoking(live);
+    const existing = live[0];
+    // A smoking day carries a positive count already entered (Stats calendar),
+    // else stays unknown; never carry 0 (that would read as "smoked, 0 cigs").
+    const prev = existing?.cigarettes ?? 0;
+    const cigarettes = smoked ? (prev > 0 ? prev : null) : 0;
+    return writeSmoking(date, smoked, cigarettes, existing);
+  }
+
+  // The Stats calendar: set the day's cigarette count. A count > 0 marks the day
+  // smoked; 0 marks it smoke-free; `null` clears the mark (soft-delete).
+  async function setCigaretteCount(
+    date: string,
+    count: number | null,
+  ): Promise<LocalSmokingLog | null> {
+    const live = await liveSmokingRows(date);
+    if (count === null) return clearSmoking(live);
+    const n = Math.max(0, Math.floor(count));
+    return writeSmoking(date, n > 0, n, live[0]);
   }
 
   return {
@@ -816,6 +852,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     deleteMarketNote,
     addMarketNoteResearch,
     setSmoked,
+    setCigaretteCount,
   };
 }
 

@@ -139,21 +139,29 @@ export function useSmokingForDate(date: string): boolean | null | undefined {
   }, [date]);
 }
 
-// All marked days as a date -> smoked map, deduped to the newest live row per
+export interface SmokingDay {
+  smoked: boolean;
+  cigarettes: number | null;
+}
+
+// All marked days as a date -> record map, deduped to the newest live row per
 // date. Feeds the Stats smoking calendar; unmarked days are simply absent.
-export function useSmokingLogMap(): Map<string, boolean> | undefined {
+export function useSmokingLogMap(): Map<string, SmokingDay> | undefined {
   return useLiveQuery(async () => {
     const rows = await db.smoking_logs.toArray();
-    const byDate = new Map<string, { smoked: boolean; updated_at: string }>();
+    const byDate = new Map<string, { day: SmokingDay; updated_at: string }>();
     for (const r of rows) {
       if (r.deleted_at) continue;
       const prev = byDate.get(r.log_date);
       if (!prev || r.updated_at > prev.updated_at) {
-        byDate.set(r.log_date, { smoked: r.smoked, updated_at: r.updated_at });
+        byDate.set(r.log_date, {
+          day: { smoked: r.smoked, cigarettes: r.cigarettes },
+          updated_at: r.updated_at,
+        });
       }
     }
-    const out = new Map<string, boolean>();
-    for (const [date, v] of byDate) out.set(date, v.smoked);
+    const out = new Map<string, SmokingDay>();
+    for (const [date, v] of byDate) out.set(date, v.day);
     return out;
   }, []);
 }
