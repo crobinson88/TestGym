@@ -82,6 +82,7 @@ export default function FrenchHome() {
   const mastered = useMasteredVocab();
   const [dir, setDir] = useState<VocabDirection>("mixed");
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
+  const [vocabMode, setVocabMode] = useState<StudyMode>("mixed");
   const [count, setCount] = useState<number>(TEST_SIZE);
   const [listenCount, setListenCount] = useState<number>(10);
   const [wordsPerRound, setWordsPerRound] = useState<number>(1);
@@ -124,14 +125,22 @@ export default function FrenchHome() {
         </div>
         <div className="space-y-2">
           <button
-            onClick={() => navigate(`/french/test/vocab?dir=${dir}&ans=${answerMode}&n=${count}`)}
+            onClick={() =>
+              navigate(`/french/test/vocab?dir=${dir}&ans=${answerMode}&n=${count}&mode=${vocabMode}`)
+            }
             className="flex w-full items-center gap-4 rounded-2xl bg-accent px-5 py-4 text-left text-bg shadow-lg shadow-accent/20 transition active:scale-[0.98]"
           >
             <BookOpen className="h-7 w-7 shrink-0" />
             <div>
               <div className="text-lg font-semibold">Vocab test</div>
               <div className="text-sm opacity-80">
-                {dueCount ? (
+                {vocabMode === "new" ? (
+                  <>New words · {count} per test</>
+                ) : vocabMode === "review" ? (
+                  <>
+                    {dueCount} due for review · {count} per test
+                  </>
+                ) : dueCount ? (
                   <>
                     {dueCount} due for review · {count} per test
                   </>
@@ -169,6 +178,23 @@ export default function FrenchHome() {
                 className={cn(
                   "flex-1 rounded-xl border px-2 py-2 text-sm font-medium transition",
                   answerMode === m.value
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2" role="group" aria-label="Vocab word selection">
+            {STUDY_MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setVocabMode(m.value)}
+                aria-pressed={vocabMode === m.value}
+                className={cn(
+                  "flex-1 rounded-xl border px-2 py-2 text-sm font-medium transition",
+                  vocabMode === m.value
                     ? "border-accent bg-accent/15 text-accent"
                     : "border-line bg-surface text-muted",
                 )}
