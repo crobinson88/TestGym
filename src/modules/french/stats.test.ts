@@ -7,6 +7,7 @@ import {
   computeVocabSchedules,
   dueForReview,
   listenKeyFromQuestionId,
+  masteredVocab,
   reviewIntervalDays,
   REVIEW_INTERVALS_DAYS,
   vocabKeyFromQuestionId,
@@ -14,6 +15,7 @@ import {
   vocabMasteryProgress,
   weeklyAccuracy,
 } from "./stats";
+import type { VocabWord } from "./data/vocab";
 
 const mk = (id: string, correct: boolean) => ({ questionId: id, prompt: id, correct });
 
@@ -172,6 +174,33 @@ describe("vocabMastery", () => {
     const m = vocabMastery(attempts, 12);
     expect(m.mastered).toBe(3);
     expect(m.pct).toBe(25);
+  });
+});
+
+describe("masteredVocab", () => {
+  const POOL: VocabWord[] = [
+    { rank: 1, fr: "être", en: "to be", pos: "verb" },
+    { rank: 2, fr: "avoir", en: "to have", pos: "verb" },
+    { rank: 3, fr: "le chien", en: "dog", pos: "noun", gender: "m" },
+  ];
+
+  it("returns only the pool words the learner has mastered, in pool order", () => {
+    const attempts = [
+      // être: 3/3 → mastered
+      attempt({ details: [mk("vocab:être:fr2en", true)] }),
+      attempt({ details: [mk("vocab:être:en2fr", true)] }),
+      attempt({ details: [mk("vocab:être:fr2en", true)] }),
+      // avoir: 2/3 → not mastered
+      attempt({ details: [mk("vocab:avoir:fr2en", true), mk("vocab:avoir:en2fr", false)] }),
+      attempt({ details: [mk("vocab:avoir:fr2en", true)] }),
+      // le chien: never tested
+    ];
+    const out = masteredVocab(attempts, POOL);
+    expect(out.map((w) => w.fr)).toEqual(["être"]);
+  });
+
+  it("is empty when nothing is mastered yet", () => {
+    expect(masteredVocab([], POOL)).toEqual([]);
   });
 });
 

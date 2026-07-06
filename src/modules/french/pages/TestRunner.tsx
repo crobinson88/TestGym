@@ -8,6 +8,7 @@ import {
   checkOrder,
   checkTypedAnswer,
   clampCount,
+  clampStudyMode,
   clampWordsPerRound,
   generateTest,
   KIND_LABELS,
@@ -18,7 +19,12 @@ import {
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 import { CONJ_VERBS } from "../data/conjugations";
-import { useListeningSchedules, useVocabHistory, useVocabSchedules } from "../hooks";
+import {
+  useListeningSchedules,
+  useMasteredVocab,
+  useVocabHistory,
+  useVocabSchedules,
+} from "../hooks";
 import { cancelSpeech, speakFrench } from "../speech";
 import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
@@ -72,6 +78,9 @@ export default function TestRunner() {
   // Listening only: words spoken per round (>1 = multi-word phrase rounds).
   const wordsPerRound = clampWordsPerRound(Number(searchParams.get("words")));
 
+  // Which slice of the pool to draw: mixed / review / new. Listening only in the UI.
+  const mode = clampStudyMode(searchParams.get("mode"));
+
   // Playback rate for the listening test (1 = normal); ignored by other kinds.
   const rate = speedRate(searchParams.get("speed"));
 
@@ -84,20 +93,28 @@ export default function TestRunner() {
   const needsSchedule = kind === "vocab" || kind === "listening";
   const schedulesReady = !needsSchedule || schedules !== undefined;
 
-  // Built once the schedule is ready, then frozen for the run — the attempts table
-  // isn't written until the test finishes, so the schedule won't shift mid-test.
-  // `schedulesReady` (not the map identity) gates the one-time build.
+  // Listening draws only from words already mastered in the written vocab tests.
+  const masteredPool = useMasteredVocab();
+  const needsMastered = kind === "listening";
+  const masteredReady = !needsMastered || masteredPool !== undefined;
+  const ready = schedulesReady && masteredReady;
+
+  // Built once the pool + schedule are ready, then frozen for the run — the attempts
+  // table isn't written until the test finishes, so selection won't shift mid-test.
+  // `ready` (not the map/array identity) gates the one-time build.
   const questions = useMemo<Question[]>(() => {
-    if (!isKind(kind) || !schedulesReady) return [];
-    return generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, {
+    if (!isKind(kind) || !ready) return [];
+    const pool = kind === "listening" ? (masteredPool ?? []) : VOCAB;
+    return generateTest(kind, pool, RULE_QUESTIONS, CONJ_VERBS, {
       count,
       direction,
       wordsPerRound,
+      mode,
       schedules: needsSchedule ? schedules : undefined,
       now: todayIsoDate(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, direction, count, wordsPerRound, schedulesReady]);
+  }, [kind, direction, count, wordsPerRound, mode, ready]);
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());
 
@@ -128,7 +145,7 @@ export default function TestRunner() {
   }, [index, finished, questions]);
 
   if (!isKind(kind)) return <Navigate to="/french" replace />;
-  if (!schedulesReady) {
+  if (!ready) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center text-sm text-muted">
         Loading…

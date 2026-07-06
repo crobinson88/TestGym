@@ -30,6 +30,7 @@ vi.mock("../hooks", () => ({
   useListeningSchedules: () => new Map(),
   useVocabSchedules: () => new Map(),
   useVocabHistory: () => new Map(),
+  useMasteredVocab: () => [{ rank: 1, fr: "le chien", en: "dog", pos: "noun", gender: "m" }],
 }));
 
 vi.mock("../speech", () => ({

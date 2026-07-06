@@ -202,6 +202,29 @@ describe("selectVocab", () => {
     expect(out).toHaveLength(4);
     expect(out.every((w) => schedules.has(w.fr))).toBe(true);
   });
+
+  it("mode 'review' returns only due words, never new ones", () => {
+    const schedules = new Map([
+      ["être", sched({ fr: "être", dueOn: "2026-06-09" })],
+      ["avoir", sched({ fr: "avoir", dueOn: "2026-06-08" })],
+      // le chien is scheduled but not yet due — must be excluded
+      ["le chien", sched({ fr: "le chien", box: 3, dueOn: "2026-07-01" })],
+    ]);
+    const out = selectVocab(VOCAB, 6, lcg(1), schedules, NOW, "review");
+    expect(out.map((w) => w.fr).sort()).toEqual(["avoir", "être"]);
+  });
+
+  it("mode 'new' returns only never-seen words, never reviews", () => {
+    const schedules = new Map([["être", sched({ fr: "être", dueOn: "2026-06-09" })]]);
+    const out = selectVocab(VOCAB, 6, lcg(2), schedules, NOW, "new");
+    expect(out.every((w) => !schedules.has(w.fr))).toBe(true);
+    expect(out).toHaveLength(VOCAB.length - 1); // every word except the scheduled one
+  });
+
+  it("mode 'review' with no due words yields an empty test", () => {
+    const schedules = new Map([["être", sched({ fr: "être", box: 3, dueOn: "2026-07-01" })]]);
+    expect(selectVocab(VOCAB, 6, lcg(3), schedules, NOW, "review")).toEqual([]);
+  });
 });
 
 describe("generateVocabTest with a schedule", () => {
@@ -310,6 +333,19 @@ describe("listening test", () => {
     expect(test).toHaveLength(2);
     // phrase ids never match the listen: schedule prefix, so they don't pollute SR.
     expect(test.every((q) => q.id.startsWith("phrase:") && q.sequence!.length === 2)).toBe(true);
+  });
+
+  it("mode 'new' only speaks words with no listening history", () => {
+    const schedules = new Map([["être", sched({ fr: "être", dueOn: "2026-06-09" })]]);
+    const test = generateListeningTest(VOCAB, {
+      count: 10,
+      rng: lcg(8),
+      schedules,
+      now: NOW,
+      mode: "new",
+    });
+    expect(test.every((q) => q.id !== "listen:être")).toBe(true);
+    expect(test).toHaveLength(VOCAB.length - 1);
   });
 });
 
