@@ -26,7 +26,7 @@ import {
 } from "@/lib/hooks";
 import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
-import { cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
+import { addDays, cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
 import {
   useFrenchWeeklyAccuracy,
   useVocabMastery,
@@ -47,6 +47,51 @@ function mdTick(iso: string): string {
   return `${m}/${d}`;
 }
 
+function weekRange(points: { week_start: string }[]): string {
+  if (points.length === 0) return "";
+  const first = points[0].week_start;
+  const last = addDays(points[points.length - 1].week_start, 6);
+  return `${mdTick(first)} – ${mdTick(last)}`;
+}
+
+function dayRange(points: { date: string }[]): string {
+  if (points.length === 0) return "";
+  return `${mdTick(points[0].date)} – ${mdTick(points[points.length - 1].date)}`;
+}
+
+function ChartNav({
+  range,
+  canGoNext,
+  onPrev,
+  onNext,
+}: {
+  range: string;
+  canGoNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mb-1 flex items-center justify-between">
+      <button
+        onClick={onPrev}
+        aria-label="Earlier"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface2"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <div className="text-xs tabular-nums text-muted">{range}</div>
+      <button
+        onClick={onNext}
+        disabled={!canGoNext}
+        aria-label="Later"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface2 disabled:opacity-30"
+      >
+        <ChevronRight className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   Back: "#22d3ee",
   Chest: "#ef4444",
@@ -56,9 +101,17 @@ const CATEGORY_COLORS: Record<string, string> = {
 const FALLBACK_COLOR = "#8a8a8a";
 
 export default function Dashboard() {
-  const stats = useDashboardStats();
+  const [volumeOffset, setVolumeOffset] = useState(0);
+  const [dailyOffset, setDailyOffset] = useState(0);
+  const [weeklyHoursOffset, setWeeklyHoursOffset] = useState(0);
+  const [rollingOffset, setRollingOffset] = useState(0);
+  const stats = useDashboardStats(volumeOffset);
   const smokingLogs = useSmokingLogMap();
-  const timeStats = useTimeDashboardStats();
+  const timeStats = useTimeDashboardStats({
+    daily: dailyOffset,
+    weekly: weeklyHoursOffset,
+    rolling: rollingOffset,
+  });
   const frenchAccuracy = useFrenchWeeklyAccuracy();
   const vocabMastery = useVocabMastery();
   const masteryProgress = useVocabMasteryProgress();
@@ -136,6 +189,12 @@ export default function Dashboard() {
           Weekly volume · last 8 weeks
         </h2>
         <div className="rounded-2xl border border-line bg-surface p-3">
+          <ChartNav
+            range={weekRange(stats.weekly)}
+            canGoNext={volumeOffset < 0}
+            onPrev={() => setVolumeOffset((o) => o - 1)}
+            onNext={() => setVolumeOffset((o) => o + 1)}
+          />
           <WeeklyChart data={stats.weekly} categories={stats.categories.map((c) => c.name)} />
         </div>
       </section>
@@ -147,6 +206,12 @@ export default function Dashboard() {
               Hours logged per day · last 7 days
             </h2>
             <div className="rounded-2xl border border-line bg-surface p-3">
+              <ChartNav
+                range={dayRange(timeStats.daily)}
+                canGoNext={dailyOffset < 0}
+                onPrev={() => setDailyOffset((o) => o - 1)}
+                onNext={() => setDailyOffset((o) => o + 1)}
+              />
               <DailyHoursChart data={timeStats.daily} />
             </div>
           </section>
@@ -156,15 +221,27 @@ export default function Dashboard() {
               Weekly hours · last 8 weeks
             </h2>
             <div className="rounded-2xl border border-line bg-surface p-3">
+              <ChartNav
+                range={weekRange(timeStats.weekly)}
+                canGoNext={weeklyHoursOffset < 0}
+                onPrev={() => setWeeklyHoursOffset((o) => o - 1)}
+                onNext={() => setWeeklyHoursOffset((o) => o + 1)}
+              />
               <WeeklyHoursChart data={timeStats.weekly} />
             </div>
           </section>
 
           <section>
             <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
-              Rolling 7-day hours · through today
+              Rolling 7-day hours
             </h2>
             <div className="rounded-2xl border border-line bg-surface p-3">
+              <ChartNav
+                range={dayRange(timeStats.rolling)}
+                canGoNext={rollingOffset < 0}
+                onPrev={() => setRollingOffset((o) => o - 1)}
+                onNext={() => setRollingOffset((o) => o + 1)}
+              />
               <RollingHoursChart data={timeStats.rolling} />
             </div>
           </section>

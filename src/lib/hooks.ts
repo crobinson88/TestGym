@@ -253,7 +253,12 @@ export interface DashboardStats {
   weekly: WeekVolumePoint[];
 }
 
-export function useDashboardStats(): DashboardStats | undefined {
+const WEEKS_BACK = 8;
+
+// weekOffset shifts the weekly-volume chart window by whole weeks (0 = current,
+// negative = earlier). Only the `weekly` series moves; the tiles stay anchored
+// to the real today.
+export function useDashboardStats(weekOffset = 0): DashboardStats | undefined {
   return useLiveQuery(async () => {
     const [allSets, allCats] = await Promise.all([
       db.sets.toArray(),
@@ -315,9 +320,10 @@ export function useDashboardStats(): DashboardStats | undefined {
     const thisWeek = weekStats(thisWeekStart);
     const lastWeek = weekStats(addDays(thisWeekStart, -7));
 
+    const anchorWeekStart = addDays(thisWeekStart, weekOffset * 7);
     const weekly: WeekVolumePoint[] = [];
-    for (let i = 7; i >= 0; i--) {
-      const ws = addDays(thisWeekStart, -i * 7);
+    for (let i = WEEKS_BACK - 1; i >= 0; i--) {
+      const ws = addDays(anchorWeekStart, -i * 7);
       const we = addDays(ws, 7);
       const point: WeekVolumePoint = { week_start: ws, total: 0, byCategory: {} };
       for (const cat of cats) point.byCategory[cat.name] = 0;
@@ -348,7 +354,7 @@ export function useDashboardStats(): DashboardStats | undefined {
       categories: cats.map((c) => ({ id: c.id, name: c.name })),
       weekly,
     };
-  }, []);
+  }, [weekOffset]);
 }
 
 export function useExerciseStats(exerciseId?: string): ExerciseStats | null | undefined {

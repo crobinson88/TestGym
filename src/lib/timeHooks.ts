@@ -32,34 +32,58 @@ export interface TimeDashboardStats {
   daily: HoursPoint[];
 }
 
-export function useTimeDashboardStats(): TimeDashboardStats | undefined {
+// Each chart's window can be shifted independently: `daily`/`rolling` step by
+// whole days, `weekly` steps by whole weeks. 0 = current, negative = earlier.
+export interface TimeWindowOffsets {
+  daily?: number;
+  weekly?: number;
+  rolling?: number;
+}
+
+export function useTimeDashboardStats(
+  offsets: TimeWindowOffsets = {},
+): TimeDashboardStats | undefined {
+  const dailyOffset = offsets.daily ?? 0;
+  const weeklyOffset = offsets.weekly ?? 0;
+  const rollingOffset = offsets.rolling ?? 0;
   return useLiveQuery(async () => {
     const today = todayIsoDate();
-    const thisWeekStart = weekStart(today);
-    const firstWeekStart = addDays(thisWeekStart, -(WEEKS_BACK - 1) * 7);
-    const rollingStart = addDays(today, -(ROLLING_SPAN_DAYS - 1));
+    const dailyAnchor = addDays(today, dailyOffset);
+    const rollingAnchor = addDays(today, rollingOffset);
+    const anchorWeekStart = addDays(weekStart(today), weeklyOffset * 7);
+
+    const firstWeekStart = addDays(anchorWeekStart, -(WEEKS_BACK - 1) * 7);
+    const rollingStart = addDays(rollingAnchor, -(ROLLING_SPAN_DAYS - 1));
     const rollingFetchStart = addDays(rollingStart, -(ROLLING_WINDOW_DAYS - 1));
-    const earliest = firstWeekStart < rollingFetchStart ? firstWeekStart : rollingFetchStart;
+    const dailyStart = addDays(dailyAnchor, -(DAILY_SPAN_DAYS - 1));
+    const earliest = [firstWeekStart, rollingFetchStart, dailyStart].reduce((a, b) =>
+      a < b ? a : b,
+    );
+    // Windows never extend past today (next is disabled at offset 0), but derive
+    // the upper bound defensively so a future offset would still fetch.
+    const latest = [today, dailyAnchor, rollingAnchor, addDays(anchorWeekStart, 6)].reduce((a, b) =>
+      a > b ? a : b,
+    );
 
     const allocs = (
-      await db.timeAllocations.where("date").between(earliest, today, true, true).toArray()
+      await db.timeAllocations.where("date").between(earliest, latest, true, true).toArray()
     ).filter(live);
     const perDay = hoursPerDay(allocs);
 
     const weekStarts: string[] = [];
-    for (let i = WEEKS_BACK - 1; i >= 0; i--) weekStarts.push(addDays(thisWeekStart, -i * 7));
+    for (let i = WEEKS_BACK - 1; i >= 0; i--) weekStarts.push(addDays(anchorWeekStart, -i * 7));
     const weekly = weeklyHours(perDay, weekStarts);
 
     const rollingDates: string[] = [];
-    for (let i = ROLLING_SPAN_DAYS - 1; i >= 0; i--) rollingDates.push(addDays(today, -i));
+    for (let i = ROLLING_SPAN_DAYS - 1; i >= 0; i--) rollingDates.push(addDays(rollingAnchor, -i));
     const rolling = rollingHours(perDay, rollingDates, ROLLING_WINDOW_DAYS);
 
     const dailyDates: string[] = [];
-    for (let i = DAILY_SPAN_DAYS - 1; i >= 0; i--) dailyDates.push(addDays(today, -i));
+    for (let i = DAILY_SPAN_DAYS - 1; i >= 0; i--) dailyDates.push(addDays(dailyAnchor, -i));
     const daily = dailyHours(perDay, dailyDates);
 
     return { weekly, rolling, daily };
-  }, []);
+  }, [dailyOffset, weeklyOffset, rollingOffset]);
 }
 
 export function useTimeTasks() {
