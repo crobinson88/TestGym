@@ -9,10 +9,10 @@ export async function fetchSentences(
   wordsPerRound: number,
   token: string | undefined,
 ): Promise<GeneratedSentence[]> {
-  const res = await fetch("/api/french-sentences", {
+  const res = await fetch("/api/french-chat", {
     method: "POST",
     headers: { Authorization: `Bearer ${token ?? ""}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ words, count, wordsPerRound }),
+    body: JSON.stringify({ action: "sentences", words, count, wordsPerRound }),
   });
   const text = await res.text();
   let parsed: { sentences?: GeneratedSentence[]; error?: string } | null;
