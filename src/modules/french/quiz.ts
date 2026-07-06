@@ -374,6 +374,47 @@ export function makeListeningOrderingQuestion(
   };
 }
 
+// An AI-generated French sentence for a multi-word listening round: the spoken
+// text, its English gloss, and its words in spoken order (the sequence the learner
+// rebuilds). Sentences are built server-side from the learner's mastered words.
+export interface GeneratedSentence {
+  fr: string;
+  en: string;
+  words: string[];
+}
+
+// Build a listening word-ordering question from a generated sentence. The learner
+// rebuilds `sentence.words` in order from a bank of those words plus decoys drawn
+// from `distractorPool` (their mastered vocabulary). Carries the `phrase:` id prefix
+// so it stays out of the per-word spaced-repetition schedule, like any multi-word
+// round.
+export function makeSentenceQuestion(
+  sentence: GeneratedSentence,
+  distractorPool: readonly string[],
+  rng: Rng,
+): Question {
+  const sequence = sentence.words;
+  const used = new Set(sequence.map((s) => s.toLowerCase()));
+  const distractors: string[] = [];
+  for (const d of shuffle(distractorPool, rng)) {
+    const key = d.toLowerCase();
+    if (used.has(key)) continue;
+    used.add(key);
+    distractors.push(d);
+    if (distractors.length >= LISTENING_ORDER_DISTRACTORS) break;
+  }
+  return {
+    id: `phrase:${sentence.fr}`,
+    prompt: sentence.fr,
+    sub: `Build the sentence you heard (${sequence.length} words)`,
+    choices: shuffle([...sequence, ...distractors], rng),
+    answer: 0, // unused — ordering questions grade against `sequence`
+    sequence,
+    explanation: `${sentence.fr} — ${sentence.en}`,
+    audioText: sentence.fr,
+  };
+}
+
 export function generateListeningTest(
   pool: readonly VocabWord[],
   {

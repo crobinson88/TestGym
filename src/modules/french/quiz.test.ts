@@ -14,6 +14,7 @@ import {
   makeConjugationQuestion,
   makeListeningOrderingQuestion,
   makeRuleQuestion,
+  makeSentenceQuestion,
   makeVocabQuestion,
   normalizeAnswer,
   selectVocab,
@@ -346,6 +347,27 @@ describe("listening test", () => {
     });
     expect(test.every((q) => q.id !== "listen:être")).toBe(true);
     expect(test).toHaveLength(VOCAB.length - 1);
+  });
+});
+
+describe("makeSentenceQuestion", () => {
+  it("builds an ordering question from a generated sentence", () => {
+    const sentence = {
+      fr: "Le chien est grand",
+      en: "The dog is big",
+      words: ["le chien", "est", "grand"],
+    };
+    const q = makeSentenceQuestion(sentence, ["vite", "la maison", "le chien"], lcg(1));
+    expect(q.id).toBe("phrase:Le chien est grand"); // phrase: prefix keeps it out of SR
+    expect(q.audioText).toBe("Le chien est grand"); // the sentence is spoken
+    expect(q.sequence).toEqual(["le chien", "est", "grand"]); // the order heard
+    expect(q.sub).toBe("Build the sentence you heard (3 words)");
+    for (const w of q.sequence!) expect(q.choices).toContain(w);
+    expect(new Set(q.choices).size).toBe(q.choices.length); // no duplicate bank words
+    // A spoken word must not also be added as a decoy.
+    expect(q.choices.filter((c) => c === "le chien")).toHaveLength(1);
+    expect(q.choices.length).toBeGreaterThan(q.sequence!.length); // decoys added
+    expect(q.explanation).toBe("Le chien est grand — The dog is big");
   });
 });
 

@@ -1,24 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { Question } from "../quiz";
 import TestRunner from "./TestRunner";
-
-// A fixed 2-word listening/ordering question: bank of the two spoken words plus
-// one decoy, correct build is "le chien" then "grand".
-const ORDER_Q: Question = {
-  id: "phrase:le chien grand",
-  prompt: "le chien grand",
-  sub: "Build the phrase you heard (2 words)",
-  choices: ["grand", "le chien", "vite"],
-  answer: 0,
-  sequence: ["le chien", "grand"],
-  explanation: "le chien grand — dog · big",
-  audioText: "le chien grand",
-};
 
 const navigate = vi.fn();
 const addFrenchAttempt = vi.fn().mockResolvedValue(undefined);
+const fetchSentences = vi.fn();
 
+// words=2 → multi-word listening, which now generates a sentence server-side.
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ kind: "listening" }),
   useSearchParams: () => [new URLSearchParams("n=1&words=2&speed=normal")],
@@ -30,7 +18,17 @@ vi.mock("../hooks", () => ({
   useListeningSchedules: () => new Map(),
   useVocabSchedules: () => new Map(),
   useVocabHistory: () => new Map(),
-  useMasteredVocab: () => [{ rank: 1, fr: "le chien", en: "dog", pos: "noun", gender: "m" }],
+  useMasteredVocab: () => [
+    { rank: 1, fr: "le chien", en: "dog", pos: "noun", gender: "m" },
+    { rank: 2, fr: "grand", en: "big", pos: "adjective" },
+    { rank: 3, fr: "vite", en: "fast", pos: "adverb" },
+  ],
+}));
+
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ session: { access_token: "tok" } }) }));
+
+vi.mock("../sentences", () => ({
+  fetchSentences: (...a: unknown[]) => fetchSentences(...a),
 }));
 
 vi.mock("../speech", () => ({
@@ -42,22 +40,22 @@ vi.mock("@/lib/sync", () => ({
   syncEngine: { mutations: { addFrenchAttempt: (...a: unknown[]) => addFrenchAttempt(...a) } },
 }));
 
-vi.mock("../quiz", async (importActual) => {
-  const actual = await importActual<typeof import("../quiz")>();
-  return { ...actual, generateTest: () => [{ ...ORDER_Q }] };
-});
-
 beforeEach(() => {
   navigate.mockReset();
   addFrenchAttempt.mockReset();
   addFrenchAttempt.mockResolvedValue(undefined);
+  fetchSentences.mockReset();
+  fetchSentences.mockResolvedValue([
+    { fr: "le chien grand", en: "the big dog", words: ["le chien", "grand"] },
+  ]);
 });
 
-describe("TestRunner — listening word-ordering", () => {
-  it("marks a phrase correct only when the words are built in the order heard", async () => {
+describe("TestRunner — listening sentence ordering", () => {
+  it("marks a sentence correct only when rebuilt in the order heard", async () => {
     render(<TestRunner />);
+    // The word bank appears once the sentence has been generated.
+    await screen.findByRole("button", { name: "le chien" });
 
-    // Check is disabled until every slot is filled.
     expect(screen.getByRole("button", { name: "Check" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "le chien" }));
@@ -76,8 +74,9 @@ describe("TestRunner — listening word-ordering", () => {
     );
   });
 
-  it("marks a phrase wrong when the words are out of order and reveals the answer", async () => {
+  it("marks a sentence wrong when out of order and reveals the answer", async () => {
     render(<TestRunner />);
+    await screen.findByRole("button", { name: "grand" });
 
     // Right words, wrong order.
     fireEvent.click(screen.getByRole("button", { name: "grand" }));
@@ -91,5 +90,13 @@ describe("TestRunner — listening word-ordering", () => {
     expect(addFrenchAttempt).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "listening", total: 1, correct: 0 }),
     );
+  });
+
+  it("surfaces an error with a retry when generation fails", async () => {
+    fetchSentences.mockReset();
+    fetchSentences.mockRejectedValueOnce(new Error("boom"));
+    render(<TestRunner />);
+    await screen.findByText("boom");
+    expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
   });
 });
