@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, ChevronRight, RotateCcw, Sparkles, Volume2, X } from "lucide-react";
+import { Check, ChevronRight, Loader2, RotateCcw, Sparkles, Volume2, X } from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
+import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay, todayIsoDate } from "@/lib/utils";
 import {
   checkOrder,
   checkTypedAnswer,
   clampCount,
+  clampStudyMode,
   clampWordsPerRound,
   generateTest,
   KIND_LABELS,
+  makeSentenceQuestion,
   speedRate,
   type Question,
   type VocabDirection,
@@ -18,7 +21,13 @@ import {
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 import { CONJ_VERBS } from "../data/conjugations";
-import { useListeningSchedules, useVocabHistory, useVocabSchedules } from "../hooks";
+import {
+  useListeningSchedules,
+  useMasteredVocab,
+  useVocabHistory,
+  useVocabSchedules,
+} from "../hooks";
+import { fetchSentences } from "../sentences";
 import { cancelSpeech, speakFrench } from "../speech";
 import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
@@ -72,6 +81,9 @@ export default function TestRunner() {
   // Listening only: words spoken per round (>1 = multi-word phrase rounds).
   const wordsPerRound = clampWordsPerRound(Number(searchParams.get("words")));
 
+  // Which slice of the pool to draw: mixed / review / new. Listening only in the UI.
+  const mode = clampStudyMode(searchParams.get("mode"));
+
   // Playback rate for the listening test (1 = normal); ignored by other kinds.
   const rate = speedRate(searchParams.get("speed"));
 
@@ -84,20 +96,71 @@ export default function TestRunner() {
   const needsSchedule = kind === "vocab" || kind === "listening";
   const schedulesReady = !needsSchedule || schedules !== undefined;
 
-  // Built once the schedule is ready, then frozen for the run — the attempts table
-  // isn't written until the test finishes, so the schedule won't shift mid-test.
-  // `schedulesReady` (not the map identity) gates the one-time build.
-  const questions = useMemo<Question[]>(() => {
-    if (!isKind(kind) || !schedulesReady) return [];
-    return generateTest(kind, VOCAB, RULE_QUESTIONS, CONJ_VERBS, {
+  // Listening draws only from words already mastered in the written vocab tests.
+  const masteredPool = useMasteredVocab();
+  const needsMastered = kind === "listening";
+  const masteredReady = !needsMastered || masteredPool !== undefined;
+  const ready = schedulesReady && masteredReady;
+
+  // Multi-word listening rounds are natural French sentences generated server-side
+  // from the learner's mastered words — fetched async, not built from static data.
+  const sentenceMode = kind === "listening" && wordsPerRound > 1;
+
+  const { session } = useAuth();
+  const token = session?.access_token;
+
+  // Sentence rounds, once generated; undefined while generating, error string on
+  // failure. Bumping `genNonce` re-runs the fetch (retry / "another test").
+  const [sentenceQuestions, setSentenceQuestions] = useState<Question[] | undefined>(undefined);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [genNonce, setGenNonce] = useState(0);
+
+  useEffect(() => {
+    if (!sentenceMode || !masteredReady || !token) return;
+    const pool = masteredPool ?? [];
+    if (pool.length === 0) {
+      setGenError("Master some words in the vocab tests first.");
+      return;
+    }
+    let cancelled = false;
+    setSentenceQuestions(undefined);
+    setGenError(null);
+    const distractors = pool.map((w) => w.fr);
+    (async () => {
+      try {
+        const sentences = await fetchSentences(distractors, count, wordsPerRound, token);
+        if (cancelled) return;
+        setSentenceQuestions(sentences.map((s) => makeSentenceQuestion(s, distractors, Math.random)));
+      } catch (e) {
+        if (cancelled) return;
+        setGenError(e instanceof Error ? e.message : "Sentence generation failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentenceMode, masteredReady, token, count, wordsPerRound, genNonce]);
+
+  // Static (non-sentence) tests are built once the pool + schedule are ready, then
+  // frozen for the run — the attempts table isn't written until the test finishes,
+  // so selection won't shift mid-test. `ready` (not the map/array identity) gates
+  // the one-time build. Sentence rounds come from `sentenceQuestions` instead.
+  const syncQuestions = useMemo<Question[]>(() => {
+    if (!isKind(kind) || !ready || sentenceMode) return [];
+    const pool = kind === "listening" ? (masteredPool ?? []) : VOCAB;
+    return generateTest(kind, pool, RULE_QUESTIONS, CONJ_VERBS, {
       count,
       direction,
       wordsPerRound,
+      mode,
       schedules: needsSchedule ? schedules : undefined,
       now: todayIsoDate(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, direction, count, wordsPerRound, schedulesReady]);
+  }, [kind, direction, count, wordsPerRound, mode, ready, sentenceMode]);
+
+  const questions = sentenceMode ? (sentenceQuestions ?? []) : syncQuestions;
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());
 
@@ -128,12 +191,43 @@ export default function TestRunner() {
   }, [index, finished, questions]);
 
   if (!isKind(kind)) return <Navigate to="/french" replace />;
-  if (!schedulesReady) {
+  if (!ready) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center text-sm text-muted">
         Loading…
       </div>
     );
+  }
+  if (sentenceMode) {
+    if (genError) {
+      return (
+        <div className="flex min-h-[70vh] flex-col items-center justify-center gap-5 p-6 text-center">
+          <div className="text-sm text-warn">{genError}</div>
+          <div className="flex w-full max-w-xs flex-col gap-3">
+            <button
+              onClick={() => setGenNonce((n) => n + 1)}
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent font-semibold text-bg transition active:scale-[0.98]"
+            >
+              <RotateCcw className="h-5 w-5" /> Try again
+            </button>
+            <button
+              onClick={() => navigate("/french")}
+              className="flex h-12 items-center justify-center rounded-2xl border border-line bg-surface font-semibold transition active:scale-[0.98]"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      );
+    }
+    if (sentenceQuestions === undefined) {
+      return (
+        <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 text-sm text-muted">
+          <Loader2 className="h-6 w-6 animate-spin text-accent" />
+          Writing sentences from your mastered words…
+        </div>
+      );
+    }
   }
   if (questions.length === 0) return <Navigate to="/french" replace />;
 

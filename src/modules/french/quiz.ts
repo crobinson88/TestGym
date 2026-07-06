@@ -85,6 +85,25 @@ export type VocabDirection = "fr2en" | "en2fr" | "mixed";
 // graded leniently (accents/case/punctuation ignored). Chosen before the test.
 export type VocabAnswerMode = "choice" | "type";
 
+// Which slice of the pool a spaced-repetition test draws from.
+//   mixed  = the default blend of due reviews topped up with new words;
+//   review = only words already due for review (no new words);
+//   new    = only words never seen before (no reviews).
+// Surfaced on the listening test so the learner can drill just their backlog or
+// just fresh material.
+export type StudyMode = "mixed" | "review" | "new";
+
+export const STUDY_MODES: { value: StudyMode; label: string }[] = [
+  { value: "mixed", label: "Mixed" },
+  { value: "review", label: "Review" },
+  { value: "new", label: "New" },
+];
+
+// Coerce a (possibly user-supplied) mode string to a StudyMode, defaulting to mixed.
+export function clampStudyMode(s: string | null | undefined): StudyMode {
+  return s === "review" || s === "new" ? s : "mixed";
+}
+
 // Normalise a string for typed-answer grading: strip accents, lowercase, drop
 // parenthetical qualifiers ("(m)", "(negation)"), and collapse punctuation so
 // only words and "/" alternative separators remain.
@@ -128,6 +147,9 @@ export interface GenerateOptions {
   now?: string;
   // Listening only: words spoken per round. >1 builds multi-word phrase questions.
   wordsPerRound?: number;
+  // Restrict spaced-repetition selection to due reviews only, or new words only.
+  // Requires `schedules`; ignored by the plain-sample fallback. Defaults to mixed.
+  mode?: StudyMode;
 }
 
 // Fisher-Yates, parameterised on the rng so tests are deterministic.
@@ -224,12 +246,17 @@ export const NEW_WORD_RATIO = 0.3;
 //   5. mastered words — least-recently-seen, only to pad a tiny pool.
 // Equal-priority words are shuffled (stable sort preserves the shuffle) so repeat
 // sessions don't replay the same order. `now` is today's date for due-ness.
+//
+// `mode` narrows the selection: "review" keeps only words already due (backlog
+// drill), "new" keeps only never-seen words, and "mixed" (the default) blends the
+// two as described above.
 export function selectVocab(
   pool: readonly VocabWord[],
   count: number,
   rng: Rng,
   schedules: Map<string, VocabSchedule>,
   now: string,
+  mode: StudyMode = "mixed",
 ): VocabWord[] {
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const due: { w: VocabWord; s: VocabSchedule }[] = [];
@@ -257,6 +284,11 @@ export function selectVocab(
   mastered.sort((a, b) => cmp(a.s.lastShownAt, b.s.lastShownAt));
 
   const target = Math.min(count, pool.length);
+
+  // Single-slice modes: hand back just the due backlog, or just fresh words.
+  if (mode === "review") return due.map((x) => x.w).slice(0, target);
+  if (mode === "new") return fresh.slice(0, target);
+
   // Reserve new-word slots only when there are new words to learn; cap the review
   // block so those slots survive a backlog that would otherwise fill the test.
   const newReserve = Math.min(fresh.length, Math.round(target * NEW_WORD_RATIO));
@@ -277,10 +309,17 @@ export function selectVocab(
 
 export function generateVocabTest(
   pool: readonly VocabWord[],
-  { count = TEST_SIZE, rng = Math.random, direction = "mixed", schedules, now }: GenerateOptions = {},
+  {
+    count = TEST_SIZE,
+    rng = Math.random,
+    direction = "mixed",
+    schedules,
+    now,
+    mode = "mixed",
+  }: GenerateOptions = {},
 ): Question[] {
   const words = schedules
-    ? selectVocab(pool, count, rng, schedules, now ?? todayIsoDate())
+    ? selectVocab(pool, count, rng, schedules, now ?? todayIsoDate(), mode)
     : sample(pool, count, rng);
   return words.map((w) => {
     const dir: Direction = direction === "mixed" ? (rng() < 0.5 ? "fr2en" : "en2fr") : direction;
@@ -335,13 +374,61 @@ export function makeListeningOrderingQuestion(
   };
 }
 
+// An AI-generated French sentence for a multi-word listening round: the spoken
+// text, its English gloss, and its words in spoken order (the sequence the learner
+// rebuilds). Sentences are built server-side from the learner's mastered words.
+export interface GeneratedSentence {
+  fr: string;
+  en: string;
+  words: string[];
+}
+
+// Build a listening word-ordering question from a generated sentence. The learner
+// rebuilds `sentence.words` in order from a bank of those words plus decoys drawn
+// from `distractorPool` (their mastered vocabulary). Carries the `phrase:` id prefix
+// so it stays out of the per-word spaced-repetition schedule, like any multi-word
+// round.
+export function makeSentenceQuestion(
+  sentence: GeneratedSentence,
+  distractorPool: readonly string[],
+  rng: Rng,
+): Question {
+  const sequence = sentence.words;
+  const used = new Set(sequence.map((s) => s.toLowerCase()));
+  const distractors: string[] = [];
+  for (const d of shuffle(distractorPool, rng)) {
+    const key = d.toLowerCase();
+    if (used.has(key)) continue;
+    used.add(key);
+    distractors.push(d);
+    if (distractors.length >= LISTENING_ORDER_DISTRACTORS) break;
+  }
+  return {
+    id: `phrase:${sentence.fr}`,
+    prompt: sentence.fr,
+    sub: `Build the sentence you heard (${sequence.length} words)`,
+    choices: shuffle([...sequence, ...distractors], rng),
+    answer: 0, // unused — ordering questions grade against `sequence`
+    sequence,
+    explanation: `${sentence.fr} — ${sentence.en}`,
+    audioText: sentence.fr,
+  };
+}
+
 export function generateListeningTest(
   pool: readonly VocabWord[],
-  { count = TEST_SIZE, rng = Math.random, schedules, now, wordsPerRound }: GenerateOptions = {},
+  {
+    count = TEST_SIZE,
+    rng = Math.random,
+    schedules,
+    now,
+    wordsPerRound,
+    mode = "mixed",
+  }: GenerateOptions = {},
 ): Question[] {
   const perRound = clampWordsPerRound(wordsPerRound);
   const pick = (n: number) =>
-    schedules ? selectVocab(pool, n, rng, schedules, now ?? todayIsoDate()) : sample(pool, n, rng);
+    schedules ? selectVocab(pool, n, rng, schedules, now ?? todayIsoDate(), mode) : sample(pool, n, rng);
 
   if (perRound <= 1) {
     return pick(count).map((w) => makeListeningOrderingQuestion([w], pool, rng));

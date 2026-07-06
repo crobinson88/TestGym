@@ -13,16 +13,23 @@ import {
 } from "lucide-react";
 import type { FrenchTestKind } from "@/lib/database.types";
 import { cn, relativeDay } from "@/lib/utils";
-import { useFrenchStats, useListeningDueCount, useVocabDueCount } from "../hooks";
+import {
+  useFrenchStats,
+  useListeningDueCount,
+  useMasteredVocab,
+  useVocabDueCount,
+} from "../hooks";
 import { pct, type KindStats } from "../stats";
 import {
   KIND_LABELS,
   LISTENING_SIZES,
   LISTENING_SPEEDS,
   LISTENING_WORDS_PER_ROUND,
+  STUDY_MODES,
   TEST_SIZE,
   TEST_SIZES,
   type ListeningSpeed,
+  type StudyMode,
   type VocabAnswerMode,
   type VocabDirection,
 } from "../quiz";
@@ -72,12 +79,18 @@ export default function FrenchHome() {
   const stats = useFrenchStats();
   const dueCount = useVocabDueCount();
   const listenDue = useListeningDueCount();
+  const mastered = useMasteredVocab();
   const [dir, setDir] = useState<VocabDirection>("mixed");
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
   const [count, setCount] = useState<number>(TEST_SIZE);
   const [listenCount, setListenCount] = useState<number>(10);
   const [wordsPerRound, setWordsPerRound] = useState<number>(1);
   const [speed, setSpeed] = useState<ListeningSpeed>("normal");
+  const [listenMode, setListenMode] = useState<StudyMode>("mixed");
+
+  // Listening only speaks words already mastered in the written vocab tests.
+  const masteredCount = mastered?.length ?? 0;
+  const canListen = mastered === undefined || masteredCount > 0;
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -189,23 +202,56 @@ export default function FrenchHome() {
           <button
             onClick={() =>
               navigate(
-                `/french/test/listening?n=${listenCount}&words=${wordsPerRound}&speed=${speed}`,
+                `/french/test/listening?n=${listenCount}&words=${wordsPerRound}&speed=${speed}&mode=${listenMode}`,
               )
             }
-            className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+            disabled={!canListen}
+            className={cn(
+              "flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]",
+              !canListen && "opacity-50",
+            )}
           >
             <Headphones className="h-7 w-7 shrink-0 text-accent" />
             <div>
               <div className="text-lg font-semibold">Listening test</div>
               <div className="text-sm text-muted">
-                {wordsPerRound > 1
-                  ? `Hear a ${wordsPerRound}-word phrase, rebuild it in order · ${listenCount} per test`
-                  : listenDue
-                    ? `${listenDue} due for review · ${listenCount} per test`
-                    : `Hear ${listenCount} French word${listenCount === 1 ? "" : "s"}, pick what you heard`}
+                {!canListen
+                  ? "Master words in vocab tests to unlock listening"
+                  : wordsPerRound > 1
+                    ? `Hear a ~${wordsPerRound}-word sentence built from your mastered words · ${listenCount} per test`
+                    : listenMode === "new"
+                      ? `New mastered words · ${listenCount} per test`
+                      : listenMode === "review"
+                        ? `${listenDue} due for review · ${listenCount} per test`
+                        : listenDue
+                          ? `${listenDue} due for review · ${listenCount} per test`
+                          : `Hear ${listenCount} of ${masteredCount} mastered word${masteredCount === 1 ? "" : "s"}`}
               </div>
             </div>
           </button>
+          {wordsPerRound > 1 ? (
+            <p className="px-1 text-xs text-muted">
+              Sentences are generated from words you’ve mastered, spoken for you to rebuild in order.
+            </p>
+          ) : (
+            <div className="flex gap-2" role="group" aria-label="Listening word selection">
+              {STUDY_MODES.map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => setListenMode(m.value)}
+                  aria-pressed={listenMode === m.value}
+                  className={cn(
+                    "flex-1 rounded-xl border px-2 py-2 text-sm font-medium transition",
+                    listenMode === m.value
+                      ? "border-accent bg-accent/15 text-accent"
+                      : "border-line bg-surface text-muted",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="space-y-1">
             <div className="px-1 text-xs uppercase tracking-wider text-muted">Rounds per test</div>
             <div className="flex gap-2" role="group" aria-label="Rounds per test">

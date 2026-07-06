@@ -7,6 +7,7 @@ import {
   computeVocabHistory,
   computeVocabSchedules,
   dueForReview,
+  masteredVocab,
   vocabMastery,
   vocabMasteryProgress,
   weeklyAccuracy,
@@ -52,6 +53,15 @@ export function useVocabDueCount() {
   return useLiveQuery(async () => {
     const all = await db.french_attempts.toArray();
     return dueForReview(computeVocabSchedules(all), todayIsoDate());
+  }, []);
+}
+
+// The mastered-word pool the listening test draws from — only words already
+// mastered in the written vocab tests. Undefined until the attempts load.
+export function useMasteredVocab() {
+  return useLiveQuery(async () => {
+    const all = await db.french_attempts.toArray();
+    return masteredVocab(all, VOCAB);
   }, []);
 }
 

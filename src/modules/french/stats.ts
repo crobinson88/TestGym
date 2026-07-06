@@ -1,5 +1,6 @@
 import type { FrenchAttemptRow, FrenchTestKind } from "@/lib/database.types";
 import { addDays, weekStart } from "@/lib/utils";
+import type { VocabWord } from "./data/vocab";
 
 export interface KindStats {
   kind: FrenchTestKind;
@@ -153,6 +154,20 @@ export const VOCAB_MASTERY_MIN_SEEN = 3;
 
 export function isMastered(h: VocabWordHistory): boolean {
   return h.seen >= VOCAB_MASTERY_MIN_SEEN && h.correct / h.seen > VOCAB_MASTERY_THRESHOLD;
+}
+
+// The subset of the study list the learner has mastered in the written vocab tests,
+// as full VocabWord records. This is the pool the listening test draws from, so you
+// only ever hear words you can already read. Preserves the pool's (rank) order.
+export function masteredVocab(
+  attempts: readonly FrenchAttemptRow[],
+  pool: readonly VocabWord[],
+): VocabWord[] {
+  const hist = computeVocabHistory(attempts);
+  return pool.filter((w) => {
+    const h = hist.get(w.fr);
+    return h ? isMastered(h) : false;
+  });
 }
 
 // Days until a word in each Leitner box is due for review again. A just-missed word
