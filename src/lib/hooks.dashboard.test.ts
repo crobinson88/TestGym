@@ -81,6 +81,33 @@ describe("useDashboardStats", () => {
     expect(lastWeek).toBeDefined();
   });
 
+  it("shifts the weekly window back by whole weeks with a negative offset", async () => {
+    const today = todayIsoDate();
+    const thisWeekStart = weekStart(today);
+    const nineDaysAgo = addDays(today, -9);
+    const back = makeCategory({ name: "Back", sort_order: 0 });
+    await db.categories.put({ ...back, sync_status: "synced" });
+    const exBack = makeExercise(back.id, { name: "Pull-up" });
+    await db.exercises.put({ ...exBack, sync_status: "synced" });
+    await db.sets.put({
+      ...makeSet(exBack.id, back.id, { weight: 100, reps: 10, performed_at: nineDaysAgo }),
+      sync_status: "synced" as const,
+      sync_attempts: 0,
+      sync_last_error: null,
+    });
+
+    const { result } = renderHook(() => useDashboardStats(-1));
+    await waitFor(() => expect(result.current).not.toBeUndefined());
+
+    const s = result.current!;
+    expect(s.weekly).toHaveLength(8);
+    // Window ends one week earlier than the current week.
+    expect(s.weekly[s.weekly.length - 1].week_start).toBe(addDays(thisWeekStart, -7));
+    // The set two weeks back now lands inside the shifted window.
+    const bucket = s.weekly.find((w) => w.week_start === weekStart(nineDaysAgo));
+    expect(bucket?.total).toBe(1000);
+  });
+
   it("handles an empty set table", async () => {
     const { result } = renderHook(() => useDashboardStats());
     await waitFor(() => expect(result.current).not.toBeUndefined());
