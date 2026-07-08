@@ -203,7 +203,7 @@ export default function Dashboard() {
         <>
           <section>
             <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">
-              Hours logged per day · last 7 days
+              Hours logged per day · last 14 days
             </h2>
             <div className="rounded-2xl border border-line bg-surface p-3">
               <ChartNav

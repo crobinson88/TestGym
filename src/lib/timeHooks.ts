@@ -15,7 +15,7 @@ import { addDays, todayIsoDate, weekStart } from "./utils";
 
 const ROLLING_WINDOW_DAYS = 7;
 const ROLLING_SPAN_DAYS = 56;
-const DAILY_SPAN_DAYS = 7;
+const DAILY_SPAN_DAYS = 14;
 const WEEKS_BACK = 8;
 
 function pokeOutbox() {
