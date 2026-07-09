@@ -186,6 +186,35 @@ describe("rollForward", () => {
     expect(next[0].priority_rank).toBe(3);
   });
 
+  it("carries the item's description (notes) forward", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", {
+        status: "open",
+        title: "Has a description",
+        notes: "Remember to ping Sam first",
+      }),
+    ]);
+    await rollForward("2026-05-27", "2026-05-28", { db });
+    const next = await listFor("2026-05-28");
+    expect(next).toHaveLength(1);
+    expect(next[0].notes).toBe("Remember to ping Sam first");
+  });
+
+  it("carries the description across multiple rolls", async () => {
+    await seed([
+      makeItem("2026-05-04", "follow_ups", {
+        status: "open",
+        title: "Long runner",
+        notes: "Carry me the whole way",
+      }),
+    ]);
+    await rollForward("2026-05-04", "2026-05-05", { db });
+    await rollForward("2026-05-05", "2026-05-06", { db });
+    const day6 = await listFor("2026-05-06");
+    expect(day6).toHaveLength(1);
+    expect(day6[0].notes).toBe("Carry me the whole way");
+  });
+
   it("is idempotent on repeated runs", async () => {
     await seed([
       makeItem("2026-05-27", "follow_ups", { status: "open", title: "Once" }),

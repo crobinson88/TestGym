@@ -69,7 +69,7 @@ export async function rollForward(
       snoozed_until: prev.is_recurring ? null : prev.snoozed_until,
       is_reluctant: prev.is_reluctant,
       reluctance_reason: prev.reluctance_reason,
-      notes: null,
+      notes: prev.notes,
       images: [],
       origin_item_id: prev.id,
       origin_snapshot_date: prev.origin_snapshot_date ?? prev.snapshot_date,
