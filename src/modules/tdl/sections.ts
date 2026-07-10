@@ -21,6 +21,19 @@ export const UNCATEGORISED: SectionConfig = {
   recurringSeeds: [],
 };
 
+// The Priorities board column is a virtual, read-only mirror of every ranked
+// item across the day (see selectPriorityItems). Its key is reserved and never
+// stored on an item — items keep their real section and appear here too.
+export const PRIORITIES_KEY = "__priorities__";
+
+export const PRIORITIES: SectionConfig = {
+  key: PRIORITIES_KEY,
+  label: "Priorities",
+  hasDueDate: true,
+  hasTimeEstimate: true,
+  recurringSeeds: [],
+};
+
 export function toSectionConfig(cat: LocalTdlCategory): SectionConfig {
   return {
     key: cat.key,

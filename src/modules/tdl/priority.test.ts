@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampRank, usedRanks, MAX_PRIORITY_RANK } from "./priority";
+import { clampRank, selectPriorityItems, usedRanks, MAX_PRIORITY_RANK } from "./priority";
 
 describe("clampRank", () => {
   it("passes through valid ranks", () => {
@@ -28,5 +28,21 @@ describe("usedRanks", () => {
       { priority_rank: 1 },
     ]);
     expect(taken).toEqual(new Set([1, 8]));
+  });
+});
+
+describe("selectPriorityItems", () => {
+  it("keeps only ranked items, ordered 1 → 10", () => {
+    const items = [
+      { id: "a", priority_rank: 3 },
+      { id: "b", priority_rank: null },
+      { id: "c", priority_rank: 1 },
+      { id: "d", priority_rank: 10 },
+    ];
+    expect(selectPriorityItems(items).map((i) => i.id)).toEqual(["c", "a", "d"]);
+  });
+
+  it("returns an empty list when nothing is ranked", () => {
+    expect(selectPriorityItems([{ priority_rank: null }])).toEqual([]);
   });
 });

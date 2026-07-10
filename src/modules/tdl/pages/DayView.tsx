@@ -14,6 +14,7 @@ import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
 import { useCategories } from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
+import { selectPriorityItems } from "../priority";
 import type { LocalTdlItem } from "../types";
 import {
   cycleStatus,
@@ -26,6 +27,7 @@ import {
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
 import { SectionColumn } from "../components/SectionColumn";
+import { PriorityColumn } from "../components/PriorityColumn";
 import { RollForwardButton } from "../components/RollForwardButton";
 
 export default function DayView() {
@@ -175,6 +177,10 @@ export default function DayView() {
       })
     : columns;
 
+  const priorityItems = selectPriorityItems(bundle.items).filter(matchesQuery);
+  const showPriorityColumn = !searching || priorityItems.length > 0;
+  const nothingMatches = searching && visibleColumns.length === 0 && priorityItems.length === 0;
+
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
       <DayHeader
@@ -203,11 +209,20 @@ export default function DayView() {
             <RollForwardButton fromDate={prev} toDate={date} />
           </div>
         )}
-        {searching && visibleColumns.length === 0 ? (
+        {nothingMatches ? (
           <div className="py-8 text-center text-sm text-muted">No tasks match “{query.trim()}”.</div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {showPriorityColumn && (
+                <PriorityColumn
+                  items={priorityItems}
+                  categories={categories}
+                  focusedId={focusedId}
+                  takenRanks={takenRanks}
+                  forceExpanded={searching}
+                />
+              )}
               {visibleColumns.map((cfg) => {
                 const lists = listsFor(cfg.key);
                 return (

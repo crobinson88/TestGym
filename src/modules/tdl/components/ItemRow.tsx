@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -37,26 +38,56 @@ import { isSnoozed } from "../snooze";
 import { ItemDetail } from "./ItemDetail";
 import { StatusPill } from "./StatusPill";
 
-export function ItemRow({
-  item,
-  categories,
-  focused,
-  takenRanks,
-}: {
+type SortableReturn = ReturnType<typeof useSortable>;
+
+interface DragBinding {
+  setNodeRef: SortableReturn["setNodeRef"];
+  style: CSSProperties;
+  attributes: SortableReturn["attributes"];
+  listeners: SortableReturn["listeners"];
+}
+
+interface ItemRowProps {
   item: LocalTdlItem;
   categories: SectionConfig[];
   focused?: boolean;
   takenRanks: Set<number>;
-}) {
+}
+
+// Draggable row for the category board columns.
+export function ItemRow(props: ItemRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-    data: { section: item.section, isRecurring: item.is_recurring },
+    id: props.item.id,
+    data: { section: props.item.section, isRecurring: props.item.is_recurring },
   });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
+  const drag: DragBinding = {
+    setNodeRef,
+    style: {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.4 : 1,
+    },
+    attributes,
+    listeners,
   };
+  return <ItemRowBase {...props} drag={drag} />;
+}
+
+// Read-only, non-draggable row for the virtual Priorities column. Rendering the
+// same item as a sortable in two places would collide on the dnd-kit id, so the
+// mirror deliberately skips useSortable and shows the rank badge in place of the
+// drag handle.
+export function StaticItemRow(props: ItemRowProps) {
+  return <ItemRowBase {...props} drag={null} />;
+}
+
+function ItemRowBase({
+  item,
+  categories,
+  focused,
+  takenRanks,
+  drag,
+}: ItemRowProps & { drag: DragBinding | null }) {
   const [editing, setEditing] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -72,8 +103,8 @@ export function ItemRow({
 
   return (
     <li
-      ref={setNodeRef}
-      style={style}
+      ref={drag ? drag.setNodeRef : undefined}
+      style={drag ? drag.style : undefined}
       data-item-id={item.id}
       className={cn(
         "group relative block w-full max-w-full min-w-0 border-b border-line/50 px-2 py-2 last:border-b-0",
@@ -83,15 +114,24 @@ export function ItemRow({
       )}
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
-      <button
-        {...attributes}
-        {...listeners}
-        className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
-        aria-label="Drag"
-        tabIndex={-1}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+      {drag ? (
+        <button
+          {...drag.attributes}
+          {...drag.listeners}
+          className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
+          aria-label="Drag"
+          tabIndex={-1}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      ) : (
+        <span
+          className="flex h-9 w-6 shrink-0 items-center justify-center text-sm font-semibold tabular-nums text-warn"
+          aria-hidden
+        >
+          {item.priority_rank}
+        </span>
+      )}
       {editingTime ? (
         <Input
           type="number"

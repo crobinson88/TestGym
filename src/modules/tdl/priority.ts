@@ -19,3 +19,14 @@ export function usedRanks(items: ReadonlyArray<{ priority_rank: number | null }>
   for (const i of items) if (i.priority_rank != null) out.add(i.priority_rank);
   return out;
 }
+
+// The ranked items for the Priorities board column: every item carrying a rank,
+// ordered 1 (most important) → 10. Ranks are unique within a day, so this is a
+// stable order.
+export function selectPriorityItems<T extends { priority_rank: number | null }>(
+  items: readonly T[],
+): T[] {
+  return items
+    .filter((i) => i.priority_rank != null)
+    .sort((a, b) => (a.priority_rank as number) - (b.priority_rank as number));
+}
