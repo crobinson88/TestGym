@@ -20,6 +20,7 @@ import {
   cycleStatus,
   deleteItem,
   moveItem,
+  reorderPriorities,
   reorderSection,
   setPriorityRank,
   usedRanks,
@@ -28,6 +29,7 @@ import {
 import { DayHeader } from "../components/DayHeader";
 import { SectionColumn } from "../components/SectionColumn";
 import { PriorityColumn } from "../components/PriorityColumn";
+import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { RollForwardButton } from "../components/RollForwardButton";
 
 export default function DayView() {
@@ -104,6 +106,26 @@ export default function DayView() {
     const activeId = String(e.active.id);
     const overId = e.over ? String(e.over.id) : null;
     if (!overId || activeId === overId) return;
+
+    // Drags inside the Priorities column live in their own sortable namespace
+    // (prefixed ids). Reordering there rewrites ranks, not section positions.
+    const activeIsPriority = activeId.startsWith(PRIORITY_SORTABLE_PREFIX);
+    const overIsPriority = overId.startsWith(PRIORITY_SORTABLE_PREFIX);
+    if (activeIsPriority || overIsPriority) {
+      // Ignore drags that cross between the mirror and a real category column.
+      if (!activeIsPriority || !overIsPriority) return;
+      const activeReal = activeId.slice(PRIORITY_SORTABLE_PREFIX.length);
+      const overReal = overId.slice(PRIORITY_SORTABLE_PREFIX.length);
+      const order = selectPriorityItems(bundle.items).map((i) => i.id);
+      const from = order.indexOf(activeReal);
+      const to = order.indexOf(overReal);
+      if (from === -1 || to === -1) return;
+      order.splice(from, 1);
+      order.splice(to, 0, activeReal);
+      void reorderPriorities(date, order);
+      return;
+    }
+
     const activeItem = bundle.items.find((i) => i.id === activeId);
     if (!activeItem) return;
     const overItem = bundle.items.find((i) => i.id === overId);

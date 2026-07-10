@@ -147,7 +147,7 @@ export async function cycleStatus(id: string): Promise<LocalTdlItem | null> {
   return updateItem(id, { status: nextStatus(existing.section, existing.status) });
 }
 
-import { MAX_PRIORITY_RANK, clampRank, usedRanks } from "./priority";
+import { MAX_PRIORITY_RANK, clampRank, reorderedRankAssignments, usedRanks } from "./priority";
 export { MAX_PRIORITY_RANK, clampRank, usedRanks };
 
 export async function setPriorityRank(
@@ -182,6 +182,37 @@ export async function setPriorityRank(
     }
   }
   return updateItem(id, { priority_rank: clamped });
+}
+
+// Reorder the ranked items for a day given their new visual order (the ids of
+// every currently-ranked item, top → bottom). Keeps the existing set of rank
+// values and shuffles them to match the new order — dragging a task up gives it
+// a smaller (more important) rank. Unranked items are ignored.
+export async function reorderPriorities(
+  snapshot_date: string,
+  orderedIds: string[],
+): Promise<void> {
+  const rows = await Promise.all(orderedIds.map((id) => db.tdl_items.get(id)));
+  const items = rows.filter(
+    (r): r is LocalTdlItem =>
+      !!r && !r.deleted_at && r.snapshot_date === snapshot_date && r.priority_rank != null,
+  );
+  const assignments = reorderedRankAssignments(items);
+  if (assignments.length === 0) return;
+  const ts = nowIso();
+  await db.transaction("rw", db.tdl_items, async () => {
+    for (const { id, rank } of assignments) {
+      const existing = await db.tdl_items.get(id);
+      if (!existing) continue;
+      await db.tdl_items.put({
+        ...existing,
+        priority_rank: rank,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
+  });
+  pokeOutbox();
 }
 
 // Flag an item as one we don't want to do (but still need to). Clearing the

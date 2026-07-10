@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { clampRank, selectPriorityItems, usedRanks, MAX_PRIORITY_RANK } from "./priority";
+import {
+  clampRank,
+  reorderedRankAssignments,
+  selectPriorityItems,
+  usedRanks,
+  MAX_PRIORITY_RANK,
+} from "./priority";
 
 describe("clampRank", () => {
   it("passes through valid ranks", () => {
@@ -44,5 +50,43 @@ describe("selectPriorityItems", () => {
 
   it("returns an empty list when nothing is ranked", () => {
     expect(selectPriorityItems([{ priority_rank: null }])).toEqual([]);
+  });
+});
+
+describe("reorderedRankAssignments", () => {
+  // Ranks in use: 1, 3, 7. Original order c(1), a(3), d(7). Drag d to the top.
+  it("reassigns the existing rank values by new position", () => {
+    const newOrder = [
+      { id: "d", priority_rank: 7 },
+      { id: "c", priority_rank: 1 },
+      { id: "a", priority_rank: 3 },
+    ];
+    expect(reorderedRankAssignments(newOrder)).toEqual([
+      { id: "d", rank: 1 },
+      { id: "c", rank: 3 },
+      { id: "a", rank: 7 },
+    ]);
+  });
+
+  it("returns nothing when the order is unchanged", () => {
+    const order = [
+      { id: "c", priority_rank: 1 },
+      { id: "a", priority_rank: 3 },
+      { id: "d", priority_rank: 7 },
+    ];
+    expect(reorderedRankAssignments(order)).toEqual([]);
+  });
+
+  it("only emits the items whose rank moved", () => {
+    // Swap the top two (1↔2); the third (rank 5) stays put.
+    const newOrder = [
+      { id: "b", priority_rank: 2 },
+      { id: "a", priority_rank: 1 },
+      { id: "c", priority_rank: 5 },
+    ];
+    expect(reorderedRankAssignments(newOrder)).toEqual([
+      { id: "b", rank: 1 },
+      { id: "a", rank: 2 },
+    ]);
   });
 });

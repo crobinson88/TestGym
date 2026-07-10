@@ -1,14 +1,15 @@
 import { useState } from "react";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ChevronRight, ListChecks } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LocalTdlItem } from "../types";
 import type { SectionConfig } from "../sections";
-import { StaticItemRow } from "./ItemRow";
+import { PRIORITY_SORTABLE_PREFIX, PriorityItemRow } from "./ItemRow";
 
-// Virtual, read-only board column that mirrors every ranked item for the day,
-// ordered 1 → 10. Items keep their real category and still render there; this is
-// an at-a-glance list of what matters most today. No add box, no drag — order is
-// the rank itself.
+// Virtual board column that mirrors every ranked item for the day, ordered 1 →
+// 10. Items keep their real category and still render there; this is an
+// at-a-glance list of what matters most today. No add box — drag to reorder
+// rewrites the ranks (order is the rank itself).
 export function PriorityColumn({
   items,
   categories,
@@ -63,17 +64,22 @@ export function PriorityColumn({
           No priorities set. Give a task a rank 1–10 to pin it here.
         </p>
       ) : (
-        <ul className={cn(isCollapsed && "hidden sm:block")}>
-          {items.map((item) => (
-            <StaticItemRow
-              key={item.id}
-              item={item}
-              categories={categories}
-              focused={focusedId === item.id}
-              takenRanks={takenRanks}
-            />
-          ))}
-        </ul>
+        <SortableContext
+          items={items.map((i) => PRIORITY_SORTABLE_PREFIX + i.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul className={cn(isCollapsed && "hidden sm:block")}>
+            {items.map((item) => (
+              <PriorityItemRow
+                key={item.id}
+                item={item}
+                categories={categories}
+                focused={focusedId === item.id}
+                takenRanks={takenRanks}
+              />
+            ))}
+          </ul>
+        </SortableContext>
       )}
     </section>
   );
