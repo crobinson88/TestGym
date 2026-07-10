@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -37,26 +38,66 @@ import { isSnoozed } from "../snooze";
 import { ItemDetail } from "./ItemDetail";
 import { StatusPill } from "./StatusPill";
 
-export function ItemRow({
-  item,
-  categories,
-  focused,
-  takenRanks,
-}: {
+type SortableReturn = ReturnType<typeof useSortable>;
+
+interface DragBinding {
+  setNodeRef: SortableReturn["setNodeRef"];
+  style: CSSProperties;
+  attributes: SortableReturn["attributes"];
+  listeners: SortableReturn["listeners"];
+}
+
+function toDragBinding(s: SortableReturn): DragBinding {
+  return {
+    setNodeRef: s.setNodeRef,
+    style: {
+      transform: CSS.Transform.toString(s.transform),
+      transition: s.transition,
+      opacity: s.isDragging ? 0.4 : 1,
+    },
+    attributes: s.attributes,
+    listeners: s.listeners,
+  };
+}
+
+// The Priorities column mirrors items that also render as sortables in their
+// real category column, so its rows get a prefixed dnd-kit id to stay in a
+// separate sortable namespace. DayView routes drops by this prefix.
+export const PRIORITY_SORTABLE_PREFIX = "priority:";
+
+interface ItemRowProps {
   item: LocalTdlItem;
   categories: SectionConfig[];
   focused?: boolean;
   takenRanks: Set<number>;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-    data: { section: item.section, isRecurring: item.is_recurring },
+}
+
+// Draggable row for the category board columns.
+export function ItemRow(props: ItemRowProps) {
+  const sortable = useSortable({
+    id: props.item.id,
+    data: { section: props.item.section, isRecurring: props.item.is_recurring },
   });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-  };
+  return <ItemRowBase {...props} drag={toDragBinding(sortable)} />;
+}
+
+// Draggable row for the virtual Priorities column. Reordering here rewrites the
+// ranks (see reorderPriorities) rather than the section positions.
+export function PriorityItemRow(props: ItemRowProps) {
+  const sortable = useSortable({
+    id: PRIORITY_SORTABLE_PREFIX + props.item.id,
+    data: { priority: true },
+  });
+  return <ItemRowBase {...props} drag={toDragBinding(sortable)} />;
+}
+
+function ItemRowBase({
+  item,
+  categories,
+  focused,
+  takenRanks,
+  drag,
+}: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -72,8 +113,8 @@ export function ItemRow({
 
   return (
     <li
-      ref={setNodeRef}
-      style={style}
+      ref={drag.setNodeRef}
+      style={drag.style}
       data-item-id={item.id}
       className={cn(
         "group relative block w-full max-w-full min-w-0 border-b border-line/50 px-2 py-2 last:border-b-0",
@@ -84,8 +125,8 @@ export function ItemRow({
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
       <button
-        {...attributes}
-        {...listeners}
+        {...drag.attributes}
+        {...drag.listeners}
         className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
         aria-label="Drag"
         tabIndex={-1}

@@ -14,11 +14,13 @@ import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
 import { useCategories } from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
+import { selectPriorityItems } from "../priority";
 import type { LocalTdlItem } from "../types";
 import {
   cycleStatus,
   deleteItem,
   moveItem,
+  reorderPriorities,
   reorderSection,
   setPriorityRank,
   usedRanks,
@@ -26,6 +28,8 @@ import {
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
 import { SectionColumn } from "../components/SectionColumn";
+import { PriorityColumn } from "../components/PriorityColumn";
+import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { RollForwardButton } from "../components/RollForwardButton";
 
 export default function DayView() {
@@ -102,6 +106,26 @@ export default function DayView() {
     const activeId = String(e.active.id);
     const overId = e.over ? String(e.over.id) : null;
     if (!overId || activeId === overId) return;
+
+    // Drags inside the Priorities column live in their own sortable namespace
+    // (prefixed ids). Reordering there rewrites ranks, not section positions.
+    const activeIsPriority = activeId.startsWith(PRIORITY_SORTABLE_PREFIX);
+    const overIsPriority = overId.startsWith(PRIORITY_SORTABLE_PREFIX);
+    if (activeIsPriority || overIsPriority) {
+      // Ignore drags that cross between the mirror and a real category column.
+      if (!activeIsPriority || !overIsPriority) return;
+      const activeReal = activeId.slice(PRIORITY_SORTABLE_PREFIX.length);
+      const overReal = overId.slice(PRIORITY_SORTABLE_PREFIX.length);
+      const order = selectPriorityItems(bundle.items).map((i) => i.id);
+      const from = order.indexOf(activeReal);
+      const to = order.indexOf(overReal);
+      if (from === -1 || to === -1) return;
+      order.splice(from, 1);
+      order.splice(to, 0, activeReal);
+      void reorderPriorities(date, order);
+      return;
+    }
+
     const activeItem = bundle.items.find((i) => i.id === activeId);
     if (!activeItem) return;
     const overItem = bundle.items.find((i) => i.id === overId);
@@ -175,6 +199,10 @@ export default function DayView() {
       })
     : columns;
 
+  const priorityItems = selectPriorityItems(bundle.items).filter(matchesQuery);
+  const showPriorityColumn = !searching || priorityItems.length > 0;
+  const nothingMatches = searching && visibleColumns.length === 0 && priorityItems.length === 0;
+
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
       <DayHeader
@@ -203,11 +231,20 @@ export default function DayView() {
             <RollForwardButton fromDate={prev} toDate={date} />
           </div>
         )}
-        {searching && visibleColumns.length === 0 ? (
+        {nothingMatches ? (
           <div className="py-8 text-center text-sm text-muted">No tasks match “{query.trim()}”.</div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {showPriorityColumn && (
+                <PriorityColumn
+                  items={priorityItems}
+                  categories={categories}
+                  focusedId={focusedId}
+                  takenRanks={takenRanks}
+                  forceExpanded={searching}
+                />
+              )}
               {visibleColumns.map((cfg) => {
                 const lists = listsFor(cfg.key);
                 return (
