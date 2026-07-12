@@ -75,6 +75,7 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     realtime.start((_t: SyncTable) => {
       void runDrain();
     });
+    await outbox.requeueErrors();
     await runPull();
     await runDrain();
     if (typeof window !== "undefined") {
