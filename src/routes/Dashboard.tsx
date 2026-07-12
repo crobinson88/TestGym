@@ -8,6 +8,8 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -36,6 +38,13 @@ import {
 } from "@/modules/french";
 
 const HOURS_COLOR = "#22d3ee";
+const ROLLING_TARGET_LOW = 70;
+const ROLLING_TARGET_HIGH = 80;
+const ROLLING_EXCESSIVE = 90;
+const ROLLING_RED_FLAG = 100;
+const ROLLING_TARGET_COLOR = "#34d399";
+const ROLLING_EXCESSIVE_COLOR = "#f59e0b";
+const ROLLING_RED_FLAG_COLOR = "#ef4444";
 const VOCAB_COLOR = "#22d3ee";
 const RULES_COLOR = "#a855f7";
 const CONJUG_COLOR = "#f59e0b";
@@ -800,7 +809,44 @@ function RollingHoursChart({ data }: { data: HoursPoint[] }) {
         <YAxis
           tick={{ fontSize: 11, fill: "#8a8a8a" }}
           width={36}
+          domain={[0, (max: number) => Math.max(max, 105)]}
           tickFormatter={(v) => formatHours(v as number)}
+        />
+        <ReferenceArea
+          y1={ROLLING_TARGET_LOW}
+          y2={ROLLING_TARGET_HIGH}
+          fill={ROLLING_TARGET_COLOR}
+          fillOpacity={0.12}
+          stroke={ROLLING_TARGET_COLOR}
+          strokeOpacity={0.35}
+          strokeDasharray="4 4"
+          ifOverflow="extendDomain"
+        />
+        <ReferenceLine
+          y={ROLLING_EXCESSIVE}
+          stroke={ROLLING_EXCESSIVE_COLOR}
+          strokeDasharray="5 4"
+          strokeOpacity={0.8}
+          ifOverflow="extendDomain"
+          label={{
+            value: "Excessive · 90h",
+            position: "insideTopRight",
+            fill: ROLLING_EXCESSIVE_COLOR,
+            fontSize: 10,
+          }}
+        />
+        <ReferenceLine
+          y={ROLLING_RED_FLAG}
+          stroke={ROLLING_RED_FLAG_COLOR}
+          strokeDasharray="5 4"
+          strokeOpacity={0.85}
+          ifOverflow="extendDomain"
+          label={{
+            value: "Red flag · 100h",
+            position: "insideTopRight",
+            fill: ROLLING_RED_FLAG_COLOR,
+            fontSize: 10,
+          }}
         />
         <Tooltip
           contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
