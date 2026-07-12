@@ -42,16 +42,25 @@ type PendingRow =
   | LocalMarketNote
   | LocalSmokingLog;
 
+// Local-only bookkeeping + server-owned columns stripped from every payload.
 const STRIP_KEYS = [
   "sync_status",
   "sync_attempts",
   "sync_last_error",
-  "volume",
-  "met_minutes",
-  "total",
   "created_at",
   "user_id",
 ] as const;
+
+// Postgres-generated columns, stripped PER TABLE. These must be keyed by table,
+// not stripped globally by name: `total` is a generated column on share_trades
+// but a real, NOT-NULL data column on french_attempts (the test's question
+// count). Stripping it globally sent total=NULL and made every french_attempts
+// upsert fail the not-null check, so French stats never synced to the cloud.
+const GENERATED_COLS: Partial<Record<SyncTable, readonly string[]>> = {
+  sets: ["volume"],
+  cardio_sessions: ["met_minutes"],
+  share_trades: ["total"],
+};
 
 const PK_BY_TABLE: Record<SyncTable, string> = {
   sets: "id",
@@ -74,9 +83,10 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   smoking_logs: "id",
 };
 
-function toPayload(row: PendingRow): Record<string, unknown> {
+function toPayload(table: SyncTable, row: PendingRow): Record<string, unknown> {
   const copy = { ...row } as Record<string, unknown>;
   for (const k of STRIP_KEYS) delete copy[k];
+  for (const k of GENERATED_COLS[table] ?? []) delete copy[k];
   return copy;
 }
 
@@ -207,7 +217,7 @@ export function createOutbox({ client, db, log, batchSize = 200 }: OutboxDeps) {
     while (true) {
       const batch = await loadPending(db, table, batchSize);
       if (batch.length === 0) break;
-      const payload = batch.map(toPayload);
+      const payload = batch.map((r) => toPayload(table, r));
       const { error } = await (client.from(table) as ReturnType<Client["from"]>).upsert(
         payload as never,
         { onConflict: PK_BY_TABLE[table] },
@@ -247,6 +257,22 @@ export function createOutbox({ client, db, log, batchSize = 200 }: OutboxDeps) {
     return inflight;
   }
 
+  // Flip previously-errored rows back to pending so a corrected/online client
+  // re-attempts them. Without this, a row that ever failed an upsert (e.g. the
+  // french_attempts.total not-null rejection) stays stuck forever and its data
+  // is silently lost when local storage is cleared.
+  async function requeueErrors(): Promise<number> {
+    let total = 0;
+    for (const table of SYNC_TABLES) {
+      total += await db
+        .table(DEXIE_TABLE[table])
+        .where("sync_status")
+        .equals("error")
+        .modify({ sync_status: "pending", sync_last_error: null });
+    }
+    return total;
+  }
+
   async function pendingCount(): Promise<number> {
     const counts = await Promise.all(
       SYNC_TABLES.map((t) =>
@@ -256,7 +282,7 @@ export function createOutbox({ client, db, log, batchSize = 200 }: OutboxDeps) {
     return counts.reduce((a, b) => a + b, 0);
   }
 
-  return { drain, pendingCount };
+  return { drain, requeueErrors, pendingCount };
 }
 
 export type Outbox = ReturnType<typeof createOutbox>;

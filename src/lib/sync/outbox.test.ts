@@ -44,6 +44,33 @@ describe("outbox", () => {
     expect(await db.sets.where("sync_status").equals("pending").count()).toBe(0);
   });
 
+  it("keeps the real french_attempts.total column in the payload", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+    await m.addFrenchAttempt({
+      kind: "vocab",
+      total: 10,
+      correct: 8,
+      started_at: new Date().toISOString(),
+    });
+
+    const { client, calls } = makeMockClient();
+    const outbox = createOutbox({ client: client as never, db });
+
+    const result = await outbox.drain();
+    expect(result.pushed).toBe(1);
+    expect(result.failed).toBe(0);
+
+    const call = calls.find((c) => c.table === "french_attempts");
+    const payload = call?.payload[0] as Record<string, unknown>;
+    // total is a real NOT-NULL data column here (not a generated column like
+    // share_trades.total), so it must survive into the upsert payload.
+    expect(payload.total).toBe(10);
+    expect(payload.correct).toBe(8);
+    expect(payload.user_id).toBeUndefined();
+    expect(payload.sync_status).toBeUndefined();
+  });
+
   it("marks rows as error and stops the batch when upsert fails", async () => {
     db = await newTestDb();
     const { cat, ex } = await seedRefs(db);
@@ -68,6 +95,30 @@ describe("outbox", () => {
     expect(after?.sync_status).toBe("error");
     expect(after?.sync_attempts).toBe(1);
     expect(after?.sync_last_error).toBe("network down");
+  });
+
+  it("requeueErrors flips errored rows back to pending so they re-drain", async () => {
+    db = await newTestDb();
+    const { cat, ex } = await seedRefs(db);
+    const m = createMutations({ db });
+    const s = await m.addSet({ exercise_id: ex.id, category_id: cat.id, weight: 100, reps: 5 });
+
+    // First drain fails and marks the row errored.
+    const failing = makeMockClient({ onUpsert: () => ({ error: { message: "boom" } }) });
+    const outbox1 = createOutbox({ client: failing.client as never, db });
+    await outbox1.drain();
+    expect((await db.sets.get(s.id))?.sync_status).toBe("error");
+
+    // A healthy client requeues the errored row and drains it successfully.
+    const healthy = makeMockClient();
+    const outbox2 = createOutbox({ client: healthy.client as never, db });
+    const requeued = await outbox2.requeueErrors();
+    expect(requeued).toBe(1);
+    expect((await db.sets.get(s.id))?.sync_status).toBe("pending");
+
+    const result = await outbox2.drain();
+    expect(result.pushed).toBe(1);
+    expect((await db.sets.get(s.id))?.sync_status).toBe("synced");
   });
 
   it("is single-flight: parallel drain calls share one inflight promise", async () => {
