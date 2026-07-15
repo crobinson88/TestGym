@@ -73,6 +73,9 @@ interface ItemRowProps {
   categories: SectionConfig[];
   focused?: boolean;
   takenRanks: Set<number>;
+  // 1-based ordinal within the category, shown as a leading number. Omitted in
+  // the Priorities column, where the rank already numbers the rows.
+  index?: number;
   selecting?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
@@ -111,6 +114,7 @@ function ItemRowBase({
   categories,
   focused,
   takenRanks,
+  index,
   selecting,
   selected,
   onToggleSelect,
@@ -170,6 +174,17 @@ function ItemRowBase({
         >
           <GripVertical className="h-4 w-4" />
         </button>
+      )}
+      {index != null && (
+        <span
+          className={cn(
+            "w-5 shrink-0 text-right text-xs tabular-nums text-muted",
+            (done || cancelled) && "line-through",
+          )}
+          aria-hidden
+        >
+          {index}.
+        </span>
       )}
       {editingTime ? (
         <Input
