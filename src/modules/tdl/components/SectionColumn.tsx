@@ -160,13 +160,14 @@ export function SectionColumn({
           </div>
           <SortableContext items={recurringIds} strategy={verticalListSortingStrategy}>
             <ul>
-              {recurring.map((item) => (
+              {recurring.map((item, i) => (
                 <ItemRow
                   key={item.id}
                   item={item}
                   categories={categories}
                   focused={focusedId === item.id}
                   takenRanks={takenRanks}
+                  index={i + 1}
                   selecting={selecting}
                   selected={selectedIds?.has(item.id)}
                   onToggleSelect={onToggleSelect}
@@ -182,13 +183,14 @@ export function SectionColumn({
           data-dated-section={cfg.key}
           className={cn("min-h-[40px]", isCollapsed && "hidden sm:block")}
         >
-          {dated.map((item) => (
+          {dated.map((item, i) => (
             <ItemRow
               key={item.id}
               item={item}
               categories={categories}
               focused={focusedId === item.id}
               takenRanks={takenRanks}
+              index={recurring.length + i + 1}
               selecting={selecting}
               selected={selectedIds?.has(item.id)}
               onToggleSelect={onToggleSelect}
