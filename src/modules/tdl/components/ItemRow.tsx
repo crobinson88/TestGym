@@ -6,12 +6,14 @@ import {
   Archive,
   BellOff,
   Check,
+  CheckSquare,
   ChevronRight,
   Clock,
   FolderInput,
   GripVertical,
   MoreVertical,
   Pencil,
+  Square,
   StickyNote,
   ThumbsDown,
   Trash2,
@@ -71,6 +73,9 @@ interface ItemRowProps {
   categories: SectionConfig[];
   focused?: boolean;
   takenRanks: Set<number>;
+  selecting?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 // Border + background that intensify as an item goes unworked, up to 3 days
@@ -106,6 +111,9 @@ function ItemRowBase({
   categories,
   focused,
   takenRanks,
+  selecting,
+  selected,
+  onToggleSelect,
   drag,
 }: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
@@ -132,20 +140,37 @@ function ItemRowBase({
         "group relative block w-full max-w-full min-w-0 border-b border-line/50 px-2 py-2 last:border-b-0",
         AGE_CLASSES[level],
         focused && "bg-surface2/40",
+        selected && "bg-accent/10 ring-1 ring-inset ring-accent/60",
         (cancelled || snoozed) && "opacity-50",
         menu && "z-30",
       )}
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
-      <button
-        {...drag.attributes}
-        {...drag.listeners}
-        className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
-        aria-label="Drag"
-        tabIndex={-1}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+      {selecting ? (
+        <button
+          type="button"
+          onClick={() => onToggleSelect?.(item.id)}
+          className="flex h-9 w-6 shrink-0 items-center justify-center text-muted hover:text-text"
+          aria-label={selected ? "Deselect" : "Select"}
+          aria-pressed={selected}
+        >
+          {selected ? (
+            <CheckSquare className="h-4 w-4 text-accent" />
+          ) : (
+            <Square className="h-4 w-4" />
+          )}
+        </button>
+      ) : (
+        <button
+          {...drag.attributes}
+          {...drag.listeners}
+          className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
+          aria-label="Drag"
+          tabIndex={-1}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
       {editingTime ? (
         <Input
           type="number"
@@ -228,9 +253,9 @@ function ItemRowBase({
         ) : (
           <button
             type="button"
-            onClick={() => setDetailOpen((v) => !v)}
-            aria-expanded={detailOpen}
-            title="Click for details"
+            onClick={() => (selecting ? onToggleSelect?.(item.id) : setDetailOpen((v) => !v))}
+            aria-expanded={selecting ? undefined : detailOpen}
+            title={selecting ? (selected ? "Deselect" : "Select") : "Click for details"}
             className={cn(
               "flex w-full select-none items-center gap-1 text-left text-sm",
               done && "line-through text-muted",

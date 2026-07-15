@@ -20,6 +20,9 @@ export function SectionColumn({
   focusedId,
   takenRanks,
   forceExpanded = false,
+  selecting = false,
+  selectedIds,
+  onToggleSelect,
 }: {
   cfg: SectionConfig;
   categories: SectionConfig[];
@@ -29,6 +32,9 @@ export function SectionColumn({
   focusedId?: string;
   takenRanks: Set<number>;
   forceExpanded?: boolean;
+  selecting?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -161,6 +167,9 @@ export function SectionColumn({
                   categories={categories}
                   focused={focusedId === item.id}
                   takenRanks={takenRanks}
+                  selecting={selecting}
+                  selected={selectedIds?.has(item.id)}
+                  onToggleSelect={onToggleSelect}
                 />
               ))}
             </ul>
@@ -180,6 +189,9 @@ export function SectionColumn({
               categories={categories}
               focused={focusedId === item.id}
               takenRanks={takenRanks}
+              selecting={selecting}
+              selected={selectedIds?.has(item.id)}
+              onToggleSelect={onToggleSelect}
             />
           ))}
         </ul>
