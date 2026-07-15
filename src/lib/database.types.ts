@@ -130,6 +130,10 @@ export interface TdlItemRow {
   // in `reluctance_reason`, surfaced under the detail panel's description.
   is_reluctant: boolean;
   reluctance_reason: string | null;
+  // Timestamp the item's status last moved off "open" to a worked/done state.
+  // Drives the "last worked on" label and the row's staleness urgency. Not set
+  // by the day-wide "Reset all to Open" (that only ever moves status *to* open).
+  last_worked_at: string | null;
   notes: string | null;
   // Object paths in the private `share-images` bucket (tdl/ prefix). The detail
   // panel resolves them to signed URLs on demand.

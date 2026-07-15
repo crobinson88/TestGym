@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import { isResettable } from "./snooze";
+import { nextLastWorkedAt } from "./age";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
 
 const nowIso = () => new Date().toISOString();
@@ -31,6 +32,7 @@ export interface CreateItemInput {
   snoozed_until?: string | null;
   is_reluctant?: boolean;
   reluctance_reason?: string | null;
+  last_worked_at?: string | null;
   notes?: string | null;
   images?: string[];
   status?: TdlStatus;
@@ -75,6 +77,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     snoozed_until: input.snoozed_until ?? null,
     is_reluctant: input.is_reluctant ?? false,
     reluctance_reason: input.reluctance_reason ?? null,
+    last_worked_at: input.last_worked_at ?? null,
     notes: input.notes ?? null,
     images: input.images ?? [],
     origin_item_id: input.origin_item_id ?? null,
@@ -98,11 +101,19 @@ export async function updateItem(
   const ts = nowIso();
   const nextSection = patch.section ?? existing.section;
   const nextStatus = coerceStatus(nextSection, patch.status ?? existing.status);
+  const last_worked_at = nextLastWorkedAt({
+    prevStatus: existing.status,
+    nextStatus,
+    prevLastWorked: existing.last_worked_at ?? null,
+    patchLastWorked: patch.last_worked_at,
+    now: ts,
+  });
   const updated: LocalTdlItem = {
     ...existing,
     ...patch,
     section: nextSection,
     status: nextStatus,
+    last_worked_at,
     updated_at: ts,
     sync_status: "pending",
   };
