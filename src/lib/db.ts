@@ -301,6 +301,14 @@ export class GymDB extends Dexie {
           if (row.research === undefined) row.research = [];
         });
     });
+    this.version(22).upgrade(async (tx) => {
+      await tx
+        .table("tdl_items")
+        .toCollection()
+        .modify((row: LocalTdlItem) => {
+          if (row.last_worked_at === undefined) row.last_worked_at = null;
+        });
+    });
   }
 }
 

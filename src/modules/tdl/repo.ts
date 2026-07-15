@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import { isResettable } from "./snooze";
+import { nextLastWorkedAt } from "./age";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
 
 const nowIso = () => new Date().toISOString();
@@ -31,6 +32,7 @@ export interface CreateItemInput {
   snoozed_until?: string | null;
   is_reluctant?: boolean;
   reluctance_reason?: string | null;
+  last_worked_at?: string | null;
   notes?: string | null;
   images?: string[];
   status?: TdlStatus;
@@ -75,6 +77,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     snoozed_until: input.snoozed_until ?? null,
     is_reluctant: input.is_reluctant ?? false,
     reluctance_reason: input.reluctance_reason ?? null,
+    last_worked_at: input.last_worked_at ?? null,
     notes: input.notes ?? null,
     images: input.images ?? [],
     origin_item_id: input.origin_item_id ?? null,
@@ -98,11 +101,19 @@ export async function updateItem(
   const ts = nowIso();
   const nextSection = patch.section ?? existing.section;
   const nextStatus = coerceStatus(nextSection, patch.status ?? existing.status);
+  const last_worked_at = nextLastWorkedAt({
+    prevStatus: existing.status,
+    nextStatus,
+    prevLastWorked: existing.last_worked_at ?? null,
+    patchLastWorked: patch.last_worked_at,
+    now: ts,
+  });
   const updated: LocalTdlItem = {
     ...existing,
     ...patch,
     section: nextSection,
     status: nextStatus,
+    last_worked_at,
     updated_at: ts,
     sync_status: "pending",
   };
@@ -233,6 +244,52 @@ export async function setReluctanceReason(
 ): Promise<LocalTdlItem | null> {
   const next = reason?.trim() ? reason.trim() : null;
   return updateItem(id, { reluctance_reason: next });
+}
+
+// Apply the same patch to many items in one transaction, then poke the outbox
+// once. `patchFor` returns null to skip an item (e.g. it no longer exists or the
+// change wouldn't apply). Returns how many rows actually changed.
+async function bulkUpdate(
+  ids: string[],
+  patchFor: (item: LocalTdlItem, ts: string) => Partial<TdlItemRow> | null,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const ts = nowIso();
+  let changed = 0;
+  await db.transaction("rw", db.tdl_items, async () => {
+    for (const id of ids) {
+      const existing = await db.tdl_items.get(id);
+      if (!existing) continue;
+      const patch = patchFor(existing, ts);
+      if (!patch) continue;
+      await db.tdl_items.put({
+        ...existing,
+        ...patch,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+      changed++;
+    }
+  });
+  pokeOutbox();
+  return changed;
+}
+
+// Bulk-archive the given items. Already-archived ones are skipped.
+export async function archiveItems(ids: string[]): Promise<number> {
+  return bulkUpdate(ids, (it) => (it.is_archived ? null : { is_archived: true }));
+}
+
+// Bulk-snooze the given items to `until`. Items whose wake-up date wouldn't be
+// after their own day are skipped (snoozing only moves an item into the future).
+export async function snoozeItems(ids: string[], until: string): Promise<number> {
+  if (!until) return 0;
+  return bulkUpdate(ids, (it) => (until > it.snapshot_date ? { snoozed_until: until } : null));
+}
+
+// Bulk soft-delete the given items. Already-deleted ones are skipped.
+export async function deleteItems(ids: string[]): Promise<number> {
+  return bulkUpdate(ids, (it, ts) => (it.deleted_at ? null : { deleted_at: ts }));
 }
 
 export async function archiveItem(id: string): Promise<LocalTdlItem | null> {

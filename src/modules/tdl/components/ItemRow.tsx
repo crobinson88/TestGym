@@ -6,12 +6,14 @@ import {
   Archive,
   BellOff,
   Check,
+  CheckSquare,
   ChevronRight,
   Clock,
   FolderInput,
   GripVertical,
   MoreVertical,
   Pencil,
+  Square,
   StickyNote,
   ThumbsDown,
   Trash2,
@@ -19,8 +21,9 @@ import {
 } from "lucide-react";
 import { Calendar } from "@/components/ui/Calendar";
 import { Input } from "@/components/ui/Input";
-import { addDays, cn, dayMonth } from "@/lib/utils";
+import { addDays, cn, dayMonth, relativeDay } from "@/lib/utils";
 import type { LocalTdlItem } from "../types";
+import { ageLevel, type AgeLevel } from "../age";
 import {
   archiveItem,
   cycleStatus,
@@ -70,7 +73,19 @@ interface ItemRowProps {
   categories: SectionConfig[];
   focused?: boolean;
   takenRanks: Set<number>;
+  selecting?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
+
+// Border + background that intensify as an item goes unworked, up to 3 days
+// stale. Level 0 keeps a transparent left rail so every row stays aligned.
+const AGE_CLASSES: Record<AgeLevel, string> = {
+  0: "border-l-2 border-l-transparent",
+  1: "border-l-2 border-l-warn/40 bg-warn/[0.04]",
+  2: "border-l-2 border-l-warn/70 bg-warn/[0.07]",
+  3: "border-l-2 border-l-danger/80 bg-danger/[0.10]",
+};
 
 // Draggable row for the category board columns.
 export function ItemRow(props: ItemRowProps) {
@@ -96,6 +111,9 @@ function ItemRowBase({
   categories,
   focused,
   takenRanks,
+  selecting,
+  selected,
+  onToggleSelect,
   drag,
 }: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
@@ -110,6 +128,8 @@ function ItemRowBase({
   const cancelled = item.status === "cancelled";
   const snoozed = isSnoozed(item);
   const hasDetail = !!item.notes?.trim() || (item.images?.length ?? 0) > 0;
+  // Snoozed items are deliberately deferred, so they never build urgency.
+  const level = snoozed ? 0 : ageLevel(item);
 
   return (
     <li
@@ -118,21 +138,39 @@ function ItemRowBase({
       data-item-id={item.id}
       className={cn(
         "group relative block w-full max-w-full min-w-0 border-b border-line/50 px-2 py-2 last:border-b-0",
+        AGE_CLASSES[level],
         focused && "bg-surface2/40",
+        selected && "bg-accent/10 ring-1 ring-inset ring-accent/60",
         (cancelled || snoozed) && "opacity-50",
         menu && "z-30",
       )}
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
-      <button
-        {...drag.attributes}
-        {...drag.listeners}
-        className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
-        aria-label="Drag"
-        tabIndex={-1}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+      {selecting ? (
+        <button
+          type="button"
+          onClick={() => onToggleSelect?.(item.id)}
+          className="flex h-9 w-6 shrink-0 items-center justify-center text-muted hover:text-text"
+          aria-label={selected ? "Deselect" : "Select"}
+          aria-pressed={selected}
+        >
+          {selected ? (
+            <CheckSquare className="h-4 w-4 text-accent" />
+          ) : (
+            <Square className="h-4 w-4" />
+          )}
+        </button>
+      ) : (
+        <button
+          {...drag.attributes}
+          {...drag.listeners}
+          className="flex h-9 w-6 shrink-0 cursor-grab items-center justify-center text-muted hover:text-text"
+          aria-label="Drag"
+          tabIndex={-1}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
       {editingTime ? (
         <Input
           type="number"
@@ -215,9 +253,9 @@ function ItemRowBase({
         ) : (
           <button
             type="button"
-            onClick={() => setDetailOpen((v) => !v)}
-            aria-expanded={detailOpen}
-            title="Click for details"
+            onClick={() => (selecting ? onToggleSelect?.(item.id) : setDetailOpen((v) => !v))}
+            aria-expanded={selecting ? undefined : detailOpen}
+            title={selecting ? (selected ? "Deselect" : "Select") : "Click for details"}
             className={cn(
               "flex w-full select-none items-center gap-1 text-left text-sm",
               done && "line-through text-muted",
@@ -232,6 +270,16 @@ function ItemRowBase({
         )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
           <span>added {dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
+          {item.last_worked_at && (
+            <span
+              className={cn(
+                level === 3 && "text-danger",
+                level > 0 && level < 3 && "text-warn",
+              )}
+            >
+              worked {relativeDay(item.last_worked_at.slice(0, 10), item.snapshot_date)}
+            </span>
+          )}
           {hasDueDate && item.due_date && <span>due {item.due_date}</span>}
           {snoozed && item.snoozed_until && (
             <span className="inline-flex items-center gap-1 text-accent">

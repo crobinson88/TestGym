@@ -8,8 +8,9 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Search } from "lucide-react";
+import { CheckSquare, Search } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
 import { useCategories } from "../categories";
@@ -17,19 +18,23 @@ import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { selectPriorityItems } from "../priority";
 import type { LocalTdlItem } from "../types";
 import {
+  archiveItems,
+  createItem,
   cycleStatus,
   deleteItem,
+  deleteItems,
   moveItem,
   reorderPriorities,
   reorderSection,
   setPriorityRank,
+  snoozeItems,
   usedRanks,
-  createItem,
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
 import { SectionColumn } from "../components/SectionColumn";
 import { PriorityColumn } from "../components/PriorityColumn";
 import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
+import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
 
 export default function DayView() {
@@ -48,9 +53,37 @@ export default function DayView() {
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (focusIdx >= allIds.length) setFocusIdx(Math.max(0, allIds.length - 1));
   }, [allIds.length, focusIdx]);
+
+  // Drop selections for items that have left the board (bulk-acted, deleted,
+  // rolled away). Keeps the selected count honest.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(allIds);
+      const next = new Set([...prev].filter((id) => live.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [allIds]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelection = useCallback(() => {
+    setSelecting(false);
+    setSelected(new Set());
+  }, []);
 
   const onKey = useCallback(
     (e: KeyboardEvent) => {
@@ -173,6 +206,14 @@ export default function DayView() {
     i.title.toLowerCase().includes(q) ||
     (i.notes ?? "").toLowerCase().includes(q);
 
+  // Selectable = every live item currently visible on the board (search-aware).
+  const selectableIds = bundle.items.filter(matchesQuery).map((i) => i.id);
+
+  async function runBulk(fn: (ids: string[]) => Promise<number>) {
+    await fn([...selected]);
+    setSelected(new Set());
+  }
+
   function listsFor(key: string): { recurring: LocalTdlItem[]; dated: LocalTdlItem[] } {
     let recurring: LocalTdlItem[];
     let dated: LocalTdlItem[];
@@ -214,16 +255,27 @@ export default function DayView() {
       />
       <div className="p-3">
         {!empty && (
-          <div className="relative mb-3">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search tasks…"
-              aria-label="Search tasks"
-              className="h-10 pl-9 text-sm"
-            />
+          <div className="mb-3 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search tasks…"
+                aria-label="Search tasks"
+                className="h-10 pl-9 text-sm"
+              />
+            </div>
+            <Button
+              variant={selecting ? "secondary" : "ghost"}
+              onClick={() => (selecting ? exitSelection() : setSelecting(true))}
+              className="h-10 shrink-0 px-3 text-sm"
+              aria-pressed={selecting}
+            >
+              <CheckSquare className="mr-1 h-4 w-4" />
+              {selecting ? "Cancel" : "Select"}
+            </Button>
           </div>
         )}
         {empty && prev && (
@@ -243,6 +295,9 @@ export default function DayView() {
                   focusedId={focusedId}
                   takenRanks={takenRanks}
                   forceExpanded={searching}
+                  selecting={selecting}
+                  selectedIds={selected}
+                  onToggleSelect={toggleSelect}
                 />
               )}
               {visibleColumns.map((cfg) => {
@@ -258,11 +313,27 @@ export default function DayView() {
                     focusedId={focusedId}
                     takenRanks={takenRanks}
                     forceExpanded={searching}
+                    selecting={selecting}
+                    selectedIds={selected}
+                    onToggleSelect={toggleSelect}
                   />
                 );
               })}
             </div>
           </DndContext>
+        )}
+        {selecting && (
+          <BulkActionBar
+            snapshot_date={date}
+            selectedCount={selected.size}
+            totalSelectable={selectableIds.length}
+            onSelectAll={() => setSelected(new Set(selectableIds))}
+            onClear={() => setSelected(new Set())}
+            onArchive={() => void runBulk(archiveItems)}
+            onSnooze={(until) => void runBulk((ids) => snoozeItems(ids, until))}
+            onDelete={() => void runBulk(deleteItems)}
+            onExit={exitSelection}
+          />
         )}
       </div>
     </div>

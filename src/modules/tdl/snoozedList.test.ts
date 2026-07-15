@@ -25,6 +25,7 @@ function makeItem(
     snoozed_until: null,
     is_reluctant: false,
     reluctance_reason: null,
+    last_worked_at: null,
     notes: null,
     images: [],
     origin_item_id: null,
