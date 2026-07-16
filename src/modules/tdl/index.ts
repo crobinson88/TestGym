@@ -36,6 +36,9 @@ export {
   unsnoozeItem,
 } from "./repo";
 export { isSnoozed, isActive } from "./snooze";
+export { useDayCompletion, dayCompletion } from "./hooks";
+export type { DayCompletion } from "./hooks";
+export { TargetPies, ACTION_TARGET, PRIORITY_TARGET, RELUCTANT_TARGET } from "./components/TargetPies";
 export type {
   TdlSection,
   TdlStatus,

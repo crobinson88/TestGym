@@ -8,6 +8,7 @@ import {
   nextTaskColor,
   rollingHours,
   weeklyHours,
+  workHoursOnDate,
   type HoursPoint,
   type WeekHoursPoint,
 } from "./time";
@@ -84,6 +85,19 @@ export function useTimeDashboardStats(
 
     return { weekly, rolling, daily };
   }, [dailyOffset, weeklyOffset, rollingOffset]);
+}
+
+// Hours allocated to work-flagged tasks on a single date — the Time Tracking
+// page's "Work Sub Total", surfaced as the day's "hours worked" elsewhere.
+export function useWorkHoursOnDate(date: string): number | undefined {
+  return useLiveQuery(async () => {
+    const [allocs, tasks] = await Promise.all([
+      db.timeAllocations.where("date").equals(date).toArray(),
+      db.timeTasks.toArray(),
+    ]);
+    const tasksById = new Map(tasks.filter((t) => !t.deleted_at).map((t) => [t.id, t]));
+    return workHoursOnDate(allocs.filter(live), tasksById, date);
+  }, [date]);
 }
 
 export function useTimeTasks() {

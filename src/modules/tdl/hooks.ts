@@ -143,6 +143,17 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
   };
 }
 
+// Completion stats for a single day (the three target-pie counts + active
+// ratio), matching what the DayView header shows. Used to surface the same
+// goals on the Today and Stats screens.
+export function useDayCompletion(snapshot_date?: string): DayCompletion | undefined {
+  return useLiveQuery(async () => {
+    if (!snapshot_date) return dayCompletion([]);
+    const rows = await db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray();
+    return dayCompletion(rows.filter((r) => !r.deleted_at));
+  }, [snapshot_date]);
+}
+
 export interface SectionStatusCounts {
   open: number;
   inProgress: number;
