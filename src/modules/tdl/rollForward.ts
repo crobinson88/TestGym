@@ -65,6 +65,7 @@ export async function rollForward(
       time_estimate_min: prev.is_recurring ? null : prev.time_estimate_min,
       status: carryStatusFor(prev),
       priority_rank: prev.priority_rank,
+      eisenhower_quadrant: prev.eisenhower_quadrant,
       is_archived: false,
       snoozed_until: prev.is_recurring ? null : prev.snoozed_until,
       is_reluctant: prev.is_reluctant,

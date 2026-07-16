@@ -41,6 +41,7 @@ function item(section: string, over: Partial<TdlItemRow> = {}): LocalTdlItem {
     time_estimate_min: null,
     status: "open" as TdlStatus,
     priority_rank: null,
+    eisenhower_quadrant: null,
     is_archived: false,
     snoozed_until: null,
     is_reluctant: false,

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import type { LocalTdlItem } from "../types";
 import { UNCATEGORISED_KEY, type SectionConfig } from "../sections";
+import { groupByQuadrant } from "../quadrant";
 import { createItem } from "../repo";
 import { sectionStatusCounts } from "../hooks";
 import { ImageEditor } from "./ImageEditor";
@@ -103,7 +104,12 @@ export function SectionColumn({
   }
 
   const recurringIds = recurring.map((r) => r.id);
-  const datedIds = dated.map((r) => r.id);
+  // Dated items are broken into the Eisenhower matrix. One SortableContext still
+  // spans every dated item (in quadrant-display order) so drag-reorder keeps
+  // working across the sub-groups; the visual grouping is purely presentational.
+  const datedGroups = groupByQuadrant(dated);
+  const datedIds = datedGroups.flatMap((g) => g.items.map((i) => i.id));
+  const datedIndex = new Map(datedIds.map((id, i) => [id, i]));
 
   return (
     <section
@@ -179,24 +185,37 @@ export function SectionColumn({
       )}
 
       <SortableContext items={datedIds} strategy={verticalListSortingStrategy}>
-        <ul
+        <div
           data-dated-section={cfg.key}
           className={cn("min-h-[40px]", isCollapsed && "hidden sm:block")}
         >
-          {dated.map((item, i) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              categories={categories}
-              focused={focusedId === item.id}
-              takenRanks={takenRanks}
-              index={recurring.length + i + 1}
-              selecting={selecting}
-              selected={selectedIds?.has(item.id)}
-              onToggleSelect={onToggleSelect}
-            />
+          {datedGroups.map((g) => (
+            <div key={g.key ?? "unclassified"} data-quadrant={g.key ?? "unclassified"}>
+              <div className="flex items-baseline gap-1.5 px-3 pt-2 text-[10px] uppercase tracking-wider text-muted/70">
+                <span>{g.label}</span>
+                {g.hint && (
+                  <span className="normal-case tracking-normal text-muted/50">{g.hint}</span>
+                )}
+                <span className="ml-auto tabular-nums">{g.items.length}</span>
+              </div>
+              <ul>
+                {g.items.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    categories={categories}
+                    focused={focusedId === item.id}
+                    takenRanks={takenRanks}
+                    index={recurring.length + (datedIndex.get(item.id) ?? 0) + 1}
+                    selecting={selecting}
+                    selected={selectedIds?.has(item.id)}
+                    onToggleSelect={onToggleSelect}
+                  />
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       </SortableContext>
 
       {canAdd && (

@@ -21,6 +21,7 @@ function item(partial: Partial<LocalTdlItem>): LocalTdlItem {
     time_estimate_min: null,
     status: "open",
     priority_rank: null,
+    eisenhower_quadrant: null,
     is_archived: false,
     snoozed_until: null,
     is_reluctant: false,
