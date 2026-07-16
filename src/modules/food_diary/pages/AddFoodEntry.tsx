@@ -1,17 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Check, ChevronLeft, Trash2 } from "lucide-react";
+import { Camera, Check, ChevronLeft, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { todayIsoDate } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useFoodEntry } from "../hooks";
+import { estimateFoodPhoto } from "../photo";
 
 export default function AddFoodEntry() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const existing = useFoodEntry(id);
   const editing = !!id;
+  const { session } = useAuth();
 
   const [name, setName] = useState("");
   const [calories, setCalories] = useState("");
@@ -20,6 +23,11 @@ export default function AddFoodEntry() {
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [estimating, setEstimating] = useState(false);
+  const [estimateNote, setEstimateNote] = useState<string | null>(null);
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+  const libraryRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (editing && existing && !hydrated) {
@@ -30,6 +38,34 @@ export default function AddFoodEntry() {
       setHydrated(true);
     }
   }, [editing, existing, hydrated]);
+
+  async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file || !session) return;
+    setEstimating(true);
+    setError(null);
+    setEstimateNote(null);
+    try {
+      // Pass the typed name (if any) as a hint to sharpen the estimate.
+      const est = await estimateFoodPhoto(file, session.access_token, name.trim() || undefined);
+      if (est.error) {
+        setError(est.error);
+        return;
+      }
+      if (est.name && !name.trim()) setName(est.name);
+      setCalories(String(est.calories));
+      setProtein(String(est.protein));
+      const pct = Math.round(est.confidence * 100);
+      setEstimateNote(
+        `AI estimate${Number.isFinite(pct) ? ` · ${pct}% confidence` : ""} — check and adjust before saving.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Estimate failed");
+    } finally {
+      setEstimating(false);
+    }
+  }
 
   const caloriesNum = Number(calories);
   const proteinNum = Number(protein);
@@ -96,6 +132,56 @@ export default function AddFoodEntry() {
       </div>
 
       <div className="flex-1 space-y-5 overflow-y-auto p-4">
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={onPhoto}
+        />
+        <input
+          ref={libraryRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onPhoto}
+        />
+
+        {!editing && (
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
+              <Sparkles className="h-3.5 w-3.5 text-accent" /> Estimate with a photo
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="md"
+                className="flex-1"
+                onClick={() => cameraRef.current?.click()}
+                disabled={estimating || !session}
+              >
+                {estimating ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <Camera className="mr-2 h-5 w-5" />
+                )}
+                {estimating ? "Reading…" : "Photo"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                className="flex-1"
+                onClick={() => libraryRef.current?.click()}
+                disabled={estimating || !session}
+              >
+                <ImagePlus className="mr-2 h-5 w-5" /> Library
+              </Button>
+            </div>
+            {estimateNote && <p className="mt-2 text-xs text-accent">{estimateNote}</p>}
+          </div>
+        )}
+
         <Field label="Food">
           <Input
             value={name}

@@ -426,12 +426,21 @@ export interface FoodEntryRow {
   deleted_at: string | null;
 }
 
-// The daily calorie + protein targets. One live row is kept (deduped
-// client-side), matching how `stocks` / `smoking_logs` handle singletons.
+export type BodySex = "male" | "female";
+
+// The daily calorie + protein targets plus the body profile used to compute a
+// baseline daily burn (Mifflin-St Jeor BMR × activity_factor). One live row is
+// kept (deduped client-side), matching how `stocks` / `smoking_logs` handle
+// singletons. Profile fields are null until the user fills them in.
 export interface FoodGoalRow {
   id: string;
   calorie_goal: number;
   protein_goal: number;
+  sex: BodySex;
+  age: number | null;
+  height_cm: number | null;
+  weight_lb: number | null;
+  activity_factor: number;
   client_id: string | null;
   user_id: string | null;
   created_at: string;

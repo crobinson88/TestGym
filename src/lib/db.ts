@@ -333,6 +333,18 @@ export class GymDB extends Dexie {
       food_entries: "id, entry_date, updated_at, sync_status, deleted_at",
       food_goals: "id, updated_at, sync_status, deleted_at",
     });
+    this.version(25).upgrade(async (tx) => {
+      await tx
+        .table("food_goals")
+        .toCollection()
+        .modify((row: LocalFoodGoal) => {
+          if (row.sex === undefined) row.sex = "male";
+          if (row.age === undefined) row.age = null;
+          if (row.height_cm === undefined) row.height_cm = null;
+          if (row.weight_lb === undefined) row.weight_lb = null;
+          if (row.activity_factor === undefined) row.activity_factor = 1.2;
+        });
+    });
   }
 }
 

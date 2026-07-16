@@ -1,27 +1,54 @@
 import { useNavigate } from "react-router-dom";
-import { Pencil, Plus, Target, UtensilsCrossed } from "lucide-react";
+import { Flame, Pencil, Plus, Target, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { todayIsoDate, relativeDay } from "@/lib/utils";
 import type { FoodEntryRow } from "@/lib/database.types";
+import { useCardioSessionsForDate } from "@/lib/hooks";
 import { useFoodEntries, useFoodGoals } from "../hooks";
-import { goalProgress, groupByDate, sumEntries, type GoalProgress } from "../compute";
+import {
+  baselineBurn,
+  dailyBalance,
+  exerciseKcalFromMetMinutes,
+  goalProgress,
+  groupByDate,
+  lbToKg,
+  mifflinBmr,
+  sumEntries,
+  type GoalProgress,
+} from "../compute";
 
 export default function FoodDiaryHome() {
   const entries = useFoodEntries();
   const goals = useFoodGoals();
+  const today = todayIsoDate();
+  const todayCardio = useCardioSessionsForDate(today);
   const navigate = useNavigate();
 
   if (entries === undefined || goals === undefined) {
     return <div className="p-6 text-center text-muted">Loading…</div>;
   }
 
-  const today = todayIsoDate();
   const groups = groupByDate(entries);
   const todayTotals = sumEntries(entries.filter((e) => e.entry_date === today));
   const calorieGoal = goals?.calorie_goal ?? 0;
   const proteinGoal = goals?.protein_goal ?? 0;
   const past = groups.filter((g) => g.date !== today);
   const todayEntries = groups.find((g) => g.date === today)?.entries ?? [];
+
+  const weightKg = goals?.weight_lb != null ? lbToKg(goals.weight_lb) : null;
+  const bmr = mifflinBmr({
+    sex: goals?.sex ?? "male",
+    age: goals?.age ?? null,
+    heightCm: goals?.height_cm ?? null,
+    weightKg,
+  });
+  const baseline = baselineBurn(bmr, goals?.activity_factor ?? 1.2);
+  const metMinutes = (todayCardio ?? []).reduce(
+    (sum, c) => sum + (c.met_minutes ?? c.met_value_snapshot * c.minutes),
+    0,
+  );
+  const exercise = exerciseKcalFromMetMinutes(metMinutes, weightKg);
+  const balance = dailyBalance({ intake: todayTotals.calories, baseline, exercise });
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -70,6 +97,15 @@ export default function FoodDiaryHome() {
         </div>
       </section>
 
+      <BalanceCard
+        intake={balance.intake}
+        baseline={balance.baseline}
+        exercise={balance.exercise}
+        burn={balance.burn}
+        net={balance.net}
+        onSetup={() => navigate("/food/goals")}
+      />
+
       {entries.length === 0 && (
         <div className="rounded-2xl border border-dashed border-line bg-surface p-8 text-center text-muted">
           <UtensilsCrossed className="mx-auto mb-3 h-8 w-8 text-accent" />
@@ -117,6 +153,80 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <section>
       <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">{title}</h2>
       <ul className="space-y-3">{children}</ul>
+    </section>
+  );
+}
+
+function BalanceCard({
+  intake,
+  baseline,
+  exercise,
+  burn,
+  net,
+  onSetup,
+}: {
+  intake: number;
+  baseline: number | null;
+  exercise: number;
+  burn: number | null;
+  net: number | null;
+  onSetup: () => void;
+}) {
+  if (baseline == null || burn == null || net == null) {
+    return (
+      <button
+        onClick={onSetup}
+        className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-line bg-surface p-4 text-left"
+      >
+        <Flame className="h-6 w-6 shrink-0 text-accent" />
+        <div>
+          <div className="font-semibold text-text">Set up daily balance</div>
+          <div className="text-sm text-muted">
+            Add your body profile to track calories in vs. out.
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  const deficit = net >= 0;
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted">
+        <Flame className="h-3.5 w-3.5 text-accent" /> Balance today
+      </div>
+      <div className="flex items-end justify-between">
+        <div>
+          <div
+            className={cn(
+              "text-3xl font-bold tabular-nums",
+              deficit ? "text-success" : "text-warn",
+            )}
+          >
+            {deficit ? "−" : "+"}
+            {Math.abs(net)}
+          </div>
+          <div className="text-sm text-muted">
+            kcal {deficit ? "deficit" : "surplus"}
+          </div>
+        </div>
+        <div className="text-right text-sm text-muted">
+          <div>
+            <span className="tabular-nums text-text">{burn}</span> burned
+          </div>
+          <div>
+            <span className="tabular-nums text-text">{intake}</span> eaten
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-4 border-t border-line pt-3 text-xs text-muted">
+        <span>
+          Baseline <span className="tabular-nums text-text">{baseline}</span>
+        </span>
+        <span>
+          Exercise <span className="tabular-nums text-text">+{exercise}</span>
+        </span>
+      </div>
     </section>
   );
 }

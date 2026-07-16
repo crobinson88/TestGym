@@ -332,6 +332,10 @@ async function mergeFoodGoals(db: GymDB, rows: FoodGoalRow[]) {
           ...remote,
           calorie_goal: Number(remote.calorie_goal),
           protein_goal: Number(remote.protein_goal),
+          age: remote.age === null ? null : Number(remote.age),
+          height_cm: remote.height_cm === null ? null : Number(remote.height_cm),
+          weight_lb: remote.weight_lb === null ? null : Number(remote.weight_lb),
+          activity_factor: Number(remote.activity_factor),
           sync_status: "synced",
         });
       }

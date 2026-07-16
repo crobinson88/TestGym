@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { FoodEntryRow } from "@/lib/database.types";
-import { goalProgress, groupByDate, sumEntries } from "./compute";
+import {
+  baselineBurn,
+  cmToFtIn,
+  dailyBalance,
+  exerciseKcalFromMetMinutes,
+  ftInToCm,
+  goalProgress,
+  groupByDate,
+  lbToKg,
+  mifflinBmr,
+  sumEntries,
+} from "./compute";
 
 function entry(over: Partial<FoodEntryRow> = {}): FoodEntryRow {
   return {
@@ -63,5 +74,66 @@ describe("goalProgress", () => {
   it("treats a goal of 0 as no goal", () => {
     const p = goalProgress(500, 0);
     expect(p).toEqual({ value: 500, goal: 0, pct: 0, remaining: 0, over: false });
+  });
+});
+
+describe("unit conversions", () => {
+  it("converts pounds to kilograms", () => {
+    expect(lbToKg(220.462)).toBeCloseTo(100, 2);
+  });
+
+  it("converts feet+inches to cm and back", () => {
+    expect(ftInToCm(5, 10)).toBeCloseTo(177.8, 5);
+    expect(cmToFtIn(177.8)).toEqual({ feet: 5, inches: 10 });
+  });
+});
+
+describe("mifflinBmr", () => {
+  it("computes male BMR", () => {
+    expect(mifflinBmr({ sex: "male", age: 38, heightCm: 178, weightKg: 90 })).toBe(1828);
+  });
+
+  it("computes female BMR (161 lower)", () => {
+    expect(mifflinBmr({ sex: "female", age: 38, heightCm: 178, weightKg: 90 })).toBe(1662);
+  });
+
+  it("returns null when a measurement is missing", () => {
+    expect(mifflinBmr({ sex: "male", age: null, heightCm: 178, weightKg: 90 })).toBeNull();
+    expect(mifflinBmr({ sex: "male", age: 38, heightCm: null, weightKg: 90 })).toBeNull();
+    expect(mifflinBmr({ sex: "male", age: 38, heightCm: 178, weightKg: null })).toBeNull();
+  });
+});
+
+describe("baselineBurn", () => {
+  it("scales BMR by the activity factor", () => {
+    expect(baselineBurn(1828, 1.2)).toBe(2194);
+  });
+
+  it("passes null through", () => {
+    expect(baselineBurn(null, 1.2)).toBeNull();
+  });
+});
+
+describe("exerciseKcalFromMetMinutes", () => {
+  it("converts MET-minutes to kcal using body weight", () => {
+    expect(exerciseKcalFromMetMinutes(300, 90)).toBe(473);
+  });
+
+  it("returns 0 when weight is unknown", () => {
+    expect(exerciseKcalFromMetMinutes(300, null)).toBe(0);
+  });
+});
+
+describe("dailyBalance", () => {
+  it("nets burn against intake (positive = deficit)", () => {
+    const b = dailyBalance({ intake: 2000, baseline: 2194, exercise: 473 });
+    expect(b.burn).toBe(2667);
+    expect(b.net).toBe(667);
+  });
+
+  it("leaves burn/net null when baseline is unknown", () => {
+    const b = dailyBalance({ intake: 2000, baseline: null, exercise: 473 });
+    expect(b.burn).toBeNull();
+    expect(b.net).toBeNull();
   });
 });

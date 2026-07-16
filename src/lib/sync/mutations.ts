@@ -17,6 +17,7 @@ import type {
   LocalTip,
 } from "../db";
 import type {
+  BodySex,
   CardioSessionRow,
   CategoryRow,
   ExerciseRow,
@@ -151,6 +152,11 @@ export type UpdateFoodEntryInput = Partial<AddFoodEntryInput>;
 export interface SetFoodGoalsInput {
   calorie_goal: number;
   protein_goal: number;
+  sex?: BodySex;
+  age?: number | null;
+  height_cm?: number | null;
+  weight_lb?: number | null;
+  activity_factor?: number;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -912,8 +918,14 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
   }
 
+  // Round a nullable positive measurement (age/height/weight) or clear it.
+  const posOrNull = (n: number | null | undefined): number | null =>
+    n == null || !Number.isFinite(n) || n <= 0 ? null : n;
+
   // Update the single live goals row when there is one, otherwise create it.
-  // Soft-delete any stray duplicates so the day can't read two goal rows.
+  // Soft-delete any stray duplicates so the day can't read two goal rows. The
+  // body-profile fields are optional: an absent field keeps the current value
+  // (or the default on create) so callers can patch just the goals.
   async function setFoodGoals(input: SetFoodGoalsInput): Promise<LocalFoodGoal> {
     const live = await liveFoodGoalRows();
     const ts = now();
@@ -923,11 +935,29 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     for (const dupe of dupes) {
       await db.food_goals.put({ ...dupe, deleted_at: ts, updated_at: ts, sync_status: "pending" });
     }
+
+    const profile = {
+      sex: input.sex ?? current?.sex ?? "male",
+      age:
+        input.age !== undefined
+          ? posOrNull(input.age) === null
+            ? null
+            : Math.floor(input.age as number)
+          : current?.age ?? null,
+      height_cm: input.height_cm !== undefined ? posOrNull(input.height_cm) : current?.height_cm ?? null,
+      weight_lb: input.weight_lb !== undefined ? posOrNull(input.weight_lb) : current?.weight_lb ?? null,
+      activity_factor:
+        input.activity_factor !== undefined
+          ? Math.max(1, input.activity_factor)
+          : current?.activity_factor ?? 1.2,
+    };
+
     if (current) {
       const updated: LocalFoodGoal = {
         ...current,
         calorie_goal,
         protein_goal,
+        ...profile,
         updated_at: ts,
         sync_status: "pending",
       };
@@ -940,6 +970,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       id,
       calorie_goal,
       protein_goal,
+      ...profile,
       client_id: id,
       user_id: null,
       ...baseRowDefaults(ts),
