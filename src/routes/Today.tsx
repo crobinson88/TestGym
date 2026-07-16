@@ -10,6 +10,7 @@ import {
   CigaretteOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { DailyGoals } from "@/components/DailyGoals";
 import { syncEngine } from "@/lib/sync";
 import {
   useExercises,
@@ -168,6 +169,10 @@ export function Today() {
         </div>
 
         <SmokingTracker date={selectedDate} smoked={smoked} />
+
+        <div className="mt-3">
+          <DailyGoals date={selectedDate} />
+        </div>
       </header>
 
       {nothingLogged && (

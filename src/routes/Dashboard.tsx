@@ -18,6 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, Download, Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { DailyGoals } from "@/components/DailyGoals";
 import { downloadSetsCsv } from "@/lib/csv";
 import { syncEngine } from "@/lib/sync";
 import {
@@ -146,6 +147,11 @@ export default function Dashboard() {
       <header>
         <h1 className="text-2xl font-bold">Stats</h1>
       </header>
+
+      <section>
+        <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Today's goals</h2>
+        <DailyGoals date={todayIsoDate()} />
+      </section>
 
       <section className="grid grid-cols-3 gap-3">
         <StatTile
