@@ -13,6 +13,7 @@ import {
   createCategory,
   deleteCategory,
   renameCategory,
+  reorderCategories,
 } from "./categories";
 
 // pokeOutbox() short-circuits when offline; keep the drain from touching the
@@ -81,6 +82,34 @@ describe("renameCategory", () => {
     const renamed = await renameCategory(cat.id, "New");
     expect(renamed?.label).toBe("New");
     expect(renamed?.key).toBe(cat.key);
+  });
+});
+
+describe("reorderCategories", () => {
+  it("rewrites sort_order to match the given id order", async () => {
+    const a = await createCategory("A");
+    const b = await createCategory("B");
+    const c = await createCategory("C");
+    await reorderCategories([c.id, a.id, b.id]);
+    const rows = await db.tdl_categories.toArray();
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get(c.id)?.sort_order).toBe(0);
+    expect(byId.get(a.id)?.sort_order).toBe(1);
+    expect(byId.get(b.id)?.sort_order).toBe(2);
+    expect(byId.get(c.id)?.sync_status).toBe("pending");
+    // Untouched row keeps its already-correct order without a rewrite.
+    expect(byId.get(a.id)?.sync_status).toBe("pending");
+  });
+
+  it("skips unknown or deleted ids", async () => {
+    const a = await createCategory("A");
+    const b = await createCategory("B");
+    await deleteCategory(b.id);
+    await expect(
+      reorderCategories([uuid(), b.id, a.id]),
+    ).resolves.toBeUndefined();
+    const still = await db.tdl_categories.get(a.id);
+    expect(still?.sort_order).toBe(2);
   });
 });
 

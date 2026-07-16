@@ -1,13 +1,30 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, Check, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn, todayIsoDate } from "@/lib/utils";
+import type { LocalTdlCategory } from "@/lib/db";
 import {
   createCategory,
   deleteCategory,
   renameCategory,
+  reorderCategories,
   useBlockingCounts,
   useCategoryRows,
 } from "../categories";
@@ -24,6 +41,46 @@ export default function CategoriesView() {
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmStage, setConfirmStage] = useState<1 | 2>(1);
+  // Local order for optimistic drag reordering; kept in sync with the live rows
+  // between drags so a persisted reorder (or a realtime push) still wins.
+  const [order, setOrder] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!rows) return;
+    setOrder(rows.map((r) => r.id));
+  }, [rows]);
+
+  const orderedRows = useMemo(() => {
+    if (!rows) return [];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const seen = new Set<string>();
+    const out: LocalTdlCategory[] = [];
+    for (const id of order) {
+      const row = byId.get(id);
+      if (row) {
+        out.push(row);
+        seen.add(id);
+      }
+    }
+    for (const row of rows) if (!seen.has(row.id)) out.push(row);
+    return out;
+  }, [rows, order]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function onDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = orderedRows.map((r) => r.id);
+    const from = ids.indexOf(active.id as string);
+    const to = ids.indexOf(over.id as string);
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(ids, from, to);
+    setOrder(next);
+    void reorderCategories(next);
+  }
 
   function startDelete(id: string) {
     setError(null);
@@ -97,18 +154,24 @@ export default function CategoriesView() {
         {!rows ? (
           <div className="p-6 text-center text-muted">Loading...</div>
         ) : (
-          <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
-            {rows.map((cat) => {
-              const blockingCount = blocking?.get(cat.key) ?? 0;
-              const editing = editingId === cat.id;
-              const confirming = confirmId === cat.id;
-              return (
-                <li
-                  key={cat.id}
-                  className="flex items-center gap-2 border-b border-line/50 px-3 py-2 last:border-b-0"
-                >
-                  <GripVertical className="h-4 w-4 shrink-0 text-muted/40" />
-                  {confirming ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext
+              items={orderedRows.map((r) => r.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
+                {orderedRows.map((cat) => {
+                  const blockingCount = blocking?.get(cat.key) ?? 0;
+                  const editing = editingId === cat.id;
+                  const confirming = confirmId === cat.id;
+                  const dragDisabled = editing || confirming;
+                  return (
+                    <SortableCategoryRow key={cat.id} id={cat.id} disabled={dragDisabled}>
+                      {confirming ? (
                     <>
                       <div className="min-w-0 flex-1 text-sm text-danger">
                         {confirmStage === 1
@@ -209,10 +272,12 @@ export default function CategoriesView() {
                       </Button>
                     </>
                   )}
-                </li>
-              );
-            })}
-          </ul>
+                    </SortableCategoryRow>
+                  );
+                })}
+              </ul>
+            </SortableContext>
+          </DndContext>
         )}
 
         <div className="mt-3">
@@ -251,5 +316,44 @@ export default function CategoriesView() {
         </p>
       </div>
     </div>
+  );
+}
+
+function SortableCategoryRow({
+  id,
+  disabled,
+  children,
+}: {
+  id: string;
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled });
+  return (
+    <li
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+      }}
+      className="flex items-center gap-2 border-b border-line/50 bg-surface px-3 py-2 last:border-b-0"
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag to reorder"
+        disabled={disabled}
+        className={cn(
+          "-ml-1 flex h-8 w-6 shrink-0 items-center justify-center text-muted/40",
+          disabled ? "cursor-default" : "cursor-grab touch-none active:cursor-grabbing",
+        )}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      {children}
+    </li>
   );
 }
