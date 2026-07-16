@@ -39,6 +39,8 @@ export function SectionColumn({
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const [estimate, setEstimate] = useState("");
+  const [estError, setEstError] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -74,10 +76,23 @@ export function SectionColumn({
     { key: "done", label: "done", n: counts.done, cls: "bg-success/15 text-success" },
   ].filter((c) => c.key === "open" || c.n > 0);
 
+  // Categories flagged with a time estimate require one on every new item;
+  // categories without the flag never show or ask for it.
+  const requiresEstimate = cfg.hasTimeEstimate;
+
+  function parsedEstimate(): number | null {
+    const raw = estimate.trim();
+    if (raw === "") return null;
+    const n = Math.trunc(Number(raw));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   function resetAdd() {
     setAdding(false);
     setShowDetails(false);
     setDraft("");
+    setEstimate("");
+    setEstError(false);
     setNotes("");
     setImages([]);
   }
@@ -88,15 +103,23 @@ export function SectionColumn({
       if (!showDetails) setAdding(false);
       return;
     }
+    const est = parsedEstimate();
+    if (requiresEstimate && est == null) {
+      setEstError(true);
+      return;
+    }
     await createItem({
       snapshot_date,
       section: cfg.key,
       title,
+      time_estimate_min: est,
       notes: notes.trim() ? notes.trim() : null,
       images,
     });
     // Keep the composer open for the next quick add, collapsing details again.
     setDraft("");
+    setEstimate("");
+    setEstError(false);
     setNotes("");
     setImages([]);
     setShowDetails(false);
@@ -236,6 +259,37 @@ export function SectionColumn({
               placeholder="New task..."
               className="h-9 text-sm"
             />
+            {requiresEstimate && (
+              <div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={estimate}
+                    onChange={(e) => {
+                      setEstimate(e.target.value);
+                      if (estError) setEstError(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void submit();
+                      if (e.key === "Escape") resetAdd();
+                    }}
+                    placeholder="Est."
+                    aria-label="Time to complete estimate in minutes"
+                    aria-invalid={estError}
+                    className={cn("h-9 w-20 text-sm", estError && "border-danger")}
+                  />
+                  <span className="text-xs text-muted">min to complete</span>
+                </div>
+                {estError && (
+                  <div className="mt-1 text-xs text-danger">
+                    Add a time-to-complete estimate (minutes) to save.
+                  </div>
+                )}
+              </div>
+            )}
             {showDetails ? (
               <>
                 <textarea

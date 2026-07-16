@@ -120,6 +120,27 @@ export async function renameCategory(id: string, label: string): Promise<LocalTd
   return updated;
 }
 
+// Rewrite sort_order to match the given id order. Ids not present in the table
+// (or already deleted) are skipped; live categories missing from the list keep
+// their relative order after the listed ones.
+export async function reorderCategories(orderedIds: string[]): Promise<void> {
+  const ts = nowIso();
+  await db.transaction("rw", db.tdl_categories, async () => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      const existing = await db.tdl_categories.get(orderedIds[i]);
+      if (!existing || existing.deleted_at) continue;
+      if (existing.sort_order === i) continue;
+      await db.tdl_categories.put({
+        ...existing,
+        sort_order: i,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
+  });
+  pokeOutbox();
+}
+
 export async function deleteCategory(id: string): Promise<LocalTdlCategory | null> {
   const existing = await db.tdl_categories.get(id);
   if (!existing || existing.deleted_at) return existing ?? null;

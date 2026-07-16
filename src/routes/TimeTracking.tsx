@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import {
   hoursOnDate,
   slotEndLabel,
   SLOTS_PER_DAY,
+  TASK_PALETTE,
   taskHoursOnDate,
   workHoursInRange,
   workHoursOnDate,
@@ -300,6 +301,7 @@ function ManageTasksModal({
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [colorEditId, setColorEditId] = useState<string | null>(null);
 
   async function onAdd() {
     const name = newName.trim();
@@ -400,12 +402,23 @@ function ManageTasksModal({
               <li className="p-4 text-center text-sm text-muted">No tasks yet. Add one above.</li>
             )}
             {tasks.map((t) => (
-              <li key={t.id} className="flex items-center gap-3 px-3 py-3">
-                <span
-                  className="inline-block h-3 w-3 shrink-0 rounded-full"
-                  style={{ backgroundColor: t.color }}
-                  aria-hidden
-                />
+              <li key={t.id} className="px-3 py-3">
+                <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setColorEditId((cur) => (cur === t.id ? null : t.id))
+                  }
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-surface2"
+                  aria-label={`Change colour for ${t.name}`}
+                  aria-expanded={colorEditId === t.id}
+                >
+                  <span
+                    className="inline-block h-4 w-4 rounded-full ring-1 ring-black/20"
+                    style={{ backgroundColor: t.color }}
+                    aria-hidden
+                  />
+                </button>
                 {editingId === t.id ? (
                   <Input
                     autoFocus
@@ -453,6 +466,33 @@ function ManageTasksModal({
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+                </div>
+                {colorEditId === t.id && (
+                  <div className="mt-3 flex flex-wrap gap-2 pl-11">
+                    {TASK_PALETTE.map((c) => {
+                      const selected = t.color.toLowerCase() === c.toLowerCase();
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => {
+                            if (!selected) void updateTimeTask(t.id, { color: c });
+                            setColorEditId(null);
+                          }}
+                          className={cn(
+                            "flex h-8 w-8 items-center justify-center rounded-full ring-1 ring-black/20 transition active:scale-95",
+                            selected && "ring-2 ring-text",
+                          )}
+                          style={{ backgroundColor: c }}
+                          aria-label={`Set colour ${c}`}
+                          aria-pressed={selected}
+                        >
+                          {selected && <Check className="h-4 w-4 text-black/70" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
