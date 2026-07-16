@@ -3,6 +3,8 @@ import type {
   CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  FoodEntryRow,
+  FoodGoalRow,
   FrenchAttemptRow,
   MarketNoteRow,
   MetActivityRow,
@@ -303,6 +305,44 @@ async function mergeSmokingLogs(db: GymDB, rows: SmokingLogRow[]) {
   });
 }
 
+async function mergeFoodEntries(db: GymDB, rows: FoodEntryRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.food_entries, async () => {
+    for (const remote of rows) {
+      const local = await db.food_entries.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.food_entries.put({
+          ...remote,
+          calories: Number(remote.calories),
+          protein: Number(remote.protein),
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
+async function mergeFoodGoals(db: GymDB, rows: FoodGoalRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.food_goals, async () => {
+    for (const remote of rows) {
+      const local = await db.food_goals.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.food_goals.put({
+          ...remote,
+          calorie_goal: Number(remote.calorie_goal),
+          protein_goal: Number(remote.protein_goal),
+          age: remote.age === null ? null : Number(remote.age),
+          height_cm: remote.height_cm === null ? null : Number(remote.height_cm),
+          weight_lb: remote.weight_lb === null ? null : Number(remote.weight_lb),
+          activity_factor: Number(remote.activity_factor),
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
 export interface PullDeps {
   client: Client;
   db: GymDB;
@@ -328,6 +368,8 @@ const META_KEYS: Record<SyncTable, string> = {
   tips: "last_pull_tips",
   market_notes: "last_pull_market_notes",
   smoking_logs: "last_pull_smoking_logs",
+  food_entries: "last_pull_food_entries",
+  food_goals: "last_pull_food_goals",
 };
 
 export function createPull({ client, db, log }: PullDeps) {
@@ -360,6 +402,8 @@ export function createPull({ client, db, log }: PullDeps) {
       tips: 0,
       market_notes: 0,
       smoking_logs: 0,
+      food_entries: 0,
+      food_goals: 0,
     };
 
     for (const table of SYNC_TABLES) {
@@ -467,12 +511,26 @@ export function createPull({ client, db, log }: PullDeps) {
           if (rows.length > 0) {
             await writeMark("market_notes", rows[rows.length - 1].updated_at);
           }
-        } else {
+        } else if (table === "smoking_logs") {
           const rows = await fetchSince<SmokingLogRow>(client, "smoking_logs", since);
           await mergeSmokingLogs(db, rows);
           fetched.smoking_logs = rows.length;
           if (rows.length > 0) {
             await writeMark("smoking_logs", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "food_entries") {
+          const rows = await fetchSince<FoodEntryRow>(client, "food_entries", since);
+          await mergeFoodEntries(db, rows);
+          fetched.food_entries = rows.length;
+          if (rows.length > 0) {
+            await writeMark("food_entries", rows[rows.length - 1].updated_at);
+          }
+        } else {
+          const rows = await fetchSince<FoodGoalRow>(client, "food_goals", since);
+          await mergeFoodGoals(db, rows);
+          fetched.food_goals = rows.length;
+          if (rows.length > 0) {
+            await writeMark("food_goals", rows[rows.length - 1].updated_at);
           }
         }
       } catch (err) {

@@ -1,0 +1,139 @@
+import { describe, expect, it } from "vitest";
+import type { FoodEntryRow } from "@/lib/database.types";
+import {
+  baselineBurn,
+  cmToFtIn,
+  dailyBalance,
+  exerciseKcalFromMetMinutes,
+  ftInToCm,
+  goalProgress,
+  groupByDate,
+  lbToKg,
+  mifflinBmr,
+  sumEntries,
+} from "./compute";
+
+function entry(over: Partial<FoodEntryRow> = {}): FoodEntryRow {
+  return {
+    id: crypto.randomUUID(),
+    entry_date: "2026-07-16",
+    name: "Chicken",
+    calories: 200,
+    protein: 40,
+    client_id: null,
+    user_id: null,
+    created_at: "2026-07-16T10:00:00.000Z",
+    updated_at: "2026-07-16T10:00:00.000Z",
+    deleted_at: null,
+    ...over,
+  };
+}
+
+describe("sumEntries", () => {
+  it("adds calories and protein and counts rows", () => {
+    const totals = sumEntries([
+      entry({ calories: 200, protein: 40 }),
+      entry({ calories: 150, protein: 12 }),
+    ]);
+    expect(totals).toEqual({ calories: 350, protein: 52, count: 2 });
+  });
+
+  it("returns zeros for an empty day", () => {
+    expect(sumEntries([])).toEqual({ calories: 0, protein: 0, count: 0 });
+  });
+});
+
+describe("groupByDate", () => {
+  it("groups by date, newest day first, newest entry first within a day", () => {
+    const groups = groupByDate([
+      entry({ entry_date: "2026-07-14", created_at: "2026-07-14T08:00:00.000Z" }),
+      entry({ entry_date: "2026-07-16", created_at: "2026-07-16T08:00:00.000Z", name: "A" }),
+      entry({ entry_date: "2026-07-16", created_at: "2026-07-16T12:00:00.000Z", name: "B" }),
+    ]);
+    expect(groups.map((g) => g.date)).toEqual(["2026-07-16", "2026-07-14"]);
+    expect(groups[0].entries.map((e) => e.name)).toEqual(["B", "A"]);
+    expect(groups[0].totals.count).toBe(2);
+  });
+});
+
+describe("goalProgress", () => {
+  it("reports fraction met and remaining below goal", () => {
+    const p = goalProgress(120, 150);
+    expect(p.pct).toBeCloseTo(0.8);
+    expect(p.remaining).toBe(30);
+    expect(p.over).toBe(false);
+  });
+
+  it("clamps pct to 1 and flags over when past goal", () => {
+    const p = goalProgress(180, 150);
+    expect(p.pct).toBe(1);
+    expect(p.remaining).toBe(-30);
+    expect(p.over).toBe(true);
+  });
+
+  it("treats a goal of 0 as no goal", () => {
+    const p = goalProgress(500, 0);
+    expect(p).toEqual({ value: 500, goal: 0, pct: 0, remaining: 0, over: false });
+  });
+});
+
+describe("unit conversions", () => {
+  it("converts pounds to kilograms", () => {
+    expect(lbToKg(220.462)).toBeCloseTo(100, 2);
+  });
+
+  it("converts feet+inches to cm and back", () => {
+    expect(ftInToCm(5, 10)).toBeCloseTo(177.8, 5);
+    expect(cmToFtIn(177.8)).toEqual({ feet: 5, inches: 10 });
+  });
+});
+
+describe("mifflinBmr", () => {
+  it("computes male BMR", () => {
+    expect(mifflinBmr({ sex: "male", age: 38, heightCm: 178, weightKg: 90 })).toBe(1828);
+  });
+
+  it("computes female BMR (161 lower)", () => {
+    expect(mifflinBmr({ sex: "female", age: 38, heightCm: 178, weightKg: 90 })).toBe(1662);
+  });
+
+  it("returns null when a measurement is missing", () => {
+    expect(mifflinBmr({ sex: "male", age: null, heightCm: 178, weightKg: 90 })).toBeNull();
+    expect(mifflinBmr({ sex: "male", age: 38, heightCm: null, weightKg: 90 })).toBeNull();
+    expect(mifflinBmr({ sex: "male", age: 38, heightCm: 178, weightKg: null })).toBeNull();
+  });
+});
+
+describe("baselineBurn", () => {
+  it("scales BMR by the activity factor", () => {
+    expect(baselineBurn(1828, 1.2)).toBe(2194);
+  });
+
+  it("passes null through", () => {
+    expect(baselineBurn(null, 1.2)).toBeNull();
+  });
+});
+
+describe("exerciseKcalFromMetMinutes", () => {
+  it("converts MET-minutes to kcal using body weight", () => {
+    expect(exerciseKcalFromMetMinutes(300, 90)).toBe(473);
+  });
+
+  it("returns 0 when weight is unknown", () => {
+    expect(exerciseKcalFromMetMinutes(300, null)).toBe(0);
+  });
+});
+
+describe("dailyBalance", () => {
+  it("nets burn against intake (positive = deficit)", () => {
+    const b = dailyBalance({ intake: 2000, baseline: 2194, exercise: 473 });
+    expect(b.burn).toBe(2667);
+    expect(b.net).toBe(667);
+  });
+
+  it("leaves burn/net null when baseline is unknown", () => {
+    const b = dailyBalance({ intake: 2000, baseline: null, exercise: 473 });
+    expect(b.burn).toBeNull();
+    expect(b.net).toBeNull();
+  });
+});

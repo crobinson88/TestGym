@@ -4,6 +4,8 @@ import type {
   CategoryRow,
   ConflictRow,
   ExerciseRow,
+  FoodEntryRow,
+  FoodGoalRow,
   ForecastRow,
   FrenchAttemptRow,
   MarketNoteRow,
@@ -127,6 +129,14 @@ export interface LocalSmokingLog extends SmokingLogRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalFoodEntry extends FoodEntryRow {
+  sync_status: SyncStatus;
+}
+
+export interface LocalFoodGoal extends FoodGoalRow {
+  sync_status: SyncStatus;
+}
+
 export class GymDB extends Dexie {
   sets!: Table<LocalSet, string>;
   exercises!: Table<LocalExercise, string>;
@@ -148,6 +158,8 @@ export class GymDB extends Dexie {
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
   smoking_logs!: Table<LocalSmokingLog, string>;
+  food_entries!: Table<LocalFoodEntry, string>;
+  food_goals!: Table<LocalFoodGoal, string>;
   ir_cache!: Table<IrCacheRow, string>;
 
   constructor(name = "gym-tracker") {
@@ -315,6 +327,22 @@ export class GymDB extends Dexie {
         .toCollection()
         .modify((row: LocalTdlItem) => {
           if (row.eisenhower_quadrant === undefined) row.eisenhower_quadrant = null;
+        });
+    });
+    this.version(24).stores({
+      food_entries: "id, entry_date, updated_at, sync_status, deleted_at",
+      food_goals: "id, updated_at, sync_status, deleted_at",
+    });
+    this.version(25).upgrade(async (tx) => {
+      await tx
+        .table("food_goals")
+        .toCollection()
+        .modify((row: LocalFoodGoal) => {
+          if (row.sex === undefined) row.sex = "male";
+          if (row.age === undefined) row.age = null;
+          if (row.height_cm === undefined) row.height_cm = null;
+          if (row.weight_lb === undefined) row.weight_lb = null;
+          if (row.activity_factor === undefined) row.activity_factor = 1.2;
         });
     });
   }

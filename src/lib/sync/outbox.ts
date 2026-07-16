@@ -3,6 +3,8 @@ import type {
   LocalCardioSession,
   LocalCategory,
   LocalExercise,
+  LocalFoodEntry,
+  LocalFoodGoal,
   LocalFrenchAttempt,
   LocalMarketNote,
   LocalMetActivity,
@@ -40,7 +42,9 @@ type PendingRow =
   | LocalReadingItem
   | LocalTip
   | LocalMarketNote
-  | LocalSmokingLog;
+  | LocalSmokingLog
+  | LocalFoodEntry
+  | LocalFoodGoal;
 
 // Local-only bookkeeping + server-owned columns stripped from every payload.
 const STRIP_KEYS = [
@@ -81,6 +85,8 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   tips: "id",
   market_notes: "id",
   smoking_logs: "id",
+  food_entries: "id",
+  food_goals: "id",
 };
 
 function toPayload(table: SyncTable, row: PendingRow): Record<string, unknown> {
@@ -150,6 +156,12 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   }
   if (table === "smoking_logs") {
     return db.smoking_logs.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "food_entries") {
+    return db.food_entries.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "food_goals") {
+    return db.food_goals.where("sync_status").equals("pending").limit(limit).toArray();
   }
   return db.tdl_days.where("sync_status").equals("pending").limit(limit).toArray();
 }
