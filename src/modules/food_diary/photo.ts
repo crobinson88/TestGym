@@ -41,10 +41,12 @@ export async function estimateFoodPhoto(
 ): Promise<FoodEstimate> {
   const { data, mediaType } = await downscale(file);
 
-  const res = await fetch("/api/food-photo", {
+  // Shares the receipt-scan function (kind:"food") to stay within Vercel's
+  // Serverless-Function budget — see api/receipt-scan.ts.
+  const res = await fetch("/api/receipt-scan", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64: data, mediaType, note: note?.trim() || undefined }),
+    body: JSON.stringify({ imageBase64: data, mediaType, kind: "food", note: note?.trim() || undefined }),
   });
 
   const text = await res.text();
