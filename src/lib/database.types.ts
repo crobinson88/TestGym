@@ -411,6 +411,34 @@ export interface SmokingLogRow {
   deleted_at: string | null;
 }
 
+// One food logged on a given day: its name plus the calories and grams of
+// protein it contributed. Same sync / RLS / soft-delete rules as `sets`.
+export interface FoodEntryRow {
+  id: string;
+  entry_date: string;
+  name: string;
+  calories: number;
+  protein: number;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+// The daily calorie + protein targets. One live row is kept (deduped
+// client-side), matching how `stocks` / `smoking_logs` handle singletons.
+export interface FoodGoalRow {
+  id: string;
+  calorie_goal: number;
+  protein_goal: number;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -554,6 +582,22 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<SmokingLogRow>;
+      };
+      food_entries: {
+        Row: FoodEntryRow;
+        Insert: Omit<FoodEntryRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<FoodEntryRow>;
+      };
+      food_goals: {
+        Row: FoodGoalRow;
+        Insert: Omit<FoodGoalRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<FoodGoalRow>;
       };
     };
   };

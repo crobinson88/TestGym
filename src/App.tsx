@@ -15,6 +15,7 @@ import { venmoRoutes } from "@/modules/venmo/routes";
 import { sharesRoutes } from "@/modules/shares/routes";
 import { frenchRoutes } from "@/modules/french/routes";
 import { readingRoutes } from "@/modules/reading_list/routes";
+import { foodRoutes } from "@/modules/food_diary/routes";
 import { doorRoutes } from "@/modules/doors/routes";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
@@ -75,6 +76,7 @@ export function App() {
               {sharesRoutes()}
               {frenchRoutes()}
               {readingRoutes()}
+              {foodRoutes()}
               {doorRoutes()}
             </Route>
           </Route>

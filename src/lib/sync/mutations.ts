@@ -4,6 +4,8 @@ import type {
   LocalCardioSession,
   LocalCategory,
   LocalExercise,
+  LocalFoodEntry,
+  LocalFoodGoal,
   LocalForecast,
   LocalFrenchAttempt,
   LocalMarketNote,
@@ -18,6 +20,8 @@ import type {
   CardioSessionRow,
   CategoryRow,
   ExerciseRow,
+  FoodEntryRow,
+  FoodGoalRow,
   ForecastRow,
   FrenchAttemptDetail,
   FrenchAttemptRow,
@@ -135,6 +139,20 @@ export interface AddMarketNoteInput {
 
 export type UpdateMarketNoteInput = Partial<AddMarketNoteInput>;
 
+export interface AddFoodEntryInput {
+  name: string;
+  calories: number;
+  protein: number;
+  entry_date?: string;
+}
+
+export type UpdateFoodEntryInput = Partial<AddFoodEntryInput>;
+
+export interface SetFoodGoalsInput {
+  calorie_goal: number;
+  protein_goal: number;
+}
+
 const nowIso = () => new Date().toISOString();
 
 const baseRowDefaults = (now: string) => ({
@@ -190,6 +208,16 @@ function pendingMarketNote(row: MarketNoteRow): LocalMarketNote {
 function pendingSmokingLog(row: SmokingLogRow): LocalSmokingLog {
   return { ...row, sync_status: "pending" };
 }
+
+function pendingFoodEntry(row: FoodEntryRow): LocalFoodEntry {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingFoodGoal(row: FoodGoalRow): LocalFoodGoal {
+  return { ...row, sync_status: "pending" };
+}
+
+const clampNonNeg = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
 
 const normaliseTicker = (t: string) => t.trim().toUpperCase();
 
@@ -822,6 +850,106 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return writeSmoking(date, n > 0, n, live[0]);
   }
 
+  async function addFoodEntry(input: AddFoodEntryInput): Promise<LocalFoodEntry> {
+    const id = uuid();
+    const ts = now();
+    const row: FoodEntryRow = {
+      id,
+      entry_date: input.entry_date ?? todayIsoDate(),
+      name: input.name.trim(),
+      calories: clampNonNeg(input.calories),
+      protein: clampNonNeg(input.protein),
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingFoodEntry(row);
+    await db.food_entries.put(local);
+    notify();
+    return local;
+  }
+
+  async function updateFoodEntry(
+    id: string,
+    patch: UpdateFoodEntryInput,
+  ): Promise<LocalFoodEntry | null> {
+    const existing = await db.food_entries.get(id);
+    if (!existing) return null;
+    const ts = now();
+    const updated: LocalFoodEntry = {
+      ...existing,
+      name: patch.name !== undefined ? patch.name.trim() : existing.name,
+      calories: patch.calories !== undefined ? clampNonNeg(patch.calories) : existing.calories,
+      protein: patch.protein !== undefined ? clampNonNeg(patch.protein) : existing.protein,
+      entry_date: patch.entry_date !== undefined ? patch.entry_date : existing.entry_date,
+      updated_at: ts,
+      sync_status: "pending",
+    };
+    await db.food_entries.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function deleteFoodEntry(id: string): Promise<void> {
+    const existing = await db.food_entries.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.food_entries.put({
+      ...existing,
+      deleted_at: ts,
+      updated_at: ts,
+      sync_status: "pending",
+    });
+    notify();
+  }
+
+  // The daily goals are a single live row (deduped client-side, like `stocks`).
+  // Offline races can leave duplicates, so resolve the newest and clean up the rest.
+  async function liveFoodGoalRows(): Promise<LocalFoodGoal[]> {
+    const all = await db.food_goals.toArray();
+    return all
+      .filter((r) => !r.deleted_at)
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+  }
+
+  // Update the single live goals row when there is one, otherwise create it.
+  // Soft-delete any stray duplicates so the day can't read two goal rows.
+  async function setFoodGoals(input: SetFoodGoalsInput): Promise<LocalFoodGoal> {
+    const live = await liveFoodGoalRows();
+    const ts = now();
+    const calorie_goal = Math.max(0, Math.floor(input.calorie_goal));
+    const protein_goal = Math.max(0, Math.floor(input.protein_goal));
+    const [current, ...dupes] = live;
+    for (const dupe of dupes) {
+      await db.food_goals.put({ ...dupe, deleted_at: ts, updated_at: ts, sync_status: "pending" });
+    }
+    if (current) {
+      const updated: LocalFoodGoal = {
+        ...current,
+        calorie_goal,
+        protein_goal,
+        updated_at: ts,
+        sync_status: "pending",
+      };
+      await db.food_goals.put(updated);
+      notify();
+      return updated;
+    }
+    const id = uuid();
+    const row: FoodGoalRow = {
+      id,
+      calorie_goal,
+      protein_goal,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingFoodGoal(row);
+    await db.food_goals.put(local);
+    notify();
+    return local;
+  }
+
   return {
     addSet,
     updateSet,
@@ -853,6 +981,10 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addMarketNoteResearch,
     setSmoked,
     setCigaretteCount,
+    addFoodEntry,
+    updateFoodEntry,
+    deleteFoodEntry,
+    setFoodGoals,
   };
 }
 
