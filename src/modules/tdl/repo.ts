@@ -304,6 +304,36 @@ export async function deleteItems(ids: string[]): Promise<number> {
   return bulkUpdate(ids, (it, ts) => (it.deleted_at ? null : { deleted_at: ts }));
 }
 
+// Bulk-cancel the given items (status → cancelled). Already-cancelled skipped.
+export async function cancelItems(ids: string[]): Promise<number> {
+  return bulkUpdate(ids, (it) => (it.status === "cancelled" ? null : { status: "cancelled" }));
+}
+
+// Bulk-clear snooze on the given items. Items that aren't snoozed are skipped.
+export async function unsnoozeItems(ids: string[]): Promise<number> {
+  return bulkUpdate(ids, (it) => (it.snoozed_until == null ? null : { snoozed_until: null }));
+}
+
+// Bulk-set the reluctance flag. Clearing it also clears the recorded reason.
+export async function setReluctantItems(ids: string[], reluctant: boolean): Promise<number> {
+  return bulkUpdate(ids, (it) => {
+    if (it.is_reluctant === reluctant) return null;
+    return reluctant ? { is_reluctant: true } : { is_reluctant: false, reluctance_reason: null };
+  });
+}
+
+// Bulk-move the given items to a section, appending each after that section's
+// current contents. Items already there are skipped. Returns how many moved.
+export async function moveItemsToSection(ids: string[], toSection: TdlSection): Promise<number> {
+  let changed = 0;
+  for (const id of ids) {
+    const existing = await db.tdl_items.get(id);
+    if (!existing || existing.deleted_at || existing.section === toSection) continue;
+    if (await moveItemToSection(id, toSection)) changed++;
+  }
+  return changed;
+}
+
 export async function archiveItem(id: string): Promise<LocalTdlItem | null> {
   return updateItem(id, { is_archived: true });
 }

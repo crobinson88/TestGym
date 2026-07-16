@@ -19,6 +19,7 @@ export function PriorityColumn({
   selecting = false,
   selectedIds,
   onToggleSelect,
+  onBulkActed,
 }: {
   items: LocalTdlItem[];
   categories: SectionConfig[];
@@ -28,6 +29,7 @@ export function PriorityColumn({
   selecting?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  onBulkActed?: () => void;
 }) {
   // Mirrors SectionColumn's mobile-only collapse, but priorities lead the board
   // so they start open.
@@ -84,7 +86,9 @@ export function PriorityColumn({
                 takenRanks={takenRanks}
                 selecting={selecting}
                 selected={selectedIds?.has(item.id)}
+                selectedIds={selectedIds}
                 onToggleSelect={onToggleSelect}
+                onBulkActed={onBulkActed}
               />
             ))}
           </ul>

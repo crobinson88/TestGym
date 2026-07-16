@@ -308,6 +308,7 @@ export default function DayView() {
                   selecting={selecting}
                   selectedIds={selected}
                   onToggleSelect={toggleSelect}
+                  onBulkActed={() => setSelected(new Set())}
                 />
               )}
               {visibleColumns.map((cfg) => {
@@ -326,6 +327,7 @@ export default function DayView() {
                     selecting={selecting}
                     selectedIds={selected}
                     onToggleSelect={toggleSelect}
+                    onBulkActed={() => setSelected(new Set())}
                   />
                 );
               })}

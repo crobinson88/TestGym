@@ -25,16 +25,17 @@ import { addDays, cn, dayMonth, relativeDay } from "@/lib/utils";
 import type { LocalTdlItem } from "../types";
 import { ageLevel, type AgeLevel } from "../age";
 import {
-  archiveItem,
+  archiveItems,
+  cancelItems,
   cycleStatus,
-  deleteItem,
-  moveItemToSection,
+  deleteItems,
+  moveItemsToSection,
   setPriorityRank,
   setQuadrant,
-  setReluctant,
+  setReluctantItems,
   MAX_PRIORITY_RANK,
-  snoozeItem,
-  unsnoozeItem,
+  snoozeItems,
+  unsnoozeItems,
   updateItem,
 } from "../repo";
 import type { SectionConfig } from "../sections";
@@ -81,7 +82,13 @@ interface ItemRowProps {
   index?: number;
   selecting?: boolean;
   selected?: boolean;
+  // The full current selection, so a per-row menu action can fan out to every
+  // selected item when this row is part of a multi-selection.
+  selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  // Called after a menu action fanned out across the selection, so the parent
+  // can clear it (matching the BulkActionBar).
+  onBulkActed?: () => void;
 }
 
 // Border + background that intensify as an item goes unworked, up to 3 days
@@ -128,7 +135,9 @@ function ItemRowBase({
   index,
   selecting,
   selected,
+  selectedIds,
   onToggleSelect,
+  onBulkActed,
   drag,
 }: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
@@ -145,6 +154,15 @@ function ItemRowBase({
   const hasDetail = !!item.notes?.trim() || (item.images?.length ?? 0) > 0;
   // Snoozed items are deliberately deferred, so they never build urgency.
   const level = snoozed ? 0 : ageLevel(item);
+
+  // When this row is one of several selected items, its "More" menu actions
+  // apply to the whole selection rather than just this row. A lone selection
+  // (or an unselected row) stays a single-item action.
+  const bulkActive = !!(selecting && selected && selectedIds && selectedIds.size > 1);
+  const targetIds = bulkActive ? [...selectedIds!] : [item.id];
+  const afterAction = () => {
+    if (bulkActive) onBulkActed?.();
+  };
 
   return (
     <li
@@ -351,7 +369,7 @@ function ItemRowBase({
                 value={item.snoozed_until ?? null}
                 min={addDays(item.snapshot_date, 1)}
                 onSelect={(next) => {
-                  if (next > item.snapshot_date) void snoozeItem(item.id, next);
+                  if (next > item.snapshot_date) void snoozeItems(targetIds, next).then(afterAction);
                   setSnoozing(false);
                 }}
               />
@@ -390,6 +408,11 @@ function ItemRowBase({
         </button>
         {menu && (
           <div className="absolute right-0 top-9 z-20 min-w-[160px] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
+            {bulkActive && (
+              <div className="border-b border-line px-3 py-1.5 text-[11px] font-medium text-muted">
+                Applies to {selectedIds!.size} selected
+              </div>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -414,9 +437,10 @@ function ItemRowBase({
               type="button"
               onClick={() => {
                 const next = !item.is_reluctant;
-                void setReluctant(item.id, next);
-                // Marking it open the detail so the reason can be recorded.
-                if (next) setDetailOpen(true);
+                void setReluctantItems(targetIds, next).then(afterAction);
+                // Marking a single item opens its detail so the reason can be
+                // recorded; a bulk mark skips that (no single reason to edit).
+                if (next && !bulkActive) setDetailOpen(true);
                 setMenu(false);
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
@@ -440,9 +464,9 @@ function ItemRowBase({
                   <button
                     key={s.key}
                     type="button"
-                    disabled={current}
+                    disabled={current && !bulkActive}
                     onClick={() => {
-                      void moveItemToSection(item.id, s.key);
+                      void moveItemsToSection(targetIds, s.key).then(afterAction);
                       setMoving(false);
                       setMenu(false);
                     }}
@@ -460,7 +484,7 @@ function ItemRowBase({
               <button
                 type="button"
                 onClick={() => {
-                  void unsnoozeItem(item.id);
+                  void unsnoozeItems(targetIds).then(afterAction);
                   setMenu(false);
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
@@ -482,7 +506,7 @@ function ItemRowBase({
             <button
               type="button"
               onClick={() => {
-                void archiveItem(item.id);
+                void archiveItems(targetIds).then(afterAction);
                 setMenu(false);
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
@@ -492,7 +516,7 @@ function ItemRowBase({
             <button
               type="button"
               onClick={() => {
-                void updateItem(item.id, { status: "cancelled" });
+                void cancelItems(targetIds).then(afterAction);
                 setMenu(false);
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
@@ -502,7 +526,7 @@ function ItemRowBase({
             <button
               type="button"
               onClick={() => {
-                void deleteItem(item.id);
+                void deleteItems(targetIds).then(afterAction);
                 setMenu(false);
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-surface2"
