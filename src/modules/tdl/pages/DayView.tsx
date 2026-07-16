@@ -27,6 +27,7 @@ import {
   reorderPriorities,
   reorderSection,
   setPriorityRank,
+  setQuadrant,
   snoozeItems,
   usedRanks,
 } from "../repo";
@@ -162,6 +163,15 @@ export default function DayView() {
     const activeItem = bundle.items.find((i) => i.id === activeId);
     if (!activeItem) return;
     const overItem = bundle.items.find((i) => i.id === overId);
+
+    // Drag-to-classify: dropping a dated item onto another dated item adopts
+    // that item's Eisenhower quadrant. Recurring items sit outside the matrix.
+    if (overItem && !activeItem.is_recurring && !overItem.is_recurring) {
+      const targetQuadrant = overItem.eisenhower_quadrant ?? null;
+      if ((activeItem.eisenhower_quadrant ?? null) !== targetQuadrant) {
+        void setQuadrant(activeId, targetQuadrant);
+      }
+    }
 
     const sourceSection = activeItem.section;
     const targetSection = overItem?.section ?? sourceSection;

@@ -30,6 +30,7 @@ import {
   deleteItem,
   moveItemToSection,
   setPriorityRank,
+  setQuadrant,
   setReluctant,
   MAX_PRIORITY_RANK,
   snoozeItem,
@@ -37,6 +38,8 @@ import {
   updateItem,
 } from "../repo";
 import type { SectionConfig } from "../sections";
+import { QUADRANTS, QUADRANT_BY_KEY } from "../quadrant";
+import type { TdlQuadrant } from "@/lib/database.types";
 import { isSnoozed } from "../snooze";
 import { ItemDetail } from "./ItemDetail";
 import { StatusPill } from "./StatusPill";
@@ -88,6 +91,14 @@ const AGE_CLASSES: Record<AgeLevel, string> = {
   1: "border-l-2 border-l-warn/40 bg-warn/[0.04]",
   2: "border-l-2 border-l-warn/70 bg-warn/[0.07]",
   3: "border-l-2 border-l-danger/80 bg-danger/[0.10]",
+};
+
+// Row-selector text colour per quadrant; muted when unclassified.
+const QUADRANT_COLOR: Record<TdlQuadrant, string> = {
+  do_first: "text-danger",
+  schedule: "text-accent",
+  delegate: "text-warn",
+  eliminate: "text-muted",
 };
 
 // Draggable row for the category board columns.
@@ -244,6 +255,36 @@ function ItemRowBase({
           <option key={n} value={n} disabled={takenRanks.has(n) && n !== item.priority_rank}>
             {n}
             {takenRanks.has(n) && n !== item.priority_rank ? " (taken)" : ""}
+          </option>
+        ))}
+      </select>
+      <select
+        value={item.eisenhower_quadrant ?? ""}
+        onChange={(e) => {
+          const v = e.currentTarget.value;
+          void setQuadrant(item.id, v === "" ? null : (v as TdlQuadrant));
+        }}
+        aria-label={
+          item.eisenhower_quadrant != null
+            ? `Quadrant ${QUADRANT_BY_KEY[item.eisenhower_quadrant].label}`
+            : "Set Eisenhower quadrant"
+        }
+        title={
+          item.eisenhower_quadrant != null
+            ? `${QUADRANT_BY_KEY[item.eisenhower_quadrant].label} — ${QUADRANT_BY_KEY[item.eisenhower_quadrant].hint}`
+            : "Set Eisenhower quadrant"
+        }
+        className={cn(
+          "h-9 w-10 shrink-0 cursor-pointer appearance-none rounded-lg bg-transparent text-center text-[11px] font-semibold uppercase outline-none focus:bg-surface2",
+          item.eisenhower_quadrant != null
+            ? QUADRANT_COLOR[item.eisenhower_quadrant]
+            : "text-muted hover:text-text",
+        )}
+      >
+        <option value="">—</option>
+        {QUADRANTS.map((q) => (
+          <option key={q.key} value={q.key}>
+            {q.short} · {q.label}
           </option>
         ))}
       </select>

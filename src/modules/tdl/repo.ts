@@ -5,6 +5,7 @@ import { syncEngine } from "@/lib/sync";
 import { isResettable } from "./snooze";
 import { nextLastWorkedAt } from "./age";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
+import type { TdlQuadrant } from "@/lib/database.types";
 
 const nowIso = () => new Date().toISOString();
 
@@ -28,6 +29,7 @@ export interface CreateItemInput {
   due_date?: string | null;
   time_estimate_min?: number | null;
   priority_rank?: number | null;
+  eisenhower_quadrant?: TdlQuadrant | null;
   is_archived?: boolean;
   snoozed_until?: string | null;
   is_reluctant?: boolean;
@@ -73,6 +75,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     time_estimate_min: input.time_estimate_min ?? null,
     status,
     priority_rank: clampRank(input.priority_rank ?? null),
+    eisenhower_quadrant: input.eisenhower_quadrant ?? null,
     is_archived: input.is_archived ?? false,
     snoozed_until: input.snoozed_until ?? null,
     is_reluctant: input.is_reluctant ?? false,
@@ -224,6 +227,15 @@ export async function reorderPriorities(
     }
   });
   pokeOutbox();
+}
+
+// Assign (or clear, with null) an item's Eisenhower quadrant. Unlike priority
+// rank, quadrants are not unique — any number of items can share one.
+export async function setQuadrant(
+  id: string,
+  quadrant: TdlQuadrant | null,
+): Promise<LocalTdlItem | null> {
+  return updateItem(id, { eisenhower_quadrant: quadrant });
 }
 
 // Flag an item as one we don't want to do (but still need to). Clearing the

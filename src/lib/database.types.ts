@@ -111,6 +111,14 @@ export type TdlStatus =
   | "done"
   | "cancelled";
 
+// Eisenhower matrix quadrant. null = unclassified (the default). The four
+// values are the urgent/important combinations:
+//   do_first  = urgent & important
+//   schedule  = important, not urgent
+//   delegate  = urgent, not important
+//   eliminate = neither urgent nor important
+export type TdlQuadrant = "do_first" | "schedule" | "delegate" | "eliminate";
+
 export interface TdlItemRow {
   id: string;
   snapshot_date: string;
@@ -124,6 +132,9 @@ export interface TdlItemRow {
   // Priority rank: 1 (most important) … 10, or null when unranked. Ranks are
   // not unique — several items may share a number. Carried forward day to day.
   priority_rank: number | null;
+  // Eisenhower matrix quadrant, or null when unclassified. Groups the item
+  // within its category column. Carried forward day to day.
+  eisenhower_quadrant: TdlQuadrant | null;
   is_archived: boolean;
   snoozed_until: string | null;
   // Marks an item we don't want to do but still need to. The reason why lives
