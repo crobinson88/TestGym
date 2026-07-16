@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import type { LocalTdlItem } from "../types";
 import { UNCATEGORISED_KEY, type SectionConfig } from "../sections";
-import { groupByQuadrant } from "../quadrant";
+import { groupByQuadrant, QUADRANTS } from "../quadrant";
+import type { TdlQuadrant } from "@/lib/database.types";
 import { createItem } from "../repo";
 import { sectionStatusCounts } from "../hooks";
 import { ImageEditor } from "./ImageEditor";
@@ -41,6 +42,8 @@ export function SectionColumn({
   const [draft, setDraft] = useState("");
   const [estimate, setEstimate] = useState("");
   const [estError, setEstError] = useState(false);
+  const [quadrant, setQuadrant] = useState<TdlQuadrant | null>(null);
+  const [quadError, setQuadError] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -93,6 +96,8 @@ export function SectionColumn({
     setDraft("");
     setEstimate("");
     setEstError(false);
+    setQuadrant(null);
+    setQuadError(false);
     setNotes("");
     setImages([]);
   }
@@ -103,16 +108,20 @@ export function SectionColumn({
       if (!showDetails) setAdding(false);
       return;
     }
+    // Both the (optional) time estimate and the Eisenhower quadrant gate the
+    // save; validate both so every missing field lights up at once.
     const est = parsedEstimate();
-    if (requiresEstimate && est == null) {
-      setEstError(true);
-      return;
-    }
+    const estMissing = requiresEstimate && est == null;
+    const quadMissing = quadrant == null;
+    if (estMissing) setEstError(true);
+    if (quadMissing) setQuadError(true);
+    if (estMissing || quadMissing) return;
     await createItem({
       snapshot_date,
       section: cfg.key,
       title,
       time_estimate_min: est,
+      eisenhower_quadrant: quadrant,
       notes: notes.trim() ? notes.trim() : null,
       images,
     });
@@ -120,6 +129,8 @@ export function SectionColumn({
     setDraft("");
     setEstimate("");
     setEstError(false);
+    setQuadrant(null);
+    setQuadError(false);
     setNotes("");
     setImages([]);
     setShowDetails(false);
@@ -290,6 +301,46 @@ export function SectionColumn({
                 )}
               </div>
             )}
+            <div>
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-muted/70">
+                Eisenhower priority
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {QUADRANTS.map((q) => {
+                  const selected = quadrant === q.key;
+                  return (
+                    <button
+                      key={q.key}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setQuadrant((cur) => (cur === q.key ? null : q.key));
+                        if (quadError) setQuadError(false);
+                      }}
+                      aria-pressed={selected}
+                      title={`${q.label} — ${q.hint}`}
+                      className={cn(
+                        "flex min-h-[44px] flex-col items-start justify-center rounded-lg border px-2 py-1 text-left transition",
+                        selected
+                          ? "border-accent bg-accent/15 text-text"
+                          : "border-line text-muted hover:bg-surface2",
+                        quadError && !selected && "border-danger/60",
+                      )}
+                    >
+                      <span className="text-[11px] font-semibold uppercase leading-tight">
+                        {q.short} · {q.label}
+                      </span>
+                      <span className="text-[10px] leading-tight text-muted">{q.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {quadError && (
+                <div className="mt-1 text-xs text-danger">
+                  Pick an Eisenhower priority quadrant to save.
+                </div>
+              )}
+            </div>
             {showDetails ? (
               <>
                 <textarea
