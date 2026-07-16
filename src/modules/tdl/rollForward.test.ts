@@ -188,6 +188,34 @@ describe("rollForward", () => {
     expect(next[0].priority_rank).toBe(3);
   });
 
+  it("preserves the Eisenhower quadrant on carry", async () => {
+    await seed([
+      makeItem("2026-05-27", "product", {
+        eisenhower_quadrant: "do_first",
+        title: "Urgent + important",
+        status: "open",
+      }),
+    ]);
+    await rollForward("2026-05-27", "2026-05-28", { db });
+    const next = await listFor("2026-05-28");
+    expect(next[0].eisenhower_quadrant).toBe("do_first");
+  });
+
+  it("holds the quadrant across multiple rolls", async () => {
+    await seed([
+      makeItem("2026-05-04", "product", {
+        eisenhower_quadrant: "schedule",
+        title: "Long runner",
+        status: "open",
+      }),
+    ]);
+    await rollForward("2026-05-04", "2026-05-05", { db });
+    await rollForward("2026-05-05", "2026-05-06", { db });
+    const day6 = await listFor("2026-05-06");
+    expect(day6).toHaveLength(1);
+    expect(day6[0].eisenhower_quadrant).toBe("schedule");
+  });
+
   it("carries the item's description (notes) forward", async () => {
     await seed([
       makeItem("2026-05-27", "follow_ups", {
