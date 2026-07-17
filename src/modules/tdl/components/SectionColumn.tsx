@@ -74,6 +74,16 @@ export function SectionColumn({
   const [showDetails, setShowDetails] = useState(false);
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  // Per-quadrant collapse within this column (ephemeral UI, keyed by quadrant).
+  // Search forces every group open so results are never hidden.
+  const [collapsedQuadrants, setCollapsedQuadrants] = useState<Set<string>>(new Set());
+  const toggleQuadrant = (key: string) =>
+    setCollapsedQuadrants((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   // Collapse is owned by DayView (so "Collapse all" can drive every column and
   // the choice persists) and works at every breakpoint. Search forces the full
   // view open regardless.
@@ -192,7 +202,13 @@ export function SectionColumn({
             }
           : undefined
       }
-      className="flex flex-col rounded-2xl border border-line bg-surface"
+      className={cn(
+        "flex flex-col rounded-2xl border border-line bg-surface",
+        // A collapsed column self-sizes to its header instead of stretching to
+        // the grid row's height (align-items: stretch), so collapsing shrinks
+        // the container.
+        isCollapsed && "self-start",
+      )}
       data-section-key={cfg.key}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
@@ -283,9 +299,23 @@ export function SectionColumn({
         >
           {datedGroups.map((g) => {
             const accent = g.key ? QUADRANT_HEAD[g.key] : null;
+            const gkey = g.key ?? "unclassified";
+            const quadCollapsed = forceExpanded ? false : collapsedQuadrants.has(gkey);
             return (
-            <div key={g.key ?? "unclassified"} data-quadrant={g.key ?? "unclassified"}>
-              <div className="flex items-center gap-2 px-3 pb-1 pt-3">
+            <div key={gkey} data-quadrant={gkey}>
+              <button
+                type="button"
+                onClick={() => toggleQuadrant(gkey)}
+                aria-expanded={!quadCollapsed}
+                aria-label={quadCollapsed ? `Expand ${g.label}` : `Collapse ${g.label}`}
+                className="flex w-full items-center gap-2 px-3 pb-1 pt-3 text-left"
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 text-muted transition-transform",
+                    !quadCollapsed && "rotate-90",
+                  )}
+                />
                 <span
                   className={cn(
                     "h-4 w-1 shrink-0 rounded-full",
@@ -308,8 +338,8 @@ export function SectionColumn({
                 <span className="ml-auto rounded-full bg-surface2 px-2 py-0.5 text-xs font-semibold tabular-nums text-muted">
                   {g.items.length}
                 </span>
-              </div>
-              <ul>
+              </button>
+              <ul className={cn(quadCollapsed && "hidden")}>
                 {g.items.map((item) => (
                   <ItemRow
                     key={item.id}
