@@ -50,6 +50,8 @@ const VOCAB_COLOR = "#22d3ee";
 const RULES_COLOR = "#a855f7";
 const CONJUG_COLOR = "#f59e0b";
 const LISTENING_COLOR = "#f472b6";
+const PRONUN_COLOR = "#818cf8";
+const SPEAK_COLOR = "#facc15";
 const MASTERY_COLOR = "#34d399";
 
 function mdTick(iso: string): string {
@@ -270,7 +272,13 @@ export default function Dashboard() {
           </h2>
           <div className="rounded-2xl border border-line bg-surface p-3">
             {frenchAccuracy.some(
-              (d) => d.vocab !== null || d.rules !== null || d.conjug !== null || d.listening !== null,
+              (d) =>
+                d.vocab !== null ||
+                d.rules !== null ||
+                d.conjug !== null ||
+                d.listening !== null ||
+                d.pronun !== null ||
+                d.speak !== null,
             ) ? (
               <FrenchAccuracyChart data={frenchAccuracy} />
             ) : (
@@ -740,6 +748,24 @@ function FrenchAccuracyChart({ data }: { data: WeekAccuracyPoint[] }) {
           dataKey="listening"
           name="Listening"
           stroke={LISTENING_COLOR}
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          connectNulls
+        />
+        <Line
+          type="monotone"
+          dataKey="pronun"
+          name="Pronunciation"
+          stroke={PRONUN_COLOR}
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          connectNulls
+        />
+        <Line
+          type="monotone"
+          dataKey="speak"
+          name="Speaking"
+          stroke={SPEAK_COLOR}
           strokeWidth={2}
           dot={{ r: 3 }}
           connectNulls

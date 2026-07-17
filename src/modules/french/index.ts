@@ -26,6 +26,8 @@ export {
   generateVocabTest,
   generateRulesTest,
   generateConjugationTest,
+  generatePronunciationTest,
+  generateSpeakingTest,
   clampCount,
   KIND_LABELS,
   TEST_SIZE,
@@ -37,5 +39,7 @@ export type { Scenario, ChatTurn } from "./chat";
 export { VOCAB, VERBS, WORDS, WORDS_EXT } from "./data/vocab";
 export { CONJ_VERBS } from "./data/conjugations";
 export { RULE_QUESTIONS } from "./data/rules";
+export { PRON_QUESTIONS } from "./data/pronunciation";
+export type { PronQuestion, PronTopic } from "./data/pronunciation";
 export { GUIDE } from "./data/guide";
 export type { GuideSection, GuidePoint, GuideExample, GuidePointKind } from "./data/guide";

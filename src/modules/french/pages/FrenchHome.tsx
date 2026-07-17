@@ -6,10 +6,12 @@ import {
   ChevronRight,
   Headphones,
   MessageCircle,
+  Mic,
   Repeat,
   ScrollText,
   Sparkles,
   Target,
+  Volume2,
 } from "lucide-react";
 import type { FrenchTestKind } from "@/lib/database.types";
 import { cn, relativeDay } from "@/lib/utils";
@@ -36,6 +38,7 @@ import {
 import { RULE_QUESTIONS } from "../data/rules";
 import { VOCAB } from "../data/vocab";
 import { CONJ_VERBS } from "../data/conjugations";
+import { PRON_QUESTIONS } from "../data/pronunciation";
 
 // Icon + accent colour per kind, shared by the recent-tests list.
 const KIND_VISUAL: Record<FrenchTestKind, { Icon: typeof BookOpen; tint: string }> = {
@@ -43,6 +46,8 @@ const KIND_VISUAL: Record<FrenchTestKind, { Icon: typeof BookOpen; tint: string 
   rules: { Icon: ScrollText, tint: "bg-success/15 text-success" },
   conjug: { Icon: Repeat, tint: "bg-warn/15 text-warn" },
   listening: { Icon: Headphones, tint: "bg-accent/15 text-accent" },
+  pronun: { Icon: Volume2, tint: "bg-accent/15 text-accent" },
+  speak: { Icon: Mic, tint: "bg-warn/15 text-warn" },
 };
 
 const DIRECTIONS: { value: VocabDirection; label: string }[] = [
@@ -98,7 +103,8 @@ export default function FrenchHome() {
       <header>
         <h1 className="text-2xl font-bold">French 🇫🇷</h1>
         <p className="mt-1 text-sm text-muted">
-          {VOCAB.length} words · {RULE_QUESTIONS.length} rule questions · {CONJ_VERBS.length} verbs
+          {VOCAB.length} words · {RULE_QUESTIONS.length} rule questions · {PRON_QUESTIONS.length}{" "}
+          pronunciation · {CONJ_VERBS.length} verbs
         </p>
       </header>
 
@@ -222,6 +228,28 @@ export default function FrenchHome() {
           <div>
             <div className="text-lg font-semibold">New conjugation test</div>
             <div className="text-sm text-muted">{count} prompts · present + near future</div>
+          </div>
+        </button>
+        <button
+          onClick={() => navigate(`/french/test/pronun?n=${count}`)}
+          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+        >
+          <Volume2 className="h-7 w-7 shrink-0 text-accent" />
+          <div>
+            <div className="text-lg font-semibold">Pronunciation test</div>
+            <div className="text-sm text-muted">{count} questions · how letters sound</div>
+          </div>
+        </button>
+        <button
+          onClick={() => navigate(`/french/test/speak?n=${count}`)}
+          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+        >
+          <Mic className="h-7 w-7 shrink-0 text-warn" />
+          <div>
+            <div className="text-lg font-semibold">Speaking test</div>
+            <div className="text-sm text-muted">
+              {count} conjugations · say them aloud, self-assessed
+            </div>
           </div>
         </button>
         <div className="space-y-2">
@@ -370,6 +398,8 @@ export default function FrenchHome() {
             <StatCard stats={stats.byKind.listening} label={KIND_LABELS.listening} />
             <StatCard stats={stats.byKind.rules} label={KIND_LABELS.rules} />
             <StatCard stats={stats.byKind.conjug} label={KIND_LABELS.conjug} />
+            <StatCard stats={stats.byKind.pronun} label={KIND_LABELS.pronun} />
+            <StatCard stats={stats.byKind.speak} label={KIND_LABELS.speak} />
           </div>
         )}
       </section>

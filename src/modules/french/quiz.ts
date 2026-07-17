@@ -2,6 +2,7 @@ import type { FrenchTestKind } from "@/lib/database.types";
 import { todayIsoDate } from "@/lib/utils";
 import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
+import type { PronQuestion } from "./data/pronunciation";
 import type { Person, VerbConjugation } from "./data/conjugations";
 import { ALLER, PERSONS, PRONOUN_LABEL } from "./data/conjugations";
 import type { VocabSchedule } from "./stats";
@@ -24,6 +25,8 @@ export const KIND_LABELS: Record<FrenchTestKind, string> = {
   rules: "Rules",
   conjug: "Conjugation",
   listening: "Listening",
+  pronun: "Pronunciation",
+  speak: "Speaking",
 };
 
 // Playback speeds offered for the listening test. `rate` is the SpeechSynthesis
@@ -75,6 +78,11 @@ export interface Question {
   // `sequence` — the spoken words, in the order they were said. Correct only if the
   // built list matches `sequence` exactly. `answer` is unused for these.
   sequence?: string[];
+  // An on-demand French word/phrase the learner can play (fr-FR TTS) while the
+  // prompt stays visible: the example word on a pronunciation-rules question, or
+  // the model pronunciation of a speaking-drill form. Unlike `audioText`, it does
+  // NOT hide the prompt — it's a "hear it" aid, not an identify-by-ear cue.
+  example?: string;
 }
 
 // fr2en = show the French word, pick the English. en2fr = the reverse.
@@ -465,6 +473,30 @@ export function generateRulesTest(
   return sample(pool, count, rng).map((r) => makeRuleQuestion(r, rng));
 }
 
+// Pronunciation-rules questions are multiple choice like grammar rules, plus an
+// optional `example` word the learner can play to hear the rule. The prompt text
+// stays visible (this isn't identify-by-ear), so no `audioText`.
+export function makePronunciationQuestion(q: PronQuestion, rng: Rng): Question {
+  const correct = q.choices[q.answer];
+  const shuffled = shuffle(q.choices, rng);
+  return {
+    id: q.id,
+    prompt: q.prompt,
+    sub: q.topic,
+    choices: shuffled,
+    answer: shuffled.indexOf(correct),
+    explanation: q.explanation,
+    example: q.example,
+  };
+}
+
+export function generatePronunciationTest(
+  pool: readonly PronQuestion[],
+  { count = TEST_SIZE, rng = Math.random }: GenerateOptions = {},
+): Question[] {
+  return sample(pool, count, rng).map((q) => makePronunciationQuestion(q, rng));
+}
+
 // present = je suis, nous sommes …; futurProche = the near future "going to …",
 // built as aller (present) + infinitive (je vais être, nous allons être …).
 export type ConjTense = "present" | "futurProche";
@@ -534,15 +566,72 @@ export function generateConjugationTest(
   );
 }
 
+// A single clean subject pronoun for the speaking drill (the written conjugation
+// test shows "il/elle" and "ils/elles", but you can only pronounce one), eliding
+// je → j' before a vowel/silent-h so the spoken form is natural.
+const SPEAK_PRONOUN: Record<Person, string> = {
+  je: "je",
+  tu: "tu",
+  il: "il",
+  nous: "nous",
+  vous: "vous",
+  ils: "ils",
+};
+
+function speakingPhrase(person: Person, form: string): string {
+  if (person === "je" && /^[aeiouâäéèêëïîôûh]/i.test(form)) return `j'${form}`;
+  return `${SPEAK_PRONOUN[person]} ${form}`;
+}
+
+// A speaking-drill question: the learner reads the conjugated form, says it aloud,
+// hears the model pronunciation (`example`), then self-marks. There are no choices
+// — it's self-assessed, so `answer` is unused. `example` (not `audioText`) keeps
+// the prompt visible: you pronounce what you read, then compare.
+export function makeSpeakingQuestion(
+  verb: VerbConjugation,
+  tense: ConjTense,
+  person: Person,
+  _rng: Rng,
+): Question {
+  const form = tense === "present" ? verb.present[person] : futurProcheForm(verb, person);
+  const phrase = speakingPhrase(person, form);
+  const label = tense === "present" ? "present tense" : `going to ${verb.en.replace(/^to /, "")}`;
+  return {
+    id: `speak:${verb.infinitive}:${tense}:${person}`,
+    prompt: phrase,
+    sub: tense === "present" ? `${verb.infinitive} · present` : `${verb.infinitive} · near future`,
+    choices: [],
+    answer: 0,
+    explanation: `${phrase} — ${verb.infinitive} (${verb.en}), ${label}.`,
+    example: phrase,
+  };
+}
+
+export function generateSpeakingTest(
+  verbs: readonly VerbConjugation[],
+  { count = TEST_SIZE, rng = Math.random, tenses = ["present", "futurProche"] }: ConjGenerateOptions = {},
+): Question[] {
+  const combos: { verb: VerbConjugation; tense: ConjTense; person: Person }[] = [];
+  for (const verb of verbs) {
+    for (const tense of tenses) {
+      for (const person of PERSONS) combos.push({ verb, tense, person });
+    }
+  }
+  return sample(combos, count, rng).map((c) => makeSpeakingQuestion(c.verb, c.tense, c.person, rng));
+}
+
 export function generateTest(
   kind: FrenchTestKind,
   vocab: readonly VocabWord[],
   rules: readonly RuleQuestion[],
   conjugations: readonly VerbConjugation[],
+  pronunciation: readonly PronQuestion[],
   opts: GenerateOptions = {},
 ): Question[] {
   if (kind === "vocab") return generateVocabTest(vocab, opts);
   if (kind === "listening") return generateListeningTest(vocab, opts);
   if (kind === "rules") return generateRulesTest(rules, opts);
+  if (kind === "pronun") return generatePronunciationTest(pronunciation, opts);
+  if (kind === "speak") return generateSpeakingTest(conjugations, { count: opts.count, rng: opts.rng });
   return generateConjugationTest(conjugations, { count: opts.count, rng: opts.rng });
 }
