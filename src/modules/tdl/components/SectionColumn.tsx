@@ -100,7 +100,10 @@ export function SectionColumn({
   });
 
   const counts = sectionStatusCounts(dated, cfg.key === "product");
-  const activeTotal = [...recurring, ...dated].filter(
+  // Collapsed badge answers "how many are still not marked done" — every live
+  // item on the board minus the terminal states (done + cancelled). Snoozed /
+  // archived / deleted rows are already dropped upstream (useDayBundle).
+  const notDone = [...recurring, ...dated].filter(
     (i) =>
       i.status === "open" ||
       i.status === "worked_today" ||
@@ -243,7 +246,7 @@ export function SectionColumn({
             !isCollapsed && "hidden",
           )}
         >
-          {activeTotal} active
+          {notDone} not done
         </span>
         <div
           className={cn(
