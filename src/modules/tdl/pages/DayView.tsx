@@ -6,14 +6,20 @@ import {
   closestCorners,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CheckSquare, Search } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
-import { useCategories } from "../categories";
+import { reorderCategories, useCategories, useCategoryRows } from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { selectPriorityItems } from "../priority";
 import type { LocalTdlItem } from "../types";
@@ -32,7 +38,7 @@ import {
   usedRanks,
 } from "../repo";
 import { DayHeader } from "../components/DayHeader";
-import { SectionColumn } from "../components/SectionColumn";
+import { SectionColumn, SECTION_SORTABLE_PREFIX } from "../components/SectionColumn";
 import { PriorityColumn } from "../components/PriorityColumn";
 import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
@@ -45,6 +51,14 @@ export default function DayView() {
   const bundle = useDay(date);
   const prev = usePrevDateWithItems(date);
   const categories = useCategories();
+  const categoryRows = useCategoryRows();
+  // Map category key → persisted row id, so a board column drag can write
+  // sort_order via reorderCategories (which keys off row ids). Empty until the
+  // categories table has synced — column dragging stays off before then.
+  const keyToRowId = useMemo(
+    () => new Map((categoryRows ?? []).map((r) => [r.key, r.id])),
+    [categoryRows],
+  );
 
   const [query, setQuery] = useState("");
 
@@ -135,11 +149,36 @@ export default function DayView() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
+  // Column drags collide only with other columns (clean reorder, never drops
+  // onto an inner row); every other drag ignores the column droppables entirely,
+  // so item/priority drag targeting is exactly as it was before columns became
+  // sortable.
+  const collisionDetection = useCallback<CollisionDetection>((args) => {
+    const draggingColumn = String(args.active.id).startsWith(SECTION_SORTABLE_PREFIX);
+    const droppableContainers = args.droppableContainers.filter(
+      (c) => String(c.id).startsWith(SECTION_SORTABLE_PREFIX) === draggingColumn,
+    );
+    return closestCorners({ ...args, droppableContainers });
+  }, []);
+
   function onDragEnd(e: DragEndEvent) {
     if (!bundle) return;
     const activeId = String(e.active.id);
     const overId = e.over ? String(e.over.id) : null;
     if (!overId || activeId === overId) return;
+
+    // Column (category) reorder — its own sortable namespace (prefixed ids).
+    if (activeId.startsWith(SECTION_SORTABLE_PREFIX)) {
+      if (!overId.startsWith(SECTION_SORTABLE_PREFIX)) return;
+      const order = reorderableKeys.map((k) => SECTION_SORTABLE_PREFIX + k);
+      const from = order.indexOf(activeId);
+      const to = order.indexOf(overId);
+      if (from === -1 || to === -1) return;
+      const nextKeys = arrayMove(reorderableKeys, from, to);
+      const nextIds = nextKeys.map((k) => keyToRowId.get(k)).filter((v): v is string => !!v);
+      void reorderCategories(nextIds);
+      return;
+    }
 
     // Drags inside the Priorities column live in their own sortable namespace
     // (prefixed ids). Reordering there rewrites ranks, not section positions.
@@ -254,6 +293,17 @@ export default function DayView() {
   const showPriorityColumn = !searching || priorityItems.length > 0;
   const nothingMatches = searching && visibleColumns.length === 0 && priorityItems.length === 0;
 
+  // Column reorder is a desktop convenience: off while searching (the visible
+  // set is filtered) and until the categories table has synced ids to persist.
+  const columnsReorderable = !searching && keyToRowId.size > 0;
+  const reorderableKeys = columnsReorderable
+    ? visibleColumns
+        .filter((c) => c.key !== UNCATEGORISED_KEY && keyToRowId.has(c.key))
+        .map((c) => c.key)
+    : [];
+  const reorderableKeySet = new Set(reorderableKeys);
+  const sortableColumnIds = reorderableKeys.map((k) => SECTION_SORTABLE_PREFIX + k);
+
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
       <DayHeader
@@ -296,31 +346,13 @@ export default function DayView() {
         {nothingMatches ? (
           <div className="py-8 text-center text-sm text-muted">No tasks match “{query.trim()}”.</div>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {showPriorityColumn && (
-                <PriorityColumn
-                  items={priorityItems}
-                  categories={categories}
-                  focusedId={focusedId}
-                  takenRanks={takenRanks}
-                  forceExpanded={searching}
-                  selecting={selecting}
-                  selectedIds={selected}
-                  onToggleSelect={toggleSelect}
-                  onBulkActed={() => setSelected(new Set())}
-                />
-              )}
-              {visibleColumns.map((cfg) => {
-                const lists = listsFor(cfg.key);
-                return (
-                  <SectionColumn
-                    key={cfg.key}
-                    cfg={cfg}
+          <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}>
+            <SortableContext items={sortableColumnIds} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {showPriorityColumn && (
+                  <PriorityColumn
+                    items={priorityItems}
                     categories={categories}
-                    snapshot_date={date}
-                    recurring={lists.recurring}
-                    dated={lists.dated}
                     focusedId={focusedId}
                     takenRanks={takenRanks}
                     forceExpanded={searching}
@@ -329,9 +361,30 @@ export default function DayView() {
                     onToggleSelect={toggleSelect}
                     onBulkActed={() => setSelected(new Set())}
                   />
-                );
-              })}
-            </div>
+                )}
+                {visibleColumns.map((cfg) => {
+                  const lists = listsFor(cfg.key);
+                  return (
+                    <SectionColumn
+                      key={cfg.key}
+                      cfg={cfg}
+                      categories={categories}
+                      snapshot_date={date}
+                      recurring={lists.recurring}
+                      dated={lists.dated}
+                      focusedId={focusedId}
+                      takenRanks={takenRanks}
+                      forceExpanded={searching}
+                      reorderable={reorderableKeySet.has(cfg.key)}
+                      selecting={selecting}
+                      selectedIds={selected}
+                      onToggleSelect={toggleSelect}
+                      onBulkActed={() => setSelected(new Set())}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
           </DndContext>
         )}
         {selecting && (
