@@ -25,6 +25,7 @@ export function SectionColumn({
   selecting = false,
   selectedIds,
   onToggleSelect,
+  onBulkActed,
 }: {
   cfg: SectionConfig;
   categories: SectionConfig[];
@@ -37,6 +38,7 @@ export function SectionColumn({
   selecting?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  onBulkActed?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -210,7 +212,9 @@ export function SectionColumn({
                   index={i + 1}
                   selecting={selecting}
                   selected={selectedIds?.has(item.id)}
+                  selectedIds={selectedIds}
                   onToggleSelect={onToggleSelect}
+                  onBulkActed={onBulkActed}
                 />
               ))}
             </ul>
@@ -243,7 +247,9 @@ export function SectionColumn({
                     index={recurring.length + (datedIndex.get(item.id) ?? 0) + 1}
                     selecting={selecting}
                     selected={selectedIds?.has(item.id)}
+                    selectedIds={selectedIds}
                     onToggleSelect={onToggleSelect}
+                    onBulkActed={onBulkActed}
                   />
                 ))}
               </ul>
