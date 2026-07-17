@@ -26,7 +26,7 @@ export interface FrenchStats {
   missed: MissedItem[];
 }
 
-const KINDS: FrenchTestKind[] = ["vocab", "rules", "conjug", "listening"];
+const KINDS: FrenchTestKind[] = ["vocab", "rules", "conjug", "listening", "pronun", "speak"];
 
 function emptyKind(kind: FrenchTestKind): KindStats {
   return {
@@ -53,6 +53,8 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
     rules: emptyKind("rules"),
     conjug: emptyKind("conjug"),
     listening: emptyKind("listening"),
+    pronun: emptyKind("pronun"),
+    speak: emptyKind("speak"),
   };
 
   const missedMap = new Map<string, MissedItem>();
@@ -315,6 +317,8 @@ export interface WeekAccuracyPoint {
   rules: number | null;
   conjug: number | null;
   listening: number | null;
+  pronun: number | null;
+  speak: number | null;
 }
 
 // Bucket attempts into the supplied (chronological) week starts and compute
@@ -330,6 +334,8 @@ export function weeklyAccuracy(
       rules: { correct: 0, total: 0 },
       conjug: { correct: 0, total: 0 },
       listening: { correct: 0, total: 0 },
+      pronun: { correct: 0, total: 0 },
+      speak: { correct: 0, total: 0 },
     });
   }
 
@@ -354,6 +360,8 @@ export function weeklyAccuracy(
       rules: rate(b.rules),
       conjug: rate(b.conjug),
       listening: rate(b.listening),
+      pronun: rate(b.pronun),
+      speak: rate(b.speak),
     };
   });
 }

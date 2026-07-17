@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { VocabWord } from "./data/vocab";
 import type { RuleQuestion } from "./data/rules";
+import type { PronQuestion } from "./data/pronunciation";
 import {
   checkOrder,
   checkTypedAnswer,
@@ -8,13 +9,17 @@ import {
   clampWordsPerRound,
   generateConjugationTest,
   generateListeningTest,
+  generatePronunciationTest,
   generateRulesTest,
+  generateSpeakingTest,
   generateTest,
   generateVocabTest,
   makeConjugationQuestion,
   makeListeningOrderingQuestion,
+  makePronunciationQuestion,
   makeRuleQuestion,
   makeSentenceQuestion,
+  makeSpeakingQuestion,
   makeVocabQuestion,
   normalizeAnswer,
   selectVocab,
@@ -58,6 +63,27 @@ const RULES: RuleQuestion[] = [
     choices: ["Je suis 25 ans.", "J'ai 25 ans.", "Je 25 ans."],
     answer: 1,
     explanation: "Age uses avoir.",
+  },
+];
+
+const PRON: PronQuestion[] = [
+  {
+    id: "p1",
+    topic: "Vowels",
+    prompt: "How is « ou » pronounced?",
+    choices: ["Like 'oo' in food", "Like 'ow' in cow"],
+    answer: 0,
+    explanation: "« ou » is /u/.",
+    example: "vous",
+  },
+  {
+    id: "p2",
+    topic: "Consonants",
+    prompt: "How is « ch » pronounced?",
+    choices: ["Like 'sh' in ship", "Like 'ch' in chair", "Like 'k'"],
+    answer: 0,
+    explanation: "« ch » is /ʃ/.",
+    example: "chat",
   },
 ];
 
@@ -294,7 +320,7 @@ describe("listening test", () => {
   });
 
   it("generateTest('listening') produces audio questions of the requested count", () => {
-    const test = generateTest("listening", VOCAB, RULES, CONJ_VERBS, { count: 4, rng: lcg(3) });
+    const test = generateTest("listening", VOCAB, RULES, CONJ_VERBS, PRON, { count: 4, rng: lcg(3) });
     expect(test).toHaveLength(4);
     expect(test.every((q) => q.audioText && q.id.startsWith("listen:") && q.sequence)).toBe(true);
   });
@@ -487,5 +513,74 @@ describe("rules", () => {
     for (const q of test) {
       expect(q.choices[q.answer]).toBe(byId.get(q.id));
     }
+  });
+});
+
+describe("pronunciation", () => {
+  it("keeps the correct answer correct after shuffling and carries the example", () => {
+    const q = makePronunciationQuestion(PRON[1], lcg(11));
+    expect(q.choices[q.answer]).toBe("Like 'sh' in ship");
+    expect(q.sub).toBe("Consonants");
+    expect(q.example).toBe("chat");
+    // Pronunciation prompts stay visible — no identify-by-ear audioText.
+    expect(q.audioText).toBeUndefined();
+  });
+
+  it("generatePronunciationTest preserves correctness across the test", () => {
+    const test = generatePronunciationTest(PRON, { count: 2, rng: lcg(12) });
+    expect(test).toHaveLength(2);
+    const byId = new Map(PRON.map((p) => [p.id, p.choices[p.answer]]));
+    for (const q of test) {
+      expect(q.choices[q.answer]).toBe(byId.get(q.id));
+      expect(q.answer).toBeGreaterThanOrEqual(0);
+      expect(q.answer).toBeLessThan(q.choices.length);
+    }
+  });
+
+  it("generateTest('pronun') draws from the pronunciation pool", () => {
+    const test = generateTest("pronun", VOCAB, RULES, CONJ_VERBS, PRON, { count: 2, rng: lcg(13) });
+    expect(test).toHaveLength(2);
+    const ids = new Set(PRON.map((p) => p.id));
+    expect(test.every((q) => ids.has(q.id))).toBe(true);
+  });
+});
+
+describe("speaking", () => {
+  it("builds a self-assessed prompt with a single pronoun and no choices", () => {
+    const faire = CONJ_VERBS.find((v) => v.infinitive === "faire")!;
+    const q = makeSpeakingQuestion(faire, "present", "il", lcg(14));
+    expect(q.prompt).toBe("il fait");
+    expect(q.example).toBe("il fait"); // the model pronunciation to play
+    expect(q.choices).toHaveLength(0); // graded by self-assessment
+    expect(q.id).toBe("speak:faire:present:il");
+    expect(q.audioText).toBeUndefined(); // prompt stays visible
+  });
+
+  it("elides je → j' before a vowel", () => {
+    const avoir = CONJ_VERBS.find((v) => v.infinitive === "avoir")!;
+    const q = makeSpeakingQuestion(avoir, "present", "je", lcg(15));
+    expect(q.prompt).toBe("j'ai");
+  });
+
+  it("derives the futur proche as aller + infinitive", () => {
+    const faire = CONJ_VERBS.find((v) => v.infinitive === "faire")!;
+    const q = makeSpeakingQuestion(faire, "futurProche", "nous", lcg(16));
+    expect(q.prompt).toBe("nous allons faire");
+    expect(q.sub).toBe("faire · near future");
+  });
+
+  it("generateSpeakingTest returns the requested count with speak ids", () => {
+    const test = generateSpeakingTest(CONJ_VERBS, { count: 10, rng: lcg(17) });
+    expect(test).toHaveLength(10);
+    for (const q of test) {
+      expect(q.id.startsWith("speak:")).toBe(true);
+      expect(q.choices).toHaveLength(0);
+    }
+  });
+
+  it("generateTest('speak') routes to the speaking generator", () => {
+    const test = generateTest("speak", VOCAB, RULES, CONJ_VERBS, PRON, { count: 5, rng: lcg(18) });
+    expect(test).toHaveLength(5);
+    expect(test.every((q) => q.id.startsWith("speak:"))).toBe(true);
   });
 });

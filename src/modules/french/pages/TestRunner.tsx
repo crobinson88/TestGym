@@ -21,6 +21,7 @@ import {
 import { VOCAB } from "../data/vocab";
 import { RULE_QUESTIONS } from "../data/rules";
 import { CONJ_VERBS } from "../data/conjugations";
+import { PRON_QUESTIONS } from "../data/pronunciation";
 import {
   useListeningSchedules,
   useMasteredVocab,
@@ -32,7 +33,14 @@ import { cancelSpeech, speakFrench } from "../speech";
 import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
-  return k === "vocab" || k === "rules" || k === "conjug" || k === "listening";
+  return (
+    k === "vocab" ||
+    k === "rules" ||
+    k === "conjug" ||
+    k === "listening" ||
+    k === "pronun" ||
+    k === "speak"
+  );
 }
 
 // Flags the current vocab prompt as new, or shows its prior recall (times shown,
@@ -149,7 +157,7 @@ export default function TestRunner() {
   const syncQuestions = useMemo<Question[]>(() => {
     if (!isKind(kind) || !ready || sentenceMode) return [];
     const pool = kind === "listening" ? (masteredPool ?? []) : VOCAB;
-    return generateTest(kind, pool, RULE_QUESTIONS, CONJ_VERBS, {
+    return generateTest(kind, pool, RULE_QUESTIONS, CONJ_VERBS, PRON_QUESTIONS, {
       count,
       direction,
       wordsPerRound,
@@ -172,6 +180,8 @@ export default function TestRunner() {
   // order, plus the graded result once the learner checks.
   const [built, setBuilt] = useState<number[]>([]);
   const [orderResult, setOrderResult] = useState<boolean | null>(null);
+  // Speaking (self-assessed) state: the learner's own mark for the current form.
+  const [selfResult, setSelfResult] = useState<boolean | null>(null);
   const [details, setDetails] = useState<FrenchAttemptDetail[]>([]);
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -235,6 +245,7 @@ export default function TestRunner() {
   const correct = details.filter((d) => d.correct).length;
   const expected = q.choices[q.answer];
   const isOrdering = q.sequence != null;
+  const speaking = kind === "speak";
 
   function choose(choice: number) {
     if (picked !== null) return;
@@ -262,6 +273,14 @@ export default function TestRunner() {
     setDetails((prev) => [...prev, { questionId: q.id, prompt: q.prompt, correct: ok }]);
   }
 
+  // Self-assessed grade for a speaking prompt — the learner marks whether they said
+  // it right after hearing the model pronunciation.
+  function markSelf(ok: boolean) {
+    if (selfResult !== null) return;
+    setSelfResult(ok);
+    setDetails((prev) => [...prev, { questionId: q.id, prompt: q.prompt, correct: ok }]);
+  }
+
   async function next() {
     if (index + 1 < questions.length) {
       setIndex((i) => i + 1);
@@ -270,6 +289,7 @@ export default function TestRunner() {
       setTypedResult(null);
       setBuilt([]);
       setOrderResult(null);
+      setSelfResult(null);
       return;
     }
     setFinished(true);
@@ -327,7 +347,9 @@ export default function TestRunner() {
     ? typedResult !== null
     : isOrdering
       ? orderResult !== null
-      : picked !== null;
+      : speaking
+        ? selfResult !== null
+        : picked !== null;
 
   return (
     <div className="flex min-h-[70vh] flex-col p-4 pb-24">
@@ -366,6 +388,15 @@ export default function TestRunner() {
           <div className="text-xs uppercase tracking-wider text-muted">{q.sub}</div>
           <h2 className="mt-2 text-3xl font-bold leading-tight">{q.prompt}</h2>
           {kind === "vocab" && <WordHistoryBadge questionId={q.id} history={vocabHistory} />}
+          {kind === "pronun" && q.example && (
+            <button
+              type="button"
+              onClick={() => speakFrench(q.example!)}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-3.5 py-2 text-sm font-medium text-accent transition active:scale-95"
+            >
+              <Volume2 className="h-4 w-4" /> Hear « {q.example} »
+            </button>
+          )}
         </div>
       )}
 
@@ -518,6 +549,51 @@ export default function TestRunner() {
                 )}
               >
                 Check
+              </button>
+            </div>
+          )}
+        </div>
+      ) : speaking ? (
+        <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => speakFrench(q.example ?? q.prompt)}
+            className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-accent bg-accent/10 font-semibold text-accent transition active:scale-[0.99]"
+          >
+            <Volume2 className="h-5 w-5" /> Hear it
+          </button>
+          <p className="text-center text-sm text-muted">
+            Say it aloud, tap to hear the model, then mark yourself.
+          </p>
+          {answered ? (
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-2xl border px-4 py-3 text-base font-medium",
+                selfResult
+                  ? "border-success bg-success/15 text-success"
+                  : "border-warn bg-warn/15 text-warn",
+              )}
+            >
+              {selfResult ? (
+                <Check className="h-5 w-5 shrink-0" />
+              ) : (
+                <X className="h-5 w-5 shrink-0" />
+              )}
+              <span>{selfResult ? "Nice — got it" : "Keep practising this one"}</span>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <button
+                onClick={() => markSelf(false)}
+                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-warn bg-surface font-semibold text-warn transition active:scale-[0.99]"
+              >
+                <X className="h-5 w-5" /> Missed it
+              </button>
+              <button
+                onClick={() => markSelf(true)}
+                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-success bg-surface font-semibold text-success transition active:scale-[0.99]"
+              >
+                <Check className="h-5 w-5" /> Got it
               </button>
             </div>
           )}

@@ -297,7 +297,7 @@ export interface ForecastRow {
   deleted_at: string | null;
 }
 
-export type FrenchTestKind = "vocab" | "rules" | "conjug" | "listening";
+export type FrenchTestKind = "vocab" | "rules" | "conjug" | "listening" | "pronun" | "speak";
 
 // One question's outcome inside a completed test, kept so the stats view can
 // surface which items were missed without re-deriving them.
