@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { ChevronRight, Plus } from "lucide-react";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ChevronRight, GripVertical, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +18,20 @@ import { sectionStatusCounts } from "../hooks";
 import { ImageEditor } from "./ImageEditor";
 import { ItemRow } from "./ItemRow";
 
+// Section (category) columns become sortable on the desktop board; their
+// dnd-kit ids get this prefix so DayView can route column drags separately from
+// item drags (which use raw uuids) and priority-mirror drags.
+export const SECTION_SORTABLE_PREFIX = "section:";
+
+// Prominent Eisenhower sub-group headers pick up the quadrant accent so the
+// matrix reads at a glance. Mirrors ItemRow's QUADRANT_COLOR.
+const QUADRANT_HEAD: Record<TdlQuadrant, { text: string; bar: string }> = {
+  do_first: { text: "text-danger", bar: "bg-danger" },
+  schedule: { text: "text-accent", bar: "bg-accent" },
+  delegate: { text: "text-warn", bar: "bg-warn" },
+  eliminate: { text: "text-muted", bar: "bg-muted" },
+};
+
 export function SectionColumn({
   cfg,
   categories,
@@ -22,6 +41,7 @@ export function SectionColumn({
   focusedId,
   takenRanks,
   forceExpanded = false,
+  reorderable = false,
   selecting = false,
   selectedIds,
   onToggleSelect,
@@ -35,6 +55,7 @@ export function SectionColumn({
   focusedId?: string;
   takenRanks: Set<number>;
   forceExpanded?: boolean;
+  reorderable?: boolean;
   selecting?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
@@ -56,6 +77,15 @@ export function SectionColumn({
   const [collapsed, setCollapsed] = useState(true);
   const isCollapsed = forceExpanded ? false : collapsed;
   const canAdd = cfg.key !== UNCATEGORISED_KEY;
+
+  // Column drag-to-reorder (desktop only — the handle is hidden below `sm`).
+  // useSortable is called unconditionally, but setNodeRef/listeners are only
+  // wired when `reorderable`, so non-reorderable columns stay inert.
+  const sortable = useSortable({
+    id: SECTION_SORTABLE_PREFIX + cfg.key,
+    disabled: !reorderable,
+    data: { type: "section", key: cfg.key },
+  });
 
   const counts = sectionStatusCounts(dated, cfg.key === "product");
   const activeTotal = [...recurring, ...dated].filter(
@@ -149,10 +179,32 @@ export function SectionColumn({
 
   return (
     <section
+      ref={reorderable ? sortable.setNodeRef : undefined}
+      style={
+        reorderable
+          ? {
+              transform: CSS.Transform.toString(sortable.transform),
+              transition: sortable.transition,
+              opacity: sortable.isDragging ? 0.5 : undefined,
+              zIndex: sortable.isDragging ? 20 : undefined,
+            }
+          : undefined
+      }
       className="flex flex-col rounded-2xl border border-line bg-surface"
       data-section-key={cfg.key}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
+        {reorderable && (
+          <button
+            type="button"
+            {...sortable.attributes}
+            {...sortable.listeners}
+            aria-label={`Drag to reorder ${cfg.label}`}
+            className="-ml-1 hidden h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted/40 hover:text-muted active:cursor-grabbing sm:flex"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
@@ -227,14 +279,33 @@ export function SectionColumn({
           data-dated-section={cfg.key}
           className={cn("min-h-[40px]", isCollapsed && "hidden sm:block")}
         >
-          {datedGroups.map((g) => (
+          {datedGroups.map((g) => {
+            const accent = g.key ? QUADRANT_HEAD[g.key] : null;
+            return (
             <div key={g.key ?? "unclassified"} data-quadrant={g.key ?? "unclassified"}>
-              <div className="flex items-baseline gap-1.5 px-3 pt-2 text-[10px] uppercase tracking-wider text-muted/70">
-                <span>{g.label}</span>
+              <div className="flex items-center gap-2 px-3 pb-1 pt-3">
+                <span
+                  className={cn(
+                    "h-4 w-1 shrink-0 rounded-full",
+                    accent ? accent.bar : "bg-muted/40",
+                  )}
+                />
+                <span
+                  className={cn(
+                    "text-sm font-bold uppercase tracking-wide",
+                    accent ? accent.text : "text-muted",
+                  )}
+                >
+                  {g.label}
+                </span>
                 {g.hint && (
-                  <span className="normal-case tracking-normal text-muted/50">{g.hint}</span>
+                  <span className="hidden text-[11px] font-medium text-muted sm:inline">
+                    {g.hint}
+                  </span>
                 )}
-                <span className="ml-auto tabular-nums">{g.items.length}</span>
+                <span className="ml-auto rounded-full bg-surface2 px-2 py-0.5 text-xs font-semibold tabular-nums text-muted">
+                  {g.items.length}
+                </span>
               </div>
               <ul>
                 {g.items.map((item) => (
@@ -254,7 +325,8 @@ export function SectionColumn({
                 ))}
               </ul>
             </div>
-          ))}
+            );
+          })}
         </div>
       </SortableContext>
 
