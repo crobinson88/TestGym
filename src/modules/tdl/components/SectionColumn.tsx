@@ -192,7 +192,13 @@ export function SectionColumn({
             }
           : undefined
       }
-      className="flex flex-col rounded-2xl border border-line bg-surface"
+      className={cn(
+        "flex flex-col rounded-2xl border border-line bg-surface",
+        // A collapsed column self-sizes to its header instead of stretching to
+        // the grid row's height (align-items: stretch), so collapsing shrinks
+        // the container.
+        isCollapsed && "self-start",
+      )}
       data-section-key={cfg.key}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
