@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ChevronRight, ListChecks } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,6 +15,8 @@ export function PriorityColumn({
   takenRanks,
   focusedId,
   forceExpanded = false,
+  collapsed = false,
+  onToggleCollapse,
   selecting = false,
   selectedIds,
   onToggleSelect,
@@ -26,14 +27,15 @@ export function PriorityColumn({
   takenRanks: Set<number>;
   focusedId?: string;
   forceExpanded?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   selecting?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onBulkActed?: () => void;
 }) {
-  // Mirrors SectionColumn's mobile-only collapse, but priorities lead the board
-  // so they start open.
-  const [collapsed, setCollapsed] = useState(false);
+  // Collapse is owned by DayView (see SectionColumn) and works at every
+  // breakpoint; search forces the full view open.
   const isCollapsed = forceExpanded ? false : collapsed;
 
   return (
@@ -44,10 +46,10 @@ export function PriorityColumn({
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
           aria-label={isCollapsed ? "Expand Priorities" : "Collapse Priorities"}
-          className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:text-text sm:hidden"
+          className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:text-text"
         >
           <ChevronRight
             className={cn("h-4 w-4 transition-transform", !isCollapsed && "rotate-90")}
@@ -66,7 +68,7 @@ export function PriorityColumn({
         <p
           className={cn(
             "px-3 py-4 text-center text-xs text-muted",
-            isCollapsed && "hidden sm:block",
+            isCollapsed && "hidden",
           )}
         >
           No priorities set. Give a task a rank 1–10 to pin it here.
@@ -76,7 +78,7 @@ export function PriorityColumn({
           items={items.map((i) => PRIORITY_SORTABLE_PREFIX + i.id)}
           strategy={verticalListSortingStrategy}
         >
-          <ul className={cn(isCollapsed && "hidden sm:block")}>
+          <ul className={cn(isCollapsed && "hidden")}>
             {items.map((item) => (
               <PriorityItemRow
                 key={item.id}

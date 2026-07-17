@@ -41,6 +41,8 @@ export function SectionColumn({
   focusedId,
   takenRanks,
   forceExpanded = false,
+  collapsed = false,
+  onToggleCollapse,
   reorderable = false,
   selecting = false,
   selectedIds,
@@ -55,6 +57,8 @@ export function SectionColumn({
   focusedId?: string;
   takenRanks: Set<number>;
   forceExpanded?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   reorderable?: boolean;
   selecting?: boolean;
   selectedIds?: Set<string>;
@@ -70,11 +74,9 @@ export function SectionColumn({
   const [showDetails, setShowDetails] = useState(false);
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  // Mobile-only collapse: sections start collapsed so the single-column phone
-  // view shows just category names + active counts. The `sm:` classes below
-  // force the full view open from the tablet breakpoint up, so this state is
-  // inert on larger screens.
-  const [collapsed, setCollapsed] = useState(true);
+  // Collapse is owned by DayView (so "Collapse all" can drive every column and
+  // the choice persists) and works at every breakpoint. Search forces the full
+  // view open regardless.
   const isCollapsed = forceExpanded ? false : collapsed;
   const canAdd = cfg.key !== UNCATEGORISED_KEY;
 
@@ -207,10 +209,10 @@ export function SectionColumn({
         )}
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
           aria-label={isCollapsed ? `Expand ${cfg.label}` : `Collapse ${cfg.label}`}
-          className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:text-text sm:hidden"
+          className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:text-text"
         >
           <ChevronRight
             className={cn("h-4 w-4 transition-transform", !isCollapsed && "rotate-90")}
@@ -221,7 +223,7 @@ export function SectionColumn({
         </h2>
         <span
           className={cn(
-            "rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted sm:hidden",
+            "rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted",
             !isCollapsed && "hidden",
           )}
         >
@@ -230,7 +232,7 @@ export function SectionColumn({
         <div
           className={cn(
             "flex flex-wrap items-center gap-x-2 gap-y-1",
-            isCollapsed && "hidden sm:flex",
+            isCollapsed && "hidden",
           )}
         >
           {chips.map((c) => (
@@ -248,7 +250,7 @@ export function SectionColumn({
       </header>
 
       {recurring.length > 0 && (
-        <div className={cn("border-b border-line/50", isCollapsed && "hidden sm:block")}>
+        <div className={cn("border-b border-line/50", isCollapsed && "hidden")}>
           <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted/70">
             Recurring
           </div>
@@ -277,7 +279,7 @@ export function SectionColumn({
       <SortableContext items={datedIds} strategy={verticalListSortingStrategy}>
         <div
           data-dated-section={cfg.key}
-          className={cn("min-h-[40px]", isCollapsed && "hidden sm:block")}
+          className={cn("min-h-[40px]", isCollapsed && "hidden")}
         >
           {datedGroups.map((g) => {
             const accent = g.key ? QUADRANT_HEAD[g.key] : null;
@@ -331,7 +333,7 @@ export function SectionColumn({
       </SortableContext>
 
       {canAdd && (
-      <div className={cn("border-t border-line/50 p-2", isCollapsed && "hidden sm:block")}>
+      <div className={cn("border-t border-line/50 p-2", isCollapsed && "hidden")}>
         {adding ? (
           <div className="space-y-2">
             <Input

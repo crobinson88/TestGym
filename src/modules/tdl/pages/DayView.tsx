@@ -14,7 +14,7 @@ import {
   arrayMove,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CheckSquare, Search } from "lucide-react";
+import { CheckSquare, ChevronsDownUp, ChevronsUpDown, Search } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { todayIsoDate } from "@/lib/utils";
@@ -44,6 +44,22 @@ import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
 
+// Collapsed columns persist per device across days (a UI preference, not synced
+// domain data — the module keeps ephemeral UI local). The Priorities mirror
+// collapses under this reserved key.
+const COLLAPSE_STORAGE_KEY = "tdl:collapsedSections";
+const PRIORITIES_COLLAPSE_KEY = "__priorities__";
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_STORAGE_KEY);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    // ignore malformed/unavailable storage — start with nothing collapsed
+  }
+  return new Set();
+}
+
 export default function DayView() {
   const params = useParams<{ date?: string }>();
   const navigate = useNavigate();
@@ -70,6 +86,25 @@ export default function DayView() {
 
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(loadCollapsed);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify([...collapsedKeys]));
+    } catch {
+      // ignore storage failures — collapse still works for the session
+    }
+  }, [collapsedKeys]);
+
+  const toggleCollapse = useCallback((key: string) => {
+    setCollapsedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (focusIdx >= allIds.length) setFocusIdx(Math.max(0, allIds.length - 1));
@@ -293,6 +328,11 @@ export default function DayView() {
   const showPriorityColumn = !searching || priorityItems.length > 0;
   const nothingMatches = searching && visibleColumns.length === 0 && priorityItems.length === 0;
 
+  // "Collapse all" targets every column on the board (the Priorities mirror plus
+  // each category), independent of the search filter so the toggle is stable.
+  const collapsibleKeys = [PRIORITIES_COLLAPSE_KEY, ...columns.map((c) => c.key)];
+  const allCollapsed = collapsibleKeys.every((k) => collapsedKeys.has(k));
+
   // Column reorder is a desktop convenience: off while searching (the visible
   // set is filtered) and until the categories table has synced ids to persist.
   const columnsReorderable = !searching && keyToRowId.size > 0;
@@ -328,6 +368,24 @@ export default function DayView() {
               />
             </div>
             <Button
+              variant="ghost"
+              onClick={() =>
+                setCollapsedKeys(allCollapsed ? new Set() : new Set(collapsibleKeys))
+              }
+              className="h-10 shrink-0 px-3 text-sm"
+              aria-pressed={allCollapsed}
+              title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+            >
+              {allCollapsed ? (
+                <ChevronsUpDown className="h-4 w-4 sm:mr-1" />
+              ) : (
+                <ChevronsDownUp className="h-4 w-4 sm:mr-1" />
+              )}
+              <span className="hidden sm:inline">
+                {allCollapsed ? "Expand all" : "Collapse all"}
+              </span>
+            </Button>
+            <Button
               variant={selecting ? "secondary" : "ghost"}
               onClick={() => (selecting ? exitSelection() : setSelecting(true))}
               className="h-10 shrink-0 px-3 text-sm"
@@ -356,6 +414,8 @@ export default function DayView() {
                     focusedId={focusedId}
                     takenRanks={takenRanks}
                     forceExpanded={searching}
+                    collapsed={collapsedKeys.has(PRIORITIES_COLLAPSE_KEY)}
+                    onToggleCollapse={() => toggleCollapse(PRIORITIES_COLLAPSE_KEY)}
                     selecting={selecting}
                     selectedIds={selected}
                     onToggleSelect={toggleSelect}
@@ -375,6 +435,8 @@ export default function DayView() {
                       focusedId={focusedId}
                       takenRanks={takenRanks}
                       forceExpanded={searching}
+                      collapsed={collapsedKeys.has(cfg.key)}
+                      onToggleCollapse={() => toggleCollapse(cfg.key)}
                       reorderable={reorderableKeySet.has(cfg.key)}
                       selecting={selecting}
                       selectedIds={selected}
