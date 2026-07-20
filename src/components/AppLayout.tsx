@@ -117,23 +117,25 @@ export function AppLayout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 backdrop-blur">
-        <div className="mx-auto grid max-w-md grid-cols-11 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          {tabs.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  "flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs",
-                  isActive ? "text-accent" : "text-muted",
-                )
-              }
-            >
-              <Icon className="h-6 w-6" />
-              <span>{label}</span>
-            </NavLink>
-          ))}
+        <div className="overflow-x-auto overscroll-x-contain pb-[max(0.5rem,env(safe-area-inset-bottom))] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex w-max min-w-full justify-center gap-3 px-3 pt-2">
+            {tabs.map(({ to, label, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  cn(
+                    "flex w-16 shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-xs",
+                    isActive ? "text-accent" : "text-muted",
+                  )
+                }
+              >
+                <Icon className="h-6 w-6" />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </div>
         </div>
       </nav>
     </div>

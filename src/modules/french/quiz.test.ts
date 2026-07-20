@@ -313,6 +313,7 @@ describe("listening test", () => {
     expect(q.audioText).toBe("être"); // the word is spoken, not shown
     expect(q.sequence).toEqual(["être"]); // the correct build is just the word
     expect(q.sub).toBe("Tap the word you heard");
+    expect(q.meaning).toBe(word.en); // the English the learner types after ordering
     // The bank is the spoken word plus decoys, all drawn from the French vocab.
     expect(q.choices).toContain("être");
     expect(q.choices.every((c) => VOCAB.some((w) => w.fr === c))).toBe(true);
@@ -394,6 +395,7 @@ describe("makeSentenceQuestion", () => {
     expect(q.choices.filter((c) => c === "le chien")).toHaveLength(1);
     expect(q.choices.length).toBeGreaterThan(q.sequence!.length); // decoys added
     expect(q.explanation).toBe("Le chien est grand — The dog is big");
+    expect(q.meaning).toBe("The dog is big"); // typed-meaning answer for the round
   });
 });
 
@@ -429,6 +431,7 @@ describe("makeConjugationQuestion", () => {
     expect(q.id).toBe("conjug:être:present:nous");
     expect(q.choices[q.answer]).toBe("sommes");
     expect(q.sub).toBe("Present tense");
+    expect(q.meaning).toBe("to be"); // verb meaning shown under the infinitive
     expect(q.choices).toHaveLength(4);
     expect(new Set(q.choices).size).toBe(4); // no duplicate choices
   });
