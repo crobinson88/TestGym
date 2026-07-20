@@ -180,6 +180,11 @@ export default function TestRunner() {
   // order, plus the graded result once the learner checks.
   const [built, setBuilt] = useState<number[]>([]);
   const [orderResult, setOrderResult] = useState<boolean | null>(null);
+  // Listening only: after rebuilding what they heard, the learner types the English
+  // meaning. Graded separately, but the question counts correct only if both the
+  // order and the meaning are right.
+  const [meaningTyped, setMeaningTyped] = useState("");
+  const [meaningResult, setMeaningResult] = useState<boolean | null>(null);
   // Speaking (self-assessed) state: the learner's own mark for the current form.
   const [selfResult, setSelfResult] = useState<boolean | null>(null);
   const [details, setDetails] = useState<FrenchAttemptDetail[]>([]);
@@ -269,8 +274,20 @@ export default function TestRunner() {
       built.map((i) => q.choices[i]),
       q.sequence,
     );
+    // The detail isn't recorded yet — the meaning step finalizes the question.
     setOrderResult(ok);
-    setDetails((prev) => [...prev, { questionId: q.id, prompt: q.prompt, correct: ok }]);
+  }
+
+  // Grade the typed English meaning, then record the question: correct only if the
+  // order was rebuilt right AND the meaning matches.
+  function submitMeaning() {
+    if (meaningResult !== null || meaningTyped.trim() === "") return;
+    const ok = checkTypedAnswer(meaningTyped, q.meaning ?? "");
+    setMeaningResult(ok);
+    setDetails((prev) => [
+      ...prev,
+      { questionId: q.id, prompt: q.prompt, correct: orderResult === true && ok },
+    ]);
   }
 
   // Self-assessed grade for a speaking prompt — the learner marks whether they said
@@ -289,6 +306,8 @@ export default function TestRunner() {
       setTypedResult(null);
       setBuilt([]);
       setOrderResult(null);
+      setMeaningTyped("");
+      setMeaningResult(null);
       setSelfResult(null);
       return;
     }
@@ -343,10 +362,13 @@ export default function TestRunner() {
     );
   }
 
+  // For listening rounds the question is only fully answered once the meaning has
+  // also been graded; `orderResult` gates the intermediate (order-only) state.
+  const orderDone = orderResult !== null;
   const answered = typing
     ? typedResult !== null
     : isOrdering
-      ? orderResult !== null
+      ? meaningResult !== null
       : speaking
         ? selfResult !== null
         : picked !== null;
@@ -381,12 +403,15 @@ export default function TestRunner() {
             <Volume2 className="h-12 w-12" />
           </button>
           <div className="mt-3 text-sm text-muted">Tap to replay</div>
-          {answered && <div className="mt-4 text-2xl font-bold">{q.prompt}</div>}
+          {(answered || orderDone) && <div className="mt-4 text-2xl font-bold">{q.prompt}</div>}
         </div>
       ) : (
         <div className="mt-6 mb-8">
           <div className="text-xs uppercase tracking-wider text-muted">{q.sub}</div>
           <h2 className="mt-2 text-3xl font-bold leading-tight">{q.prompt}</h2>
+          {kind === "conjug" && q.meaning && (
+            <div className="mt-1 text-lg text-muted">{q.meaning}</div>
+          )}
           {kind === "vocab" && <WordHistoryBadge questionId={q.id} history={vocabHistory} />}
           {kind === "pronun" && q.example && (
             <button
@@ -466,7 +491,7 @@ export default function TestRunner() {
               </span>
             ) : (
               built.map((ci, pos) => {
-                const state = !answered
+                const state = !orderDone
                   ? "idle"
                   : q.choices[ci] === q.sequence![pos]
                     ? "correct"
@@ -475,7 +500,7 @@ export default function TestRunner() {
                   <button
                     key={pos}
                     onClick={() => setBuilt((b) => b.filter((_, p) => p !== pos))}
-                    disabled={answered}
+                    disabled={orderDone}
                     className={cn(
                       "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-base font-medium transition",
                       state === "idle" && "border-accent bg-accent/15 text-accent active:scale-95",
@@ -498,7 +523,7 @@ export default function TestRunner() {
                 <button
                   key={i}
                   onClick={() => setBuilt((b) => (b.includes(i) ? b : [...b, i]))}
-                  disabled={answered || used}
+                  disabled={orderDone || used}
                   className={cn(
                     "min-h-[3rem] rounded-xl border px-4 py-2 text-base font-medium transition",
                     used
@@ -512,23 +537,7 @@ export default function TestRunner() {
             })}
           </div>
 
-          {answered ? (
-            <div
-              className={cn(
-                "flex items-center gap-2 rounded-2xl border px-4 py-3 text-base font-medium",
-                orderResult
-                  ? "border-success bg-success/15 text-success"
-                  : "border-warn bg-warn/15 text-warn",
-              )}
-            >
-              {orderResult ? (
-                <Check className="h-5 w-5 shrink-0" />
-              ) : (
-                <X className="h-5 w-5 shrink-0" />
-              )}
-              <span>{orderResult ? "Correct" : `Answer: ${q.sequence!.join(" ")}`}</span>
-            </div>
-          ) : (
+          {!orderDone ? (
             <div className="flex gap-2">
               {built.length > 0 && (
                 <button
@@ -551,6 +560,83 @@ export default function TestRunner() {
                 Check
               </button>
             </div>
+          ) : (
+            <>
+              <div
+                className={cn(
+                  "flex items-center gap-2 rounded-2xl border px-4 py-3 text-base font-medium",
+                  orderResult
+                    ? "border-success bg-success/15 text-success"
+                    : "border-warn bg-warn/15 text-warn",
+                )}
+              >
+                {orderResult ? (
+                  <Check className="h-5 w-5 shrink-0" />
+                ) : (
+                  <X className="h-5 w-5 shrink-0" />
+                )}
+                <span>{orderResult ? "Correct" : `Answer: ${q.sequence!.join(" ")}`}</span>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="text-sm font-medium">What does it mean in English?</div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitMeaning();
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={meaningTyped}
+                    onChange={(e) => setMeaningTyped(e.target.value)}
+                    disabled={meaningResult !== null}
+                    autoFocus
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Type the meaning"
+                    className={cn(
+                      "h-14 w-full rounded-2xl border bg-surface px-4 text-lg font-medium outline-none transition placeholder:text-muted focus:border-accent",
+                      meaningResult === null && "border-line",
+                      meaningResult === true && "border-success bg-success/15 text-success",
+                      meaningResult === false && "border-warn bg-warn/15 text-warn",
+                    )}
+                  />
+                </form>
+                {meaningResult !== null ? (
+                  <div
+                    className={cn(
+                      "flex items-center gap-2 rounded-2xl border px-4 py-3 text-base font-medium",
+                      meaningResult
+                        ? "border-success bg-success/15 text-success"
+                        : "border-warn bg-warn/15 text-warn",
+                    )}
+                  >
+                    {meaningResult ? (
+                      <Check className="h-5 w-5 shrink-0" />
+                    ) : (
+                      <X className="h-5 w-5 shrink-0" />
+                    )}
+                    <span>{meaningResult ? "Correct" : `Answer: ${q.meaning}`}</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={submitMeaning}
+                    disabled={meaningTyped.trim() === ""}
+                    className={cn(
+                      "flex h-12 items-center justify-center rounded-2xl font-semibold transition active:scale-[0.99]",
+                      meaningTyped.trim() === ""
+                        ? "bg-surface2 text-muted"
+                        : "border border-accent bg-surface text-accent",
+                    )}
+                  >
+                    Check
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </div>
       ) : speaking ? (

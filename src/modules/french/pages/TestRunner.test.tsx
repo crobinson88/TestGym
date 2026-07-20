@@ -51,7 +51,7 @@ beforeEach(() => {
 });
 
 describe("TestRunner — listening sentence ordering", () => {
-  it("marks a sentence correct only when rebuilt in the order heard", async () => {
+  it("marks a sentence correct only when rebuilt in order AND the meaning typed", async () => {
     render(<TestRunner />);
     // The word bank appears once the sentence has been generated.
     await screen.findByRole("button", { name: "le chien" });
@@ -67,10 +67,38 @@ describe("TestRunner — listening sentence ordering", () => {
 
     expect(screen.getByText("Correct")).toBeInTheDocument();
 
+    // The meaning step: type what the sentence means, then check.
+    fireEvent.change(screen.getByPlaceholderText("Type the meaning"), {
+      target: { value: "the big dog" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     await waitFor(() => expect(addFrenchAttempt).toHaveBeenCalledOnce());
     expect(addFrenchAttempt).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "listening", total: 1, correct: 1 }),
+    );
+  });
+
+  it("marks a round wrong when the order is right but the meaning is wrong", async () => {
+    render(<TestRunner />);
+    await screen.findByRole("button", { name: "le chien" });
+
+    fireEvent.click(screen.getByRole("button", { name: "le chien" }));
+    fireEvent.click(screen.getByRole("button", { name: "grand" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Type the meaning"), {
+      target: { value: "the small cat" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+
+    expect(screen.getByText("Answer: the big dog")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    await waitFor(() => expect(addFrenchAttempt).toHaveBeenCalledOnce());
+    expect(addFrenchAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "listening", total: 1, correct: 0 }),
     );
   });
 
@@ -84,6 +112,12 @@ describe("TestRunner — listening sentence ordering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
 
     expect(screen.getByText("Answer: le chien grand")).toBeInTheDocument();
+
+    // Even with the meaning typed correctly, a wrong order fails the round.
+    fireEvent.change(screen.getByPlaceholderText("Type the meaning"), {
+      target: { value: "the big dog" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     await waitFor(() => expect(addFrenchAttempt).toHaveBeenCalledOnce());

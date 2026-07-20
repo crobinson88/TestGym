@@ -83,6 +83,11 @@ export interface Question {
   // the model pronunciation of a speaking-drill form. Unlike `audioText`, it does
   // NOT hide the prompt — it's a "hear it" aid, not an identify-by-ear cue.
   example?: string;
+  // The English meaning of the prompt. Used two ways by the runner: on the
+  // listening test it's the answer the learner types after rebuilding what they
+  // heard (graded with `checkTypedAnswer`); on the conjugation test it's shown as
+  // a hint under the infinitive so the verb's meaning is always in view.
+  meaning?: string;
 }
 
 // fr2en = show the French word, pick the English. en2fr = the reverse.
@@ -379,6 +384,7 @@ export function makeListeningOrderingQuestion(
     sequence,
     explanation: single ? `${phrase} = ${gloss}` : `${phrase} — ${gloss}`,
     audioText: phrase,
+    meaning: gloss,
   };
 }
 
@@ -420,6 +426,7 @@ export function makeSentenceQuestion(
     sequence,
     explanation: `${sentence.fr} — ${sentence.en}`,
     audioText: sentence.fr,
+    meaning: sentence.en,
   };
 }
 
@@ -536,6 +543,7 @@ export function makeConjugationQuestion(
       choices,
       answer,
       explanation: `${withPronoun(person, correct)} — ${verb.infinitive} (${verb.en}), present tense.`,
+      meaning: verb.en,
     };
   }
   const correct = futurProcheForm(verb, person);
@@ -548,6 +556,7 @@ export function makeConjugationQuestion(
     choices,
     answer,
     explanation: `${withPronoun(person, correct)} — aller (present) + infinitive = "going to ${verb.en.replace(/^to /, "")}".`,
+    meaning: verb.en,
   };
 }
 
