@@ -28,6 +28,7 @@ export type SyncTable =
   | "stocks"
   | "forecasts"
   | "french_attempts"
+  | "driving_attempts"
   | "reading_items"
   | "tips"
   | "market_notes"
@@ -50,6 +51,7 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   "stocks",
   "forecasts",
   "french_attempts",
+  "driving_attempts",
   "reading_items",
   "tips",
   "market_notes",
@@ -75,6 +77,7 @@ export const DEXIE_TABLE: Record<SyncTable, string> = {
   stocks: "stocks",
   forecasts: "forecasts",
   french_attempts: "french_attempts",
+  driving_attempts: "driving_attempts",
   reading_items: "reading_items",
   tips: "tips",
   market_notes: "market_notes",

@@ -3,6 +3,7 @@ import type { GymDB } from "../db";
 import type {
   CardioSessionRow,
   CategoryRow,
+  DrivingAttemptRow,
   ExerciseRow,
   FoodEntryRow,
   FoodGoalRow,
@@ -40,6 +41,7 @@ type AnyRow =
   | StockRow
   | ForecastRow
   | FrenchAttemptRow
+  | DrivingAttemptRow
   | ReadingItemRow
   | TipRow
   | MarketNoteRow

@@ -7,6 +7,7 @@ import type {
   FoodEntryRow,
   FoodGoalRow,
   ForecastRow,
+  DrivingAttemptRow,
   FrenchAttemptRow,
   MarketNoteRow,
   MetActivityRow,
@@ -109,6 +110,10 @@ export interface LocalForecast extends ForecastRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalDrivingAttempt extends DrivingAttemptRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalFrenchAttempt extends FrenchAttemptRow {
   sync_status: SyncStatus;
 }
@@ -154,6 +159,7 @@ export class GymDB extends Dexie {
   stocks!: Table<LocalStock, string>;
   forecasts!: Table<LocalForecast, string>;
   french_attempts!: Table<LocalFrenchAttempt, string>;
+  driving_attempts!: Table<LocalDrivingAttempt, string>;
   reading_items!: Table<LocalReadingItem, string>;
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
@@ -344,6 +350,9 @@ export class GymDB extends Dexie {
           if (row.weight_lb === undefined) row.weight_lb = null;
           if (row.activity_factor === undefined) row.activity_factor = 1.2;
         });
+    });
+    this.version(26).stores({
+      driving_attempts: "id, section, started_at, updated_at, sync_status, deleted_at",
     });
   }
 }

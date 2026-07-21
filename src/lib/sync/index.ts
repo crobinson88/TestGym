@@ -22,6 +22,7 @@ export type {
   UpdateShareTradeInput,
   AddForecastInput,
   AddFrenchAttemptInput,
+  AddDrivingAttemptInput,
   AddMarketNoteInput,
   UpdateMarketNoteInput,
 } from "./mutations";

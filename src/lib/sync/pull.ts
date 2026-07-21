@@ -2,6 +2,7 @@ import type { GymDB } from "../db";
 import type {
   CardioSessionRow,
   CategoryRow,
+  DrivingAttemptRow,
   ExerciseRow,
   FoodEntryRow,
   FoodGoalRow,
@@ -257,6 +258,25 @@ async function mergeFrenchAttempts(db: GymDB, rows: FrenchAttemptRow[]) {
   });
 }
 
+async function mergeDrivingAttempts(db: GymDB, rows: DrivingAttemptRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.driving_attempts, async () => {
+    for (const remote of rows) {
+      const local = await db.driving_attempts.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.driving_attempts.put({
+          ...remote,
+          total: Number(remote.total),
+          correct: Number(remote.correct),
+          duration_ms: remote.duration_ms === null ? null : Number(remote.duration_ms),
+          details: remote.details ?? [],
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
 async function mergeReadingItems(db: GymDB, rows: ReadingItemRow[]) {
   if (rows.length === 0) return;
   await db.transaction("rw", db.reading_items, async () => {
@@ -364,6 +384,7 @@ const META_KEYS: Record<SyncTable, string> = {
   stocks: "last_pull_stocks",
   forecasts: "last_pull_forecasts",
   french_attempts: "last_pull_french_attempts",
+  driving_attempts: "last_pull_driving_attempts",
   reading_items: "last_pull_reading_items",
   tips: "last_pull_tips",
   market_notes: "last_pull_market_notes",
@@ -398,6 +419,7 @@ export function createPull({ client, db, log }: PullDeps) {
       stocks: 0,
       forecasts: 0,
       french_attempts: 0,
+      driving_attempts: 0,
       reading_items: 0,
       tips: 0,
       market_notes: 0,
@@ -489,6 +511,13 @@ export function createPull({ client, db, log }: PullDeps) {
           fetched.french_attempts = rows.length;
           if (rows.length > 0) {
             await writeMark("french_attempts", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "driving_attempts") {
+          const rows = await fetchSince<DrivingAttemptRow>(client, "driving_attempts", since);
+          await mergeDrivingAttempts(db, rows);
+          fetched.driving_attempts = rows.length;
+          if (rows.length > 0) {
+            await writeMark("driving_attempts", rows[rows.length - 1].updated_at);
           }
         } else if (table === "reading_items") {
           const rows = await fetchSince<ReadingItemRow>(client, "reading_items", since);

@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
+  Car,
   CheckSquare,
   Clock,
   DoorClosed,
@@ -37,6 +38,7 @@ const tabs: readonly Tab[] = [
   { to: "/venmo", label: "Split", icon: Receipt },
   { to: "/shares", label: "Shares", icon: TrendingUp },
   { to: "/french", label: "French", icon: Languages },
+  { to: "/driving", label: "Permit", icon: Car },
   { to: "/reading", label: "Reading", icon: BookOpen },
   { to: "/food", label: "Food", icon: UtensilsCrossed },
   { to: "/doors", label: "Doors", icon: DoorClosed },

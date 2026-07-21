@@ -5,6 +5,7 @@ import type {
   LocalCategory,
   LocalExercise,
   LocalFoodEntry,
+  LocalDrivingAttempt,
   LocalFoodGoal,
   LocalForecast,
   LocalFrenchAttempt,
@@ -20,6 +21,9 @@ import type {
   BodySex,
   CardioSessionRow,
   CategoryRow,
+  DrivingAttemptDetail,
+  DrivingAttemptRow,
+  DrivingSection,
   ExerciseRow,
   FoodEntryRow,
   FoodGoalRow,
@@ -111,6 +115,15 @@ export interface AddFrenchAttemptInput {
   started_at: string;
 }
 
+export interface AddDrivingAttemptInput {
+  section: DrivingSection;
+  total: number;
+  correct: number;
+  duration_ms?: number | null;
+  details?: DrivingAttemptDetail[];
+  started_at: string;
+}
+
 export interface AddReadingItemInput {
   url: string;
   title: string;
@@ -196,6 +209,10 @@ function pendingForecast(row: ForecastRow): LocalForecast {
 }
 
 function pendingFrenchAttempt(row: FrenchAttemptRow): LocalFrenchAttempt {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingDrivingAttempt(row: DrivingAttemptRow): LocalDrivingAttempt {
   return { ...row, sync_status: "pending" };
 }
 
@@ -587,6 +604,27 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     };
     const local = pendingFrenchAttempt(row);
     await db.french_attempts.put(local);
+    notify();
+    return local;
+  }
+
+  async function addDrivingAttempt(input: AddDrivingAttemptInput): Promise<LocalDrivingAttempt> {
+    const id = uuid();
+    const ts = now();
+    const row: DrivingAttemptRow = {
+      id,
+      section: input.section,
+      total: input.total,
+      correct: input.correct,
+      duration_ms: input.duration_ms ?? null,
+      details: input.details ?? [],
+      started_at: input.started_at,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingDrivingAttempt(row);
+    await db.driving_attempts.put(local);
     notify();
     return local;
   }
@@ -1000,6 +1038,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addForecast,
     deleteForecast,
     addFrenchAttempt,
+    addDrivingAttempt,
     addReadingItem,
     updateReadingItem,
     deleteReadingItem,
