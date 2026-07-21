@@ -14,6 +14,7 @@ import { tdlRoutes } from "@/modules/tdl/routes";
 import { venmoRoutes } from "@/modules/venmo/routes";
 import { sharesRoutes } from "@/modules/shares/routes";
 import { frenchRoutes } from "@/modules/french/routes";
+import { drivingRoutes } from "@/modules/driving/routes";
 import { readingRoutes } from "@/modules/reading_list/routes";
 import { foodRoutes } from "@/modules/food_diary/routes";
 import { doorRoutes } from "@/modules/doors/routes";
@@ -75,6 +76,7 @@ export function App() {
               {venmoRoutes()}
               {sharesRoutes()}
               {frenchRoutes()}
+              {drivingRoutes()}
               {readingRoutes()}
               {foodRoutes()}
               {doorRoutes()}
