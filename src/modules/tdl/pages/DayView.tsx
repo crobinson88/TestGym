@@ -22,6 +22,7 @@ import { useDay, usePrevDateWithItems } from "../hooks";
 import { reorderCategories, useCategories, useCategoryRows } from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { selectPriorityItems } from "../priority";
+import { selectDoFirstItems } from "../quadrant";
 import type { LocalTdlItem } from "../types";
 import {
   archiveItems,
@@ -40,6 +41,7 @@ import {
 import { DayHeader } from "../components/DayHeader";
 import { SectionColumn, SECTION_SORTABLE_PREFIX } from "../components/SectionColumn";
 import { PriorityColumn } from "../components/PriorityColumn";
+import { DoFirstColumn } from "../components/DoFirstColumn";
 import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
@@ -49,6 +51,7 @@ import { RollForwardButton } from "../components/RollForwardButton";
 // collapses under this reserved key.
 const COLLAPSE_STORAGE_KEY = "tdl:collapsedSections";
 const PRIORITIES_COLLAPSE_KEY = "__priorities__";
+const DO_FIRST_COLLAPSE_KEY = "__do_first__";
 
 function loadCollapsed(): Set<string> {
   try {
@@ -326,11 +329,22 @@ export default function DayView() {
 
   const priorityItems = selectPriorityItems(bundle.items).filter(matchesQuery);
   const showPriorityColumn = !searching || priorityItems.length > 0;
-  const nothingMatches = searching && visibleColumns.length === 0 && priorityItems.length === 0;
+  const doFirstItems = selectDoFirstItems(bundle.items).filter(matchesQuery);
+  const showDoFirstColumn = !searching || doFirstItems.length > 0;
+  const nothingMatches =
+    searching &&
+    visibleColumns.length === 0 &&
+    priorityItems.length === 0 &&
+    doFirstItems.length === 0;
 
-  // "Collapse all" targets every column on the board (the Priorities mirror plus
-  // each category), independent of the search filter so the toggle is stable.
-  const collapsibleKeys = [PRIORITIES_COLLAPSE_KEY, ...columns.map((c) => c.key)];
+  // "Collapse all" targets every column on the board (the Priorities and Do First
+  // mirrors plus each category), independent of the search filter so the toggle
+  // is stable.
+  const collapsibleKeys = [
+    PRIORITIES_COLLAPSE_KEY,
+    DO_FIRST_COLLAPSE_KEY,
+    ...columns.map((c) => c.key),
+  ];
   const allCollapsed = collapsibleKeys.every((k) => collapsedKeys.has(k));
 
   // Column reorder is a desktop convenience: off while searching (the visible
@@ -416,6 +430,21 @@ export default function DayView() {
                     forceExpanded={searching}
                     collapsed={collapsedKeys.has(PRIORITIES_COLLAPSE_KEY)}
                     onToggleCollapse={() => toggleCollapse(PRIORITIES_COLLAPSE_KEY)}
+                    selecting={selecting}
+                    selectedIds={selected}
+                    onToggleSelect={toggleSelect}
+                    onBulkActed={() => setSelected(new Set())}
+                  />
+                )}
+                {showDoFirstColumn && (
+                  <DoFirstColumn
+                    items={doFirstItems}
+                    categories={categories}
+                    focusedId={focusedId}
+                    takenRanks={takenRanks}
+                    forceExpanded={searching}
+                    collapsed={collapsedKeys.has(DO_FIRST_COLLAPSE_KEY)}
+                    onToggleCollapse={() => toggleCollapse(DO_FIRST_COLLAPSE_KEY)}
                     selecting={selecting}
                     selectedIds={selected}
                     onToggleSelect={toggleSelect}

@@ -193,6 +193,26 @@ export const PRON_QUESTIONS: PronQuestion[] = [
     example: "manger",
   },
   {
+    id: "cons-j",
+    topic: "Consonants",
+    prompt: "How is « j » pronounced, as in « jouer » (to play)?",
+    choices: ["Soft /ʒ/ — like 's' in 'measure'", "Like 'j' in 'jump'", "Like 'y' in 'yes'"],
+    answer: 0,
+    explanation:
+      "« j » is always the soft /ʒ/, the 's' of 'measure' — never the hard English 'j': jouer, je, jour, jaune.",
+    example: "jouer",
+  },
+  {
+    id: "cons-ss",
+    topic: "Consonants",
+    prompt: "How is « ss » pronounced, as in « dessiner » (to draw)?",
+    choices: ["/s/ — a plain, unvoiced 's'", "/z/ — like 'z'", "Like 'sh' /ʃ/"],
+    answer: 0,
+    explanation:
+      "A double « ss » stays unvoiced /s/, unlike a single « s » between vowels (which is /z/): dessiner, poisson /s/ vs poison /z/.",
+    example: "dessiner",
+  },
+  {
     id: "cons-gn",
     topic: "Consonants",
     prompt: "How is « gn » pronounced, as in « montagne »?",
@@ -289,6 +309,21 @@ export const PRON_QUESTIONS: PronQuestion[] = [
     explanation:
       "The 3rd-person plural « -ent » ending is completely silent: il parle and ils parlent sound the same. (This only applies to the verb ending, not words like « souvent ».)",
     example: "parlent",
+  },
+
+  {
+    id: "silent-er-infinitive",
+    topic: "Silent letters",
+    prompt: "How is the « -er » infinitive ending pronounced, as in « jouer », « manger », « nager »?",
+    choices: [
+      "Like « é » /e/ — the 'r' is silent",
+      "With the 'r' sounded, like 'air'",
+      "Like 'uh' with a soft 'r'",
+    ],
+    answer: 0,
+    explanation:
+      "The « -er » of an infinitive sounds like « é » /e/ (jouer = /ʒwe/): the r is silent. The « -ez » ending sounds the same (vous jouez).",
+    example: "jouer",
   },
 
   // ---------------- Liaison ----------------

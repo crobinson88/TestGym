@@ -45,6 +45,23 @@ export interface QuadrantGroup {
   items: LocalTdlItem[];
 }
 
+// The "Do First" (urgent & important) items for the virtual board column: every
+// item tagged do_first, ranked ones first (rank 1 → 10) then the rest by board
+// position. An at-a-glance list of what has to happen today, auto-populated from
+// the quadrant tag — no manual list to maintain.
+export function selectDoFirstItems<T extends { eisenhower_quadrant: TdlQuadrant | null; priority_rank: number | null; position: number }>(
+  items: readonly T[],
+): T[] {
+  return items
+    .filter((i) => i.eisenhower_quadrant === "do_first")
+    .sort((a, b) => {
+      const ra = a.priority_rank ?? Infinity;
+      const rb = b.priority_rank ?? Infinity;
+      if (ra !== rb) return ra - rb;
+      return a.position - b.position;
+    });
+}
+
 // Group a category's items into Eisenhower quadrants, in fixed order with the
 // unclassified bucket last. Only non-empty groups are returned; item order
 // within a group is preserved (callers hand items in position order).

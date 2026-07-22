@@ -637,6 +637,24 @@ export const RULE_QUESTIONS: RuleQuestion[] = [
     explanation: "The il/elle/on ending for -er verbs is -e: il aime.",
   },
   {
+    id: "er-aimer-infinitive-1",
+    topic: "-ER Verbs",
+    prompt: "How do you say « I like to play cards »?",
+    choices: ["J'aime jouer aux cartes", "J'aime je joue aux cartes", "J'aime à jouer aux cartes"],
+    answer: 0,
+    explanation:
+      "To say what you like to do, follow aimer/adorer/détester/préférer with a plain infinitive — no extra word: j'aime jouer, je préfère nager, je déteste dessiner.",
+  },
+  {
+    id: "er-preferer-accent-1",
+    topic: "-ER Verbs",
+    prompt: "Conjugate « préférer »: « Je ___ nager ».",
+    choices: ["préfére", "préfère", "prefère"],
+    answer: 1,
+    explanation:
+      "« préférer » changes the second é to è in the singular and ils form: je préfère, tu préfères, il préfère, ils préfèrent (but nous préférons, vous préférez).",
+  },
+  {
     id: "er-nous-1",
     topic: "-ER Verbs",
     prompt: "Conjugate « parler »: « Nous ___ ».",
