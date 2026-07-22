@@ -80,6 +80,42 @@ export const CONJ_VERBS: VerbConjugation[] = [
     en: "to see",
     present: { je: "vois", tu: "vois", il: "voit", nous: "voyons", vous: "voyez", ils: "voient" },
   },
+  // The like/dislike/prefer verbs from the leisure-activities lesson (all -er
+  // verbs; préférer changes é → è in the singular and 3rd-plural stem).
+  {
+    infinitive: "aimer",
+    en: "to like/love",
+    present: { je: "aime", tu: "aimes", il: "aime", nous: "aimons", vous: "aimez", ils: "aiment" },
+  },
+  {
+    infinitive: "adorer",
+    en: "to love/adore",
+    present: { je: "adore", tu: "adores", il: "adore", nous: "adorons", vous: "adorez", ils: "adorent" },
+  },
+  {
+    infinitive: "détester",
+    en: "to hate",
+    present: {
+      je: "déteste",
+      tu: "détestes",
+      il: "déteste",
+      nous: "détestons",
+      vous: "détestez",
+      ils: "détestent",
+    },
+  },
+  {
+    infinitive: "préférer",
+    en: "to prefer",
+    present: {
+      je: "préfère",
+      tu: "préfères",
+      il: "préfère",
+      nous: "préférons",
+      vous: "préférez",
+      ils: "préfèrent",
+    },
+  },
 ];
 
 // The aller table powers the futur proche ("going to …") for every other verb.
