@@ -6,6 +6,7 @@ import {
   QUADRANT_BY_KEY,
   groupByQuadrant,
   quadrantOrder,
+  selectDoFirstItems,
 } from "./quadrant";
 
 function item(quadrant: TdlQuadrant | null, over: Partial<LocalTdlItem> = {}): LocalTdlItem {
@@ -90,5 +91,37 @@ describe("groupByQuadrant", () => {
 
   it("returns nothing for an empty list", () => {
     expect(groupByQuadrant([])).toEqual([]);
+  });
+});
+
+describe("selectDoFirstItems", () => {
+  it("keeps only do_first items", () => {
+    const items = [
+      item("do_first", { position: 0, title: "a" }),
+      item("schedule", { position: 1, title: "b" }),
+      item(null, { position: 2, title: "c" }),
+      item("do_first", { position: 3, title: "d" }),
+    ];
+    expect(selectDoFirstItems(items).map((i) => i.title)).toEqual(["a", "d"]);
+  });
+
+  it("orders ranked items first (1 → 10), then the rest by position", () => {
+    const items = [
+      item("do_first", { position: 2, title: "unranked-late", priority_rank: null }),
+      item("do_first", { position: 0, title: "rank3", priority_rank: 3 }),
+      item("do_first", { position: 5, title: "unranked-early", priority_rank: null }),
+      item("do_first", { position: 9, title: "rank1", priority_rank: 1 }),
+    ];
+    // rank1, rank3, then unranked by position (2 before 5).
+    expect(selectDoFirstItems(items).map((i) => i.title)).toEqual([
+      "rank1",
+      "rank3",
+      "unranked-late",
+      "unranked-early",
+    ]);
+  });
+
+  it("returns an empty list when nothing is do_first", () => {
+    expect(selectDoFirstItems([item("eliminate"), item(null)])).toEqual([]);
   });
 });

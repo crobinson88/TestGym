@@ -9,6 +9,7 @@ import {
   CheckSquare,
   ChevronRight,
   Clock,
+  Flame,
   FolderInput,
   GripVertical,
   MoreVertical,
@@ -72,6 +73,15 @@ function toDragBinding(s: SortableReturn): DragBinding {
 // separate sortable namespace. DayView routes drops by this prefix.
 export const PRIORITY_SORTABLE_PREFIX = "priority:";
 
+// A no-op drag binding for the read-only mirror columns (Do First). The row
+// still renders inside the board's DndContext but isn't itself draggable.
+const STATIC_DRAG: DragBinding = {
+  setNodeRef: () => {},
+  style: {},
+  attributes: {} as SortableReturn["attributes"],
+  listeners: undefined,
+};
+
 interface ItemRowProps {
   item: LocalTdlItem;
   categories: SectionConfig[];
@@ -89,6 +99,8 @@ interface ItemRowProps {
   // Called after a menu action fanned out across the selection, so the parent
   // can clear it (matching the BulkActionBar).
   onBulkActed?: () => void;
+  // Read-only mirror rows (Do First): no drag handle, a Flame marker instead.
+  dragless?: boolean;
 }
 
 // Border + background that intensify as an item goes unworked, up to 3 days
@@ -127,6 +139,13 @@ export function PriorityItemRow(props: ItemRowProps) {
   return <ItemRowBase {...props} drag={toDragBinding(sortable)} />;
 }
 
+// Read-only row for the virtual Do First column. It mirrors an item that also
+// renders (and is draggable) in its real category column, so it isn't a
+// sortable itself — the quadrant tag drives membership, not manual ordering.
+export function DoFirstItemRow(props: ItemRowProps) {
+  return <ItemRowBase {...props} drag={STATIC_DRAG} dragless />;
+}
+
 function ItemRowBase({
   item,
   categories,
@@ -138,6 +157,7 @@ function ItemRowBase({
   selectedIds,
   onToggleSelect,
   onBulkActed,
+  dragless,
   drag,
 }: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
@@ -193,6 +213,13 @@ function ItemRowBase({
             <Square className="h-4 w-4" />
           )}
         </button>
+      ) : dragless ? (
+        <span
+          className="flex h-9 w-6 shrink-0 items-center justify-center text-danger/70"
+          aria-hidden
+        >
+          <Flame className="h-4 w-4" />
+        </span>
       ) : (
         <button
           {...drag.attributes}
