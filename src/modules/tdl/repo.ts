@@ -2,6 +2,7 @@ import { v4 as uuid } from "uuid";
 import { db } from "@/lib/db";
 import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
+import { todayIsoDate } from "@/lib/utils";
 import { isResettable } from "./snooze";
 import { nextLastWorkedAt } from "./age";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
@@ -338,8 +339,21 @@ export async function archiveItem(id: string): Promise<LocalTdlItem | null> {
   return updateItem(id, { is_archived: true });
 }
 
-export async function unarchiveItem(id: string): Promise<LocalTdlItem | null> {
-  return updateItem(id, { is_archived: false });
+// Unarchive an item and surface it on today's board: an item is pinned to the
+// day it was archived on, so restoring it onto that (usually past) day would
+// leave it invisible. Move it to today with a fresh position at the end of its
+// section unless it already lives there.
+export async function unarchiveItem(
+  id: string,
+  today = todayIsoDate(),
+): Promise<LocalTdlItem | null> {
+  const existing = await db.tdl_items.get(id);
+  if (!existing) return null;
+  if (existing.snapshot_date === today) {
+    return updateItem(id, { is_archived: false });
+  }
+  const position = await nextPosition(today, existing.section, existing.is_recurring);
+  return updateItem(id, { is_archived: false, snapshot_date: today, position });
 }
 
 export async function snoozeItem(
