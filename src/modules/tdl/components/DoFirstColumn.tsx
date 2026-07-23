@@ -36,6 +36,18 @@ export function DoFirstColumn({
 }) {
   const isCollapsed = forceExpanded ? false : collapsed;
 
+  // Completed vs still-to-do split for the header badges. "Outstanding" mirrors
+  // SectionColumn's not-done set (open + in progress + testing); cancelled items
+  // count toward neither but stay in the total.
+  const total = items.length;
+  const done = items.filter((i) => i.status === "done").length;
+  const outstanding = items.filter(
+    (i) =>
+      i.status === "open" ||
+      i.status === "worked_today" ||
+      i.status === "ready_for_testing",
+  ).length;
+
   return (
     <section
       className={cn(
@@ -60,9 +72,17 @@ export function DoFirstColumn({
           <Flame className="h-4 w-4" />
           Do First
         </h2>
-        <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] tabular-nums text-danger">
-          {items.length} {items.length === 1 ? "item" : "items"}
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] tabular-nums text-success">
+            {done} done
+          </span>
+          <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] tabular-nums text-danger">
+            {outstanding} left
+          </span>
+          <span className="rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted">
+            {total} total
+          </span>
+        </div>
       </header>
 
       {items.length === 0 ? (
