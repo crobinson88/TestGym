@@ -66,6 +66,16 @@ describe("dayCompletion", () => {
     expect(c.priorityActive).toBe(1);
   });
 
+  it("leaves paused items out of the completion total", () => {
+    const c = dayCompletion([
+      makeItem({ status: "open" }),
+      makeItem({ status: "done" }),
+      makeItem({ status: "paused" }),
+    ]);
+    expect(c.total).toBe(2);
+    expect(c.done).toBe(1);
+  });
+
   it("tallies reluctant items by total vs done", () => {
     const c = dayCompletion([
       makeItem({ status: "open", is_reluctant: true }),
@@ -84,11 +94,12 @@ describe("sectionStatusCounts", () => {
       makeItem({ status: "open" }),
       makeItem({ status: "open" }),
       makeItem({ status: "worked_today" }),
+      makeItem({ status: "paused" }),
       makeItem({ status: "done" }),
       makeItem({ status: "cancelled" }),
       makeItem({ status: "worked_today", snoozed_until: "2026-06-10" }),
     ]);
-    expect(c).toEqual({ open: 2, inProgress: 1, testing: 0, done: 1, cancelled: 1 });
+    expect(c).toEqual({ open: 2, inProgress: 1, testing: 0, paused: 1, done: 1, cancelled: 1 });
   });
 
   it("counts product testing items toward both in progress and testing", () => {

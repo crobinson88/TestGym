@@ -108,6 +108,7 @@ export type TdlStatus =
   | "open"
   | "worked_today"
   | "ready_for_testing"
+  | "paused"
   | "done"
   | "cancelled";
 

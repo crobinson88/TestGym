@@ -123,6 +123,7 @@ export function SectionColumn({
       n: counts.testing,
       cls: "bg-sky-500/15 text-sky-400",
     },
+    { key: "paused", label: "paused", n: counts.paused, cls: "bg-warn/15 text-warn" },
     { key: "done", label: "done", n: counts.done, cls: "bg-success/15 text-success" },
   ].filter((c) => c.key === "open" || c.n > 0);
 

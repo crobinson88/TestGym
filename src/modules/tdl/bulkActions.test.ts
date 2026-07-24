@@ -13,10 +13,14 @@ import {
   createItem,
   deleteItems,
   moveItemsToSection,
+  pauseItems,
+  resumeItems,
   setReluctantItems,
   snoozeItems,
+  unarchiveItem,
   unsnoozeItems,
 } from "./repo";
+import { todayIsoDate } from "@/lib/utils";
 
 // pokeOutbox() short-circuits when offline; keep the drain off the network.
 beforeAll(() => {
@@ -83,6 +87,38 @@ describe("tdl bulk actions", () => {
 
     expect(changed).toBe(1);
     expect((await db.tdl_items.get(a.id))?.status).toBe("cancelled");
+  });
+
+  it("pauses every id, skipping already-paused ones", async () => {
+    const a = await seed();
+    const b = await seed({ status: "paused" });
+
+    const changed = await pauseItems([a.id, b.id]);
+
+    expect(changed).toBe(1);
+    expect((await db.tdl_items.get(a.id))?.status).toBe("paused");
+  });
+
+  it("resumes paused ids back to open, skipping non-paused ones", async () => {
+    const a = await seed({ status: "paused" });
+    const b = await seed({ status: "worked_today" });
+
+    const changed = await resumeItems([a.id, b.id]);
+
+    expect(changed).toBe(1);
+    expect((await db.tdl_items.get(a.id))?.status).toBe("open");
+    expect((await db.tdl_items.get(b.id))?.status).toBe("worked_today");
+  });
+
+  it("surfaces an unarchived item on today's board", async () => {
+    const past = await seed({ is_archived: true });
+    expect(past.snapshot_date).toBe(DAY);
+
+    await unarchiveItem(past.id);
+
+    const restored = await db.tdl_items.get(past.id);
+    expect(restored?.is_archived).toBe(false);
+    expect(restored?.snapshot_date).toBe(todayIsoDate());
   });
 
   it("soft-deletes every id, skipping already-deleted ones", async () => {

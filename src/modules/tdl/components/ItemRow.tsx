@@ -13,7 +13,9 @@ import {
   FolderInput,
   GripVertical,
   MoreVertical,
+  Pause,
   Pencil,
+  Play,
   Square,
   StickyNote,
   ThumbsDown,
@@ -31,6 +33,8 @@ import {
   cycleStatus,
   deleteItems,
   moveItemsToSection,
+  pauseItems,
+  resumeItems,
   setPriorityRank,
   setQuadrant,
   setReluctantItems,
@@ -170,6 +174,7 @@ function ItemRowBase({
   const hasDueDate = cfg?.hasDueDate ?? true;
   const done = item.status === "done";
   const cancelled = item.status === "cancelled";
+  const paused = item.status === "paused";
   const snoozed = isSnoozed(item);
   const hasDetail = !!item.notes?.trim() || (item.images?.length ?? 0) > 0;
   // Snoozed items are deliberately deferred, so they never build urgency.
@@ -194,7 +199,7 @@ function ItemRowBase({
         AGE_CLASSES[level],
         focused && "bg-surface2/40",
         selected && "bg-accent/10 ring-1 ring-inset ring-accent/60",
-        (cancelled || snoozed) && "opacity-50",
+        (cancelled || snoozed || paused) && "opacity-50",
         menu && "z-30",
       )}
     >
@@ -540,6 +545,29 @@ function ItemRowBase({
             >
               <Archive className="h-4 w-4" /> Archive
             </button>
+            {paused ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void resumeItems(targetIds).then(afterAction);
+                  setMenu(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+              >
+                <Play className="h-4 w-4" /> Resume
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  void pauseItems(targetIds).then(afterAction);
+                  setMenu(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+              >
+                <Pause className="h-4 w-4" /> Pause
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

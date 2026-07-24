@@ -158,6 +158,7 @@ export interface SectionStatusCounts {
   open: number;
   inProgress: number;
   testing: number;
+  paused: number;
   done: number;
   cancelled: number;
 }
@@ -174,6 +175,7 @@ export function sectionStatusCounts(
     open: 0,
     inProgress: 0,
     testing: 0,
+    paused: 0,
     done: 0,
     cancelled: 0,
   };
@@ -187,6 +189,8 @@ export function sectionStatusCounts(
       counts.inProgress += 1;
     } else if (status === "open") {
       counts.open += 1;
+    } else if (status === "paused") {
+      counts.paused += 1;
     } else if (status === "done") {
       counts.done += 1;
     } else if (status === "cancelled") {
