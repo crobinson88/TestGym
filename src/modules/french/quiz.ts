@@ -131,17 +131,58 @@ export function normalizeAnswer(s: string): string {
     .trim();
 }
 
-// Accept a typed answer if it matches any "/"-separated alternative of the
-// expected gloss. A leading "to " on verb glosses is optional ("take" ≡ "to take").
+// Levenshtein edit distance (insertions/deletions/substitutions), two-row DP.
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  const curr = new Array<number>(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = curr.slice();
+  }
+  return prev[b.length];
+}
+
+// How many typos to forgive, scaled to word length: short words must be exact (a
+// one-letter slip on "so" is a different word), longer ones tolerate a typo or two.
+function typoBudget(len: number): number {
+  if (len <= 3) return 0;
+  if (len <= 7) return 1;
+  return 2;
+}
+
+// True when `input` equals `target` or is within its length-scaled typo budget, so
+// minor English spelling slips ("wile" for "while") still count as correct.
+function fuzzyEqual(input: string, target: string): boolean {
+  if (input === target) return true;
+  const budget = typoBudget(Math.max(input.length, target.length));
+  return budget > 0 && editDistance(input, target) <= budget;
+}
+
+// Accept a typed answer if any "/"-separated alternative the learner types matches
+// any "/"-separated alternative of the expected gloss. Matching is lenient:
+// accents/case/punctuation are normalised away, a leading "to " on verb glosses is
+// optional ("take" ≡ "to take"), minor spelling errors are forgiven (length-scaled
+// edit distance), and the alternatives may be given in any order or combination —
+// so for "then/so" any of "then", "so", "so/then", or "then/so" is accepted.
 export function checkTypedAnswer(input: string, expected: string): boolean {
   const stripTo = (s: string) => s.replace(/^to /, "");
-  const typed = normalizeAnswer(input);
-  if (!typed) return false;
-  return normalizeAnswer(expected)
-    .split("/")
-    .map((v) => v.trim())
-    .filter(Boolean)
-    .some((v) => v === typed || stripTo(v) === stripTo(typed));
+  const parts = (s: string) =>
+    normalizeAnswer(s)
+      .split("/")
+      .map((v) => v.trim())
+      .filter(Boolean);
+  const typed = parts(input);
+  if (typed.length === 0) return false;
+  return parts(expected).some((v) =>
+    typed.some((t) => fuzzyEqual(t, v) || fuzzyEqual(stripTo(t), stripTo(v))),
+  );
 }
 
 // A word-assembly answer is correct only if the built word list reproduces the

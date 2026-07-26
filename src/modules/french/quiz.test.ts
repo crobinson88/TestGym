@@ -298,6 +298,20 @@ describe("checkTypedAnswer", () => {
     expect(checkTypedAnswer("the", "the (m)")).toBe(true);
   });
 
+  it("forgives minor spelling errors, scaled to word length", () => {
+    expect(checkTypedAnswer("wile", "while/whereas")).toBe(true); // 1 typo, len 5
+    expect(checkTypedAnswer("hause", "house")).toBe(true); // 1 typo, len 5
+    expect(checkTypedAnswer("beatiful", "beautiful")).toBe(true); // 1 typo, len 9
+    expect(checkTypedAnswer("do", "so")).toBe(false); // short words stay exact
+  });
+
+  it("accepts the alternatives in any order or combination", () => {
+    expect(checkTypedAnswer("then", "then/so")).toBe(true);
+    expect(checkTypedAnswer("so", "then/so")).toBe(true);
+    expect(checkTypedAnswer("so/then", "then/so")).toBe(true);
+    expect(checkTypedAnswer("then/so", "then/so")).toBe(true);
+  });
+
   it("rejects wrong answers and blank input", () => {
     expect(checkTypedAnswer("house", "dog")).toBe(false);
     expect(checkTypedAnswer("", "dog")).toBe(false);
