@@ -2,6 +2,7 @@ import { v4 as uuid } from "uuid";
 import { db } from "@/lib/db";
 import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
+import { todayIsoDate } from "@/lib/utils";
 import { isResettable } from "./snooze";
 import { nextLastWorkedAt } from "./age";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
@@ -149,7 +150,8 @@ export function statusCycleFor(section: TdlSection): TdlStatus[] {
 
 export function nextStatus(section: TdlSection, current: TdlStatus): TdlStatus {
   const cycle = statusCycleFor(section);
-  if (current === "cancelled") return "open";
+  // Paused and cancelled sit outside the cycle; tapping the pill resumes them.
+  if (current === "cancelled" || current === "paused") return "open";
   const i = cycle.indexOf(current);
   if (i === -1) return "open";
   return cycle[(i + 1) % cycle.length];
@@ -304,6 +306,16 @@ export async function deleteItems(ids: string[]): Promise<number> {
   return bulkUpdate(ids, (it, ts) => (it.deleted_at ? null : { deleted_at: ts }));
 }
 
+// Bulk-pause the given items (status → paused). Already-paused skipped.
+export async function pauseItems(ids: string[]): Promise<number> {
+  return bulkUpdate(ids, (it) => (it.status === "paused" ? null : { status: "paused" }));
+}
+
+// Bulk-resume the given items (paused → open). Non-paused items are skipped.
+export async function resumeItems(ids: string[]): Promise<number> {
+  return bulkUpdate(ids, (it) => (it.status === "paused" ? { status: "open" } : null));
+}
+
 // Bulk-cancel the given items (status → cancelled). Already-cancelled skipped.
 export async function cancelItems(ids: string[]): Promise<number> {
   return bulkUpdate(ids, (it) => (it.status === "cancelled" ? null : { status: "cancelled" }));
@@ -339,7 +351,17 @@ export async function archiveItem(id: string): Promise<LocalTdlItem | null> {
 }
 
 export async function unarchiveItem(id: string): Promise<LocalTdlItem | null> {
-  return updateItem(id, { is_archived: false });
+  const existing = await db.tdl_items.get(id);
+  if (!existing) return null;
+  // Surface the item on today's board rather than leaving it on its original
+  // (often past) day, where unarchiving would hide it out of sight.
+  const today = todayIsoDate();
+  const patch: Partial<TdlItemRow> = { is_archived: false };
+  if (existing.snapshot_date !== today) {
+    patch.snapshot_date = today;
+    patch.position = await nextPosition(today, existing.section, existing.is_recurring);
+  }
+  return updateItem(id, patch);
 }
 
 export async function snoozeItem(
