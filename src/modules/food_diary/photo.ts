@@ -34,22 +34,8 @@ async function downscale(file: File): Promise<{ data: string; mediaType: "image/
   return { data, mediaType: "image/jpeg" };
 }
 
-export async function estimateFoodPhoto(
-  file: File,
-  token: string,
-  note?: string,
-): Promise<FoodEstimate> {
-  const { data, mediaType } = await downscale(file);
-
-  // Shares the receipt-scan function (kind:"food") to stay within Vercel's
-  // Serverless-Function budget — see api/receipt-scan.ts.
-  const res = await fetch("/api/receipt-scan", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64: data, mediaType, kind: "food", note: note?.trim() || undefined }),
-  });
-
-  const text = await res.text();
+// Parse a receipt-scan food response into a FoodEstimate, or throw with detail.
+function parseEstimate(res: Response, text: string): FoodEstimate {
   let parsed: (Partial<FoodEstimate> & { error?: string }) | null;
   try {
     parsed = JSON.parse(text) as Partial<FoodEstimate> & { error?: string };
@@ -71,4 +57,33 @@ export async function estimateFoodPhoto(
     confidence: parsed.confidence ?? 0,
     error: parsed.error ?? null,
   };
+}
+
+// Estimate macros from a typed food description (no photo). Shares the
+// receipt-scan function (kind:"food-text") like the photo path.
+export async function estimateFoodText(description: string, token: string): Promise<FoodEstimate> {
+  const res = await fetch("/api/receipt-scan", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "food-text", text: description.trim() }),
+  });
+  return parseEstimate(res, await res.text());
+}
+
+export async function estimateFoodPhoto(
+  file: File,
+  token: string,
+  note?: string,
+): Promise<FoodEstimate> {
+  const { data, mediaType } = await downscale(file);
+
+  // Shares the receipt-scan function (kind:"food") to stay within Vercel's
+  // Serverless-Function budget — see api/receipt-scan.ts.
+  const res = await fetch("/api/receipt-scan", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ imageBase64: data, mediaType, kind: "food", note: note?.trim() || undefined }),
+  });
+
+  return parseEstimate(res, await res.text());
 }
