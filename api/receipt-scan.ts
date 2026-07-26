@@ -1,10 +1,12 @@
-// Photo → structured data endpoint. Two vision jobs share one function to stay
+// Photo → structured data endpoint. A few AI jobs share one function to stay
 // within Vercel's Serverless-Function budget (like french-chat doubling as the
 // sentence generator):
 //   kind:"receipt" (default) — a receipt's line items (+ tax/tip/total) for the
 //                              bill-splitter.
-//   kind:"food"             — a meal's estimated calories + protein for the
-//                              Food Diary's photo logging.
+//   kind:"food"             — a meal's estimated calories + protein from a photo,
+//                              for the Food Diary's photo logging.
+//   kind:"food-text"        — the same estimate from a typed food description
+//                              (no image), for logging food by name.
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
@@ -45,7 +47,14 @@ const FoodEstimate = z.object({
   error: z.string().nullable(),
 });
 
-type Body = { imageBase64?: string; mediaType?: string; kind?: string; note?: string };
+type Body = {
+  imageBase64?: string;
+  mediaType?: string;
+  kind?: string;
+  note?: string;
+  // Food description for the text-only estimate (kind:"food-text").
+  text?: string;
+};
 
 const RECEIPT_SYSTEM =
   "You read a photo of a restaurant or store receipt and extract its line items. " +
@@ -66,6 +75,16 @@ const FOOD_SYSTEM =
   'not food or is unreadable, set error to a short message, name to "", and calories ' +
   "and protein to 0. Never refuse; give your best single estimate.";
 
+const FOOD_TEXT_SYSTEM =
+  "You are a nutrition estimator. From a short text description of a food or " +
+  "meal, estimate the total calories (kcal) and grams of protein for the portion " +
+  "described. If the description gives a quantity or serving size, use it; " +
+  "otherwise assume one typical single serving. Give a concise name for the food " +
+  "or meal. Round calories to the nearest 5 and protein to the nearest gram. Set " +
+  "confidence in [0,1] — lower it when the portion or ingredients are vague. If " +
+  'the text does not describe a food, set error to a short message, name to "", ' +
+  "and calories and protein to 0. Never refuse; give your best single estimate.";
+
 export async function POST(request: Request): Promise<Response> {
   try {
     const supabase = serviceClient();
@@ -82,15 +101,47 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const { imageBase64, mediaType, kind } = body;
-  if (!imageBase64) return json({ error: "missing imageBase64" }, 400);
-  if (!mediaType || !MEDIA_TYPES.includes(mediaType as MediaType)) {
-    return json({ error: "unsupported mediaType" }, 400);
-  }
-
   const isFood = kind === "food";
+  const isFoodText = kind === "food-text";
+
+  // The text-only food estimate takes a description instead of an image.
+  const description =
+    typeof body.text === "string" && body.text.trim() ? body.text.trim().slice(0, 500) : null;
+  if (isFoodText && !description) return json({ error: "missing text" }, 400);
+
+  if (!isFoodText) {
+    if (!imageBase64) return json({ error: "missing imageBase64" }, 400);
+    if (!mediaType || !MEDIA_TYPES.includes(mediaType as MediaType)) {
+      return json({ error: "unsupported mediaType" }, 400);
+    }
+  }
 
   try {
     const anthropic = new Anthropic();
+
+    if (isFoodText) {
+      const result = await anthropic.messages.parse({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: FOOD_TEXT_SYSTEM,
+        output_config: { format: zodOutputFormat(FoodEstimate) },
+        messages: [
+          { role: "user", content: `Estimate the nutrition of this food: ${description}` },
+        ],
+      });
+      const parsed = result.parsed_output;
+      if (!parsed) return json({ error: "could not estimate" }, 422);
+      return json(
+        {
+          name: parsed.name,
+          calories: Math.max(0, Math.round(parsed.calories)),
+          protein: Math.max(0, Math.round(parsed.protein)),
+          confidence: parsed.confidence,
+          error: parsed.error,
+        },
+        200,
+      );
+    }
 
     if (isFood) {
       const hint =

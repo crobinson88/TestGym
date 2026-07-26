@@ -7,7 +7,7 @@ import { todayIsoDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useFoodEntry } from "../hooks";
-import { estimateFoodPhoto } from "../photo";
+import { estimateFoodPhoto, estimateFoodText } from "../photo";
 
 export default function AddFoodEntry() {
   const navigate = useNavigate();
@@ -25,6 +25,7 @@ export default function AddFoodEntry() {
   const [error, setError] = useState<string | null>(null);
 
   const [estimating, setEstimating] = useState(false);
+  const [estimatingText, setEstimatingText] = useState(false);
   const [estimateNote, setEstimateNote] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
@@ -64,6 +65,32 @@ export default function AddFoodEntry() {
       setError(err instanceof Error ? err.message : "Estimate failed");
     } finally {
       setEstimating(false);
+    }
+  }
+
+  async function estimateFromText() {
+    const desc = name.trim();
+    if (!desc || !session || estimatingText || estimating) return;
+    setEstimatingText(true);
+    setError(null);
+    setEstimateNote(null);
+    try {
+      const est = await estimateFoodText(desc, session.access_token);
+      if (est.error) {
+        setError(est.error);
+        return;
+      }
+      if (est.name) setName(est.name);
+      setCalories(String(est.calories));
+      setProtein(String(est.protein));
+      const pct = Math.round(est.confidence * 100);
+      setEstimateNote(
+        `AI estimate${Number.isFinite(pct) ? ` · ${pct}% confidence` : ""} — check and adjust before saving.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Estimate failed");
+    } finally {
+      setEstimatingText(false);
     }
   }
 
@@ -159,7 +186,7 @@ export default function AddFoodEntry() {
                 size="md"
                 className="flex-1"
                 onClick={() => cameraRef.current?.click()}
-                disabled={estimating || !session}
+                disabled={estimating || estimatingText || !session}
               >
                 {estimating ? (
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -173,22 +200,38 @@ export default function AddFoodEntry() {
                 size="md"
                 className="flex-1"
                 onClick={() => libraryRef.current?.click()}
-                disabled={estimating || !session}
+                disabled={estimating || estimatingText || !session}
               >
                 <ImagePlus className="mr-2 h-5 w-5" /> Library
               </Button>
             </div>
-            {estimateNote && <p className="mt-2 text-xs text-accent">{estimateNote}</p>}
           </div>
         )}
 
-        <Field label="Food">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="What did you eat?"
-          />
-        </Field>
+        <div className="space-y-2">
+          <Field label="Food">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="What did you eat?"
+            />
+          </Field>
+          <Button
+            variant="secondary"
+            size="md"
+            className="w-full"
+            onClick={estimateFromText}
+            disabled={!name.trim() || estimatingText || estimating || !session}
+          >
+            {estimatingText ? (
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-5 w-5 text-accent" />
+            )}
+            {estimatingText ? "Estimating…" : "Estimate calories & protein"}
+          </Button>
+          {estimateNote && <p className="text-xs text-accent">{estimateNote}</p>}
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <Field label="Calories (kcal)">
