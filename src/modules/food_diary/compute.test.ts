@@ -10,6 +10,7 @@ import {
   groupByDate,
   lbToKg,
   mifflinBmr,
+  recentFoods,
   sumEntries,
 } from "./compute";
 
@@ -53,6 +54,43 @@ describe("groupByDate", () => {
     expect(groups.map((g) => g.date)).toEqual(["2026-07-16", "2026-07-14"]);
     expect(groups[0].entries.map((e) => e.name)).toEqual(["B", "A"]);
     expect(groups[0].totals.count).toBe(2);
+  });
+});
+
+describe("recentFoods", () => {
+  it("dedupes by name (case-insensitive), most recent macros win, newest first", () => {
+    const foods = recentFoods([
+      entry({ name: "Oats", calories: 300, protein: 10, created_at: "2026-07-10T08:00:00.000Z" }),
+      entry({ name: "Chicken", calories: 200, protein: 40, created_at: "2026-07-12T12:00:00.000Z" }),
+      entry({ name: "oats", calories: 320, protein: 11, created_at: "2026-07-15T08:00:00.000Z" }),
+    ]);
+    expect(foods).toEqual([
+      { name: "oats", calories: 320, protein: 11, lastDate: "2026-07-16" },
+      { name: "Chicken", calories: 200, protein: 40, lastDate: "2026-07-16" },
+    ]);
+  });
+
+  it("excludes the given date so today's own logs don't show", () => {
+    const foods = recentFoods(
+      [
+        entry({ name: "Eggs", entry_date: "2026-07-16", created_at: "2026-07-16T08:00:00.000Z" }),
+        entry({ name: "Rice", entry_date: "2026-07-14", created_at: "2026-07-14T08:00:00.000Z" }),
+      ],
+      { excludeDate: "2026-07-16" },
+    );
+    expect(foods.map((f) => f.name)).toEqual(["Rice"]);
+  });
+
+  it("skips blank names and honours the limit", () => {
+    const foods = recentFoods(
+      [
+        entry({ name: "  ", created_at: "2026-07-15T08:00:00.000Z" }),
+        entry({ name: "A", created_at: "2026-07-14T08:00:00.000Z" }),
+        entry({ name: "B", created_at: "2026-07-13T08:00:00.000Z" }),
+      ],
+      { limit: 1 },
+    );
+    expect(foods.map((f) => f.name)).toEqual(["A"]);
   });
 });
 

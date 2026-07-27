@@ -54,6 +54,49 @@ export function groupByDate(entries: FoodEntryRow[]): DayGroup[] {
     });
 }
 
+export interface RecentFood {
+  name: string;
+  calories: number;
+  protein: number;
+  // The most recent day this food was logged (its macros are taken from that log).
+  lastDate: string;
+}
+
+// Distinct foods logged previously, most-recently-logged first, so a food can
+// be re-logged onto the current day with one tap. Deduped by name
+// (case-insensitive, trimmed); the most recent entry's macros win. Pass
+// `excludeDate` (today) to keep the picker to prior logs only.
+export function recentFoods(
+  entries: FoodEntryRow[],
+  opts: { excludeDate?: string; limit?: number } = {},
+): RecentFood[] {
+  const { excludeDate, limit } = opts;
+  const byName = new Map<string, FoodEntryRow>();
+  for (const e of entries) {
+    if (excludeDate && e.entry_date === excludeDate) continue;
+    const key = e.name.trim().toLowerCase();
+    if (!key) continue;
+    const seen = byName.get(key);
+    if (!seen || isNewerEntry(e, seen)) byName.set(key, e);
+  }
+  const foods = [...byName.values()]
+    .sort((a, b) => (isNewerEntry(a, b) ? -1 : 1))
+    .map((e) => ({
+      name: e.name,
+      calories: e.calories,
+      protein: e.protein,
+      lastDate: e.entry_date,
+    }));
+  return limit != null ? foods.slice(0, limit) : foods;
+}
+
+// Recency: newest created_at wins; fall back to entry_date for legacy rows that
+// share a timestamp.
+function isNewerEntry(a: FoodEntryRow, b: FoodEntryRow): boolean {
+  if (a.created_at !== b.created_at) return a.created_at > b.created_at;
+  return a.entry_date > b.entry_date;
+}
+
 // Progress of a running total against a goal. A goal of 0 (or unset) means "no
 // goal": pct stays 0 and nothing reads as over.
 export function goalProgress(value: number, goal: number): GoalProgress {

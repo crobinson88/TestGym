@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Camera, Check, ChevronLeft, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Camera, Check, ChevronLeft, History, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { todayIsoDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
-import { useFoodEntry } from "../hooks";
+import { useFoodEntries, useFoodEntry } from "../hooks";
+import { recentFoods, type RecentFood } from "../compute";
 import { estimateFoodPhoto, estimateFoodText } from "../photo";
 
 export default function AddFoodEntry() {
@@ -15,6 +16,7 @@ export default function AddFoodEntry() {
   const existing = useFoodEntry(id);
   const editing = !!id;
   const { session } = useAuth();
+  const allEntries = useFoodEntries();
 
   const [name, setName] = useState("");
   const [calories, setCalories] = useState("");
@@ -92,6 +94,20 @@ export default function AddFoodEntry() {
     } finally {
       setEstimatingText(false);
     }
+  }
+
+  // Foods logged on earlier days, so a repeat meal can be re-logged onto the
+  // day being added with one tap. Hidden while editing an existing entry.
+  const recent = editing
+    ? []
+    : recentFoods(allEntries ?? [], { excludeDate: date, limit: 12 });
+
+  function pickRecent(food: RecentFood) {
+    setName(food.name);
+    setCalories(String(food.calories));
+    setProtein(String(food.protein));
+    setError(null);
+    setEstimateNote(null);
   }
 
   const caloriesNum = Number(calories);
@@ -208,6 +224,31 @@ export default function AddFoodEntry() {
           </div>
         )}
 
+        {!editing && recent.length > 0 && (
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
+              <History className="h-3.5 w-3.5 text-accent" /> Log again
+            </div>
+            <ul className="flex flex-wrap gap-2">
+              {recent.map((food) => (
+                <li key={food.name}>
+                  <button
+                    onClick={() => pickRecent(food)}
+                    className="flex min-h-11 flex-col items-start rounded-xl border border-line bg-surface2 px-3 py-1.5 text-left transition active:scale-[0.98]"
+                  >
+                    <span className="max-w-[60vw] truncate text-sm font-medium text-text">
+                      {food.name}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {food.calories} kcal · {formatProtein(food.protein)} g
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Field label="Food">
             <Input
@@ -292,6 +333,11 @@ export default function AddFoodEntry() {
       </div>
     </div>
   );
+}
+
+// Protein is stored as numeric — trim a trailing ".0" so whole grams read cleanly.
+function formatProtein(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

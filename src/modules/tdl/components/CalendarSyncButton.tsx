@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { CalendarPlus, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth";
@@ -136,7 +137,7 @@ export function CalendarSyncButton({
         {error && !open && <span className="text-xs text-danger">{error}</span>}
       </div>
 
-      {open && (
+      {open && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
           role="dialog"
@@ -220,7 +221,8 @@ export function CalendarSyncButton({
               </div>
             </footer>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
