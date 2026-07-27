@@ -7,7 +7,10 @@ import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import {
   CALENDAR_SOURCE_LABEL,
+  DEFAULT_START_MINUTES,
   collectCalendarCandidates,
+  minutesToTime,
+  parseTimeToMinutes,
   scheduleEvents,
   type ScheduledEvent,
 } from "../calendar";
@@ -44,19 +47,23 @@ export function CalendarSyncButton({
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [startTime, setStartTime] = useState(minutesToTime(DEFAULT_START_MINUTES));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const startMinutes = parseTimeToMinutes(startTime) ?? DEFAULT_START_MINUTES;
+
   const scheduled = useMemo<ScheduledEvent[]>(() => {
     const candidates = collectCalendarCandidates(items, categories);
-    return scheduleEvents(candidates, { date: snapshot_date });
-  }, [items, categories, snapshot_date]);
+    return scheduleEvents(candidates, { date: snapshot_date, startMinutes });
+  }, [items, categories, snapshot_date, startMinutes]);
 
   const selected = scheduled.filter((e) => !excluded.has(e.id));
 
   function openModal() {
     setExcluded(new Set());
+    setStartTime(minutesToTime(DEFAULT_START_MINUTES));
     setResult(null);
     setError(null);
     setOpen(true);
@@ -163,9 +170,23 @@ export function CalendarSyncButton({
               </button>
             </header>
 
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+              <label htmlFor="cal-start-time" className="text-sm font-medium text-text">
+                Start time
+              </label>
+              <input
+                id="cal-start-time"
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                disabled={running}
+                className="h-11 rounded-xl border border-line bg-surface2 px-3 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+              />
+            </div>
+
             <div className="border-b border-line px-4 py-2 text-xs text-muted">
               Uncheck anything you don't want. {selected.length} of {scheduled.length} selected ·
-              blocked back-to-back from 9:00 AM.
+              blocked back-to-back from {prettyTime(`d T${minutesToTime(startMinutes)}:00`)}.
             </div>
 
             <ul className="flex-1 space-y-1 overflow-y-auto p-2">

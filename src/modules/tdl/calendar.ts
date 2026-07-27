@@ -28,6 +28,25 @@ const DAILY_TASKS_LABEL = "daily tasks";
 export const DEFAULT_DURATION_MIN = 30;
 // Where the back-to-back chain starts on the day (24h clock).
 export const DEFAULT_START_HOUR = 9;
+// Same default expressed as minutes-from-midnight, for the time picker.
+export const DEFAULT_START_MINUTES = DEFAULT_START_HOUR * 60;
+
+// Parse an "HH:MM" 24h time string into minutes-from-midnight, or null if it
+// isn't a valid time. Used to turn the picker's value into a schedule start.
+export function parseTimeToMinutes(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+// Format minutes-from-midnight back into an "HH:MM" 24h string for the picker.
+export function minutesToTime(minutes: number): string {
+  const within = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${pad(Math.floor(within / 60))}:${pad(within % 60)}`;
+}
 
 // Statuses that still represent work to do — done/cancelled items don't earn a
 // calendar block.
@@ -114,20 +133,22 @@ function localDateTime(date: string, minutesFromMidnight: number): string {
   return `${addDays(date, dayOffset)}T${pad(hh)}:${pad(mm)}:00`;
 }
 
-// Lay the candidates end-to-end starting at `startHour` on `date`. Each block is
-// its time estimate (or the default when unset). Order is preserved, so the
-// Priorities land earliest in the day.
+// Lay the candidates end-to-end starting at `startMinutes` (or `startHour`) on
+// `date`. Each block is its time estimate (or the default when unset). Order is
+// preserved, so the Priorities land earliest in the day.
 export function scheduleEvents(
   candidates: readonly CalendarCandidate[],
   opts: {
     date: string;
     startHour?: number;
+    startMinutes?: number;
     defaultDurationMin?: number;
   },
 ): ScheduledEvent[] {
-  const startHour = opts.startHour ?? DEFAULT_START_HOUR;
+  const startMinutes =
+    opts.startMinutes ?? (opts.startHour ?? DEFAULT_START_HOUR) * 60;
   const defaultDuration = opts.defaultDurationMin ?? DEFAULT_DURATION_MIN;
-  let cursor = startHour * 60;
+  let cursor = startMinutes;
   const out: ScheduledEvent[] = [];
   for (const c of candidates) {
     const durationMin =
