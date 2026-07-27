@@ -17,7 +17,7 @@ import {
   SECTION,
   type Db,
 } from "./_fireflies.js";
-import { createCalendarEvent, getCalendarAccessToken } from "./_gcal.js";
+import { createCalendarEvent, getCalendarAccessToken, getCalendarBusy } from "./_gcal.js";
 
 // Listing is quick; the calendar branch loops a handful of REST calls. 60s covers
 // both comfortably.
@@ -33,6 +33,9 @@ type CalendarSyncBody = {
   action?: string;
   timeZone?: string;
   events?: CalendarEventInput[];
+  // calendar-busy window (RFC3339 with offset/Z).
+  timeMin?: string;
+  timeMax?: string;
 };
 
 // The import button posts no body; request.json() then throws. Treat any parse
@@ -54,6 +57,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const body = await readOptionalBody(request);
     if (body?.action === "calendar-sync") return handleCalendarSync(body);
+    if (body?.action === "calendar-busy") return handleCalendarBusy(body);
 
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);
@@ -110,6 +114,29 @@ async function handleCalendarSync(body: CalendarSyncBody): Promise<Response> {
   }
 
   return json({ ok: failed === 0, created, failed, error: firstError ?? undefined }, 200);
+}
+
+// Return the day's busy blocks so the client can schedule around them. Auth was
+// already checked by the caller.
+async function handleCalendarBusy(body: CalendarSyncBody): Promise<Response> {
+  const timeMin = body.timeMin?.trim();
+  const timeMax = body.timeMax?.trim();
+  if (!timeMin || !timeMax) return json({ error: "missing window" }, 400);
+  const timeZone = body.timeZone?.trim() || "America/New_York";
+
+  let accessToken: string;
+  try {
+    accessToken = await getCalendarAccessToken();
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "auth failed" }, 500);
+  }
+
+  try {
+    const busy = await getCalendarBusy(accessToken, timeMin, timeMax, timeZone);
+    return json({ busy }, 200);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "freebusy failed" }, 500);
+  }
 }
 
 async function nextPosition(supabase: Db): Promise<number> {

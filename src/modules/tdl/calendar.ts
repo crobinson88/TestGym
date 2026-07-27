@@ -119,6 +119,52 @@ export interface ScheduledEvent extends CalendarCandidate {
   endDateTime: string;
 }
 
+// A block of already-booked time on the day, in minutes-from-midnight. The
+// component derives these from the user's Google Calendar so new blocks slot
+// into the gaps instead of clashing.
+export interface BusyInterval {
+  start: number;
+  end: number;
+}
+
+// Sort busy intervals by start and merge any that overlap or touch, so the
+// slot search can walk them once. Zero/negative-length intervals are dropped.
+export function mergeBusy(intervals: readonly BusyInterval[]): BusyInterval[] {
+  const sorted = intervals
+    .filter((b) => b.end > b.start)
+    .map((b) => ({ start: b.start, end: b.end }))
+    .sort((a, b) => a.start - b.start);
+  const out: BusyInterval[] = [];
+  for (const b of sorted) {
+    const last = out[out.length - 1];
+    if (last && b.start <= last.end) last.end = Math.max(last.end, b.end);
+    else out.push({ ...b });
+  }
+  return out;
+}
+
+// Earliest minute >= `from` where a block of `duration` fits without touching
+// any (pre-merged) busy interval. Each overlap bumps the start to that
+// interval's end; repeat until a clear slot is found.
+function nextFreeStart(
+  from: number,
+  duration: number,
+  busy: readonly BusyInterval[],
+): number {
+  let start = from;
+  let bumped = true;
+  while (bumped) {
+    bumped = false;
+    for (const b of busy) {
+      if (start < b.end && start + duration > b.start) {
+        start = b.end;
+        bumped = true;
+      }
+    }
+  }
+  return start;
+}
+
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
@@ -133,9 +179,12 @@ function localDateTime(date: string, minutesFromMidnight: number): string {
   return `${addDays(date, dayOffset)}T${pad(hh)}:${pad(mm)}:00`;
 }
 
-// Lay the candidates end-to-end starting at `startMinutes` (or `startHour`) on
-// `date`. Each block is its time estimate (or the default when unset). Order is
-// preserved, so the Priorities land earliest in the day.
+// Lay the candidates out from `startMinutes` (or `startHour`) on `date`. Each
+// block is its time estimate (or the default when unset). Order is preserved,
+// so the Priorities land earliest in the day. When `busy` intervals are given,
+// each block is pushed to the earliest free slot at or after the running cursor
+// so nothing clashes with an existing calendar event; with no busy intervals it
+// falls back to a plain back-to-back chain.
 export function scheduleEvents(
   candidates: readonly CalendarCandidate[],
   opts: {
@@ -143,20 +192,23 @@ export function scheduleEvents(
     startHour?: number;
     startMinutes?: number;
     defaultDurationMin?: number;
+    busy?: readonly BusyInterval[];
   },
 ): ScheduledEvent[] {
   const startMinutes =
     opts.startMinutes ?? (opts.startHour ?? DEFAULT_START_HOUR) * 60;
   const defaultDuration = opts.defaultDurationMin ?? DEFAULT_DURATION_MIN;
+  const busy = mergeBusy(opts.busy ?? []);
   let cursor = startMinutes;
   const out: ScheduledEvent[] = [];
   for (const c of candidates) {
     const durationMin =
       c.timeEstimateMin != null && c.timeEstimateMin > 0 ? c.timeEstimateMin : defaultDuration;
-    const startDateTime = localDateTime(opts.date, cursor);
-    const endDateTime = localDateTime(opts.date, cursor + durationMin);
+    const start = nextFreeStart(cursor, durationMin, busy);
+    const startDateTime = localDateTime(opts.date, start);
+    const endDateTime = localDateTime(opts.date, start + durationMin);
     out.push({ ...c, durationMin, startDateTime, endDateTime });
-    cursor += durationMin;
+    cursor = start + durationMin;
   }
   return out;
 }
