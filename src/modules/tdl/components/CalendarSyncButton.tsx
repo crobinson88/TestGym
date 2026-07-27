@@ -76,13 +76,16 @@ export function CalendarSyncButton({
     setError(null);
     setResult(null);
     try {
-      const res = await fetch("/api/calendar-sync", {
+      // Multiplexed onto the fireflies-import endpoint (action discriminator) to
+      // stay within the Hobby-plan 12-Serverless-Function budget.
+      const res = await fetch("/api/fireflies-import", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          action: "calendar-sync",
           timeZone: localTimeZone(),
           events: selected.map((e) => ({
             title: e.title,
