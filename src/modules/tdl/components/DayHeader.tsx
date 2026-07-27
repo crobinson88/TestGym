@@ -7,6 +7,7 @@ import { dayCompletion } from "../hooks";
 import { useCategories } from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { isSnoozed } from "../snooze";
+import { CalendarSyncButton } from "./CalendarSyncButton";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 import { ResetStatusesButton } from "./ResetStatusesButton";
 import { TargetPies } from "./TargetPies";
@@ -135,6 +136,7 @@ export function DayHeader({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {snapshot_date === today && <ImportMeetingsButton />}
+        <CalendarSyncButton snapshot_date={snapshot_date} items={items} categories={categories} />
         <ResetStatusesButton snapshot_date={snapshot_date} items={items} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
