@@ -5,6 +5,9 @@ import type { LocalTdlItem, TdlStatus } from "./types";
 import {
   DEFAULT_DURATION_MIN,
   collectCalendarCandidates,
+  mergeBusy,
+  minutesToTime,
+  parseTimeToMinutes,
   scheduleEvents,
 } from "./calendar";
 
@@ -156,5 +159,127 @@ describe("scheduleEvents", () => {
     );
     expect(events[0].startDateTime).toBe("2026-07-27T23:00:00");
     expect(events[0].endDateTime).toBe("2026-07-28T01:00:00");
+  });
+
+  it("honours startMinutes for a sub-hour start", () => {
+    const events = scheduleEvents(
+      [
+        { id: "a", title: "a", timeEstimateMin: 45, source: "priorities" },
+        { id: "b", title: "b", timeEstimateMin: 30, source: "daily_tasks" },
+      ],
+      { date: "2026-07-27", startMinutes: 8 * 60 + 30 },
+    );
+    expect(events[0].startDateTime).toBe("2026-07-27T08:30:00");
+    expect(events[0].endDateTime).toBe("2026-07-27T09:15:00");
+    expect(events[1].startDateTime).toBe("2026-07-27T09:15:00");
+  });
+
+  it("prefers startMinutes over startHour when both are given", () => {
+    const events = scheduleEvents(
+      [{ id: "a", title: "a", timeEstimateMin: 30, source: "priorities" }],
+      { date: "2026-07-27", startHour: 9, startMinutes: 10 * 60 + 15 },
+    );
+    expect(events[0].startDateTime).toBe("2026-07-27T10:15:00");
+  });
+});
+
+describe("scheduleEvents around busy times", () => {
+  const two = [
+    { id: "a", title: "a", timeEstimateMin: 30, source: "priorities" as const },
+    { id: "b", title: "b", timeEstimateMin: 30, source: "priorities" as const },
+  ];
+
+  it("pushes a clashing block to the end of the busy interval", () => {
+    // 9:00 start, but 9:00–9:45 is booked → first block starts 9:45.
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      busy: [{ start: 9 * 60, end: 9 * 60 + 45 }],
+    });
+    expect(events[0].startDateTime).toBe("2026-07-27T09:45:00");
+    expect(events[0].endDateTime).toBe("2026-07-27T10:15:00");
+    // Second block is back-to-back after the first, still clear.
+    expect(events[1].startDateTime).toBe("2026-07-27T10:15:00");
+  });
+
+  it("leaves the start untouched when the slot is already free", () => {
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      busy: [{ start: 14 * 60, end: 15 * 60 }],
+    });
+    expect(events[0].startDateTime).toBe("2026-07-27T09:00:00");
+    expect(events[1].startDateTime).toBe("2026-07-27T09:30:00");
+  });
+
+  it("hops over a busy interval that falls mid-chain", () => {
+    // a: 9:00–9:30 (free). Next cursor 9:30 but 9:30–10:00 booked → b at 10:00.
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      busy: [{ start: 9 * 60 + 30, end: 10 * 60 }],
+    });
+    expect(events[0].startDateTime).toBe("2026-07-27T09:00:00");
+    expect(events[1].startDateTime).toBe("2026-07-27T10:00:00");
+    expect(events[1].endDateTime).toBe("2026-07-27T10:30:00");
+  });
+
+  it("skips past several adjacent busy blocks in one hop", () => {
+    const events = scheduleEvents(
+      [{ id: "a", title: "a", timeEstimateMin: 30, source: "priorities" }],
+      {
+        date: "2026-07-27",
+        startMinutes: 9 * 60,
+        busy: [
+          { start: 9 * 60, end: 9 * 60 + 30 },
+          { start: 9 * 60 + 30, end: 10 * 60 },
+        ],
+      },
+    );
+    expect(events[0].startDateTime).toBe("2026-07-27T10:00:00");
+  });
+});
+
+describe("mergeBusy", () => {
+  it("sorts, merges overlapping/touching intervals and drops empties", () => {
+    expect(
+      mergeBusy([
+        { start: 600, end: 660 },
+        { start: 540, end: 600 },
+        { start: 630, end: 720 },
+        { start: 800, end: 800 },
+        { start: 900, end: 930 },
+      ]),
+    ).toEqual([
+      { start: 540, end: 720 },
+      { start: 900, end: 930 },
+    ]);
+  });
+});
+
+describe("time helpers", () => {
+  it("parses valid HH:MM into minutes-from-midnight", () => {
+    expect(parseTimeToMinutes("09:00")).toBe(540);
+    expect(parseTimeToMinutes("08:30")).toBe(510);
+    expect(parseTimeToMinutes("00:00")).toBe(0);
+    expect(parseTimeToMinutes("23:59")).toBe(23 * 60 + 59);
+    expect(parseTimeToMinutes(" 7:05 ")).toBe(7 * 60 + 5);
+  });
+
+  it("rejects malformed or out-of-range times", () => {
+    expect(parseTimeToMinutes("")).toBeNull();
+    expect(parseTimeToMinutes("9")).toBeNull();
+    expect(parseTimeToMinutes("24:00")).toBeNull();
+    expect(parseTimeToMinutes("10:60")).toBeNull();
+    expect(parseTimeToMinutes("abc")).toBeNull();
+  });
+
+  it("formats minutes back into HH:MM and round-trips", () => {
+    expect(minutesToTime(540)).toBe("09:00");
+    expect(minutesToTime(510)).toBe("08:30");
+    expect(minutesToTime(0)).toBe("00:00");
+    for (const t of ["09:00", "08:30", "23:59", "00:15"]) {
+      expect(minutesToTime(parseTimeToMinutes(t)!)).toBe(t);
+    }
   });
 });

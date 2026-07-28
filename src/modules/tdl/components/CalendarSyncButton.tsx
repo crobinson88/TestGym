@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { CalendarPlus, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -7,8 +7,12 @@ import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import {
   CALENDAR_SOURCE_LABEL,
+  DEFAULT_START_MINUTES,
   collectCalendarCandidates,
+  minutesToTime,
+  parseTimeToMinutes,
   scheduleEvents,
+  type BusyInterval,
   type ScheduledEvent,
 } from "../calendar";
 
@@ -19,6 +23,35 @@ function localTimeZone(): string {
   } catch {
     return "America/New_York";
   }
+}
+
+// The day's UTC window ["YYYY-MM-DDT00:00" local, next midnight local), built
+// from the browser's own clock so the offset is correct for the viewed day.
+function dayWindowUtc(date: string): { timeMin: string; timeMax: string } {
+  const [y, m, d] = date.split("-").map(Number);
+  return {
+    timeMin: new Date(y, m - 1, d, 0, 0, 0, 0).toISOString(),
+    timeMax: new Date(y, m - 1, d + 1, 0, 0, 0, 0).toISOString(),
+  };
+}
+
+// Convert Google's UTC busy periods into minutes-from-midnight of `date`,
+// clamped to the day, so the pure scheduler can slot around them.
+function toBusyMinutes(
+  periods: readonly { start: string; end: string }[],
+  date: string,
+): BusyInterval[] {
+  const [y, m, d] = date.split("-").map(Number);
+  const dayStart = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+  const clamp = (n: number) => Math.max(0, Math.min(24 * 60, n));
+  return periods
+    .map((p) => ({
+      start: clamp(Math.round((new Date(p.start).getTime() - dayStart) / 60000)),
+      end: clamp(Math.round((new Date(p.end).getTime() - dayStart) / 60000)),
+    }))
+    // Drop empty blocks and all-day markers (which span the whole day and would
+    // otherwise shove every task past midnight).
+    .filter((b) => b.end > b.start && !(b.start <= 0 && b.end >= 24 * 60));
 }
 
 // "2026-07-27T09:30:00" → "9:30 AM".
@@ -44,19 +77,70 @@ export function CalendarSyncButton({
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [startTime, setStartTime] = useState(minutesToTime(DEFAULT_START_MINUTES));
+  const [busy, setBusy] = useState<BusyInterval[]>([]);
+  const [busyLoading, setBusyLoading] = useState(false);
+  const [busyError, setBusyError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const startMinutes = parseTimeToMinutes(startTime) ?? DEFAULT_START_MINUTES;
+
   const scheduled = useMemo<ScheduledEvent[]>(() => {
     const candidates = collectCalendarCandidates(items, categories);
-    return scheduleEvents(candidates, { date: snapshot_date });
-  }, [items, categories, snapshot_date]);
+    return scheduleEvents(candidates, { date: snapshot_date, startMinutes, busy });
+  }, [items, categories, snapshot_date, startMinutes, busy]);
 
   const selected = scheduled.filter((e) => !excluded.has(e.id));
 
+  // On open, read the day's existing calendar events so new blocks land in the
+  // gaps rather than clashing. A failure isn't fatal — we fall back to a plain
+  // back-to-back chain and say so.
+  useEffect(() => {
+    if (!open || !session) return;
+    let cancelled = false;
+    setBusyLoading(true);
+    setBusyError(null);
+    const { timeMin, timeMax } = dayWindowUtc(snapshot_date);
+    fetch("/api/fireflies-import", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "calendar-busy",
+        timeZone: localTimeZone(),
+        timeMin,
+        timeMax,
+      }),
+    })
+      .then(async (res) => {
+        const b = (await res.json().catch(() => null)) as
+          | { busy?: { start: string; end: string }[]; error?: string }
+          | null;
+        if (!res.ok || !b?.busy) throw new Error(b?.error ?? `Failed (${res.status})`);
+        if (!cancelled) setBusy(toBusyMinutes(b.busy, snapshot_date));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setBusy([]);
+        setBusyError(e instanceof Error ? e.message : "Couldn't read your calendar");
+      })
+      .finally(() => {
+        if (!cancelled) setBusyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session, snapshot_date]);
+
   function openModal() {
     setExcluded(new Set());
+    setStartTime(minutesToTime(DEFAULT_START_MINUTES));
+    setBusy([]);
+    setBusyError(null);
     setResult(null);
     setError(null);
     setOpen(true);
@@ -163,9 +247,31 @@ export function CalendarSyncButton({
               </button>
             </header>
 
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+              <label htmlFor="cal-start-time" className="text-sm font-medium text-text">
+                Start time
+              </label>
+              <input
+                id="cal-start-time"
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                disabled={running}
+                className="h-11 rounded-xl border border-line bg-surface2 px-3 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+              />
+            </div>
+
             <div className="border-b border-line px-4 py-2 text-xs text-muted">
               Uncheck anything you don't want. {selected.length} of {scheduled.length} selected ·
-              blocked back-to-back from 9:00 AM.
+              from {prettyTime(`d T${minutesToTime(startMinutes)}:00`)},{" "}
+              {busyLoading
+                ? "checking your calendar…"
+                : busyError
+                  ? "back-to-back (couldn't read your calendar)"
+                  : busy.length > 0
+                    ? "slotted around your existing events"
+                    : "blocked back-to-back"}
+              .
             </div>
 
             <ul className="flex-1 space-y-1 overflow-y-auto p-2">

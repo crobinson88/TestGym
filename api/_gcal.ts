@@ -60,6 +60,46 @@ export interface CalendarEventInput {
   endDateTime: string;
 }
 
+export interface BusyPeriod {
+  // RFC3339 UTC instants as returned by Google (e.g. "2026-07-27T13:00:00Z").
+  start: string;
+  end: string;
+}
+
+// Read the target calendar's busy blocks between two instants via the freeBusy
+// API, so the client can slot new events into the gaps. `timeMin`/`timeMax` are
+// RFC3339 with an offset (or Z) — the client builds them from its own clock.
+export async function getCalendarBusy(
+  accessToken: string,
+  timeMin: string,
+  timeMax: string,
+  timeZone: string,
+): Promise<BusyPeriod[]> {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID ?? ALLOWED_EMAIL;
+  const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ timeMin, timeMax, timeZone, items: [{ id: calendarId }] }),
+  });
+  const body = (await res.json().catch(() => null)) as
+    | {
+        calendars?: Record<string, { busy?: BusyPeriod[]; errors?: { reason?: string }[] }>;
+        error?: { message?: string };
+      }
+    | null;
+  if (!res.ok || !body) {
+    throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+  }
+  const cal = body.calendars?.[calendarId];
+  if (cal?.errors?.length) {
+    throw new Error(cal.errors[0]?.reason ?? "freeBusy error");
+  }
+  return (cal?.busy ?? []).map((b) => ({ start: b.start, end: b.end }));
+}
+
 // Create one event on the target calendar. Returns the new event id.
 export async function createCalendarEvent(
   accessToken: string,
