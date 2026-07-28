@@ -167,6 +167,15 @@ export interface DailyBalance {
   net: number | null;
 }
 
+// The calorie target adjusted for logged exercise: the base goal plus the day's
+// exercise burn (cardio + strength), so calories burned are "earned back" and
+// the target rises as you train. A base goal of 0 (unset) stays 0 — no goal,
+// no adjustment — and a negative burn never pulls the target below the base.
+export function adjustedCalorieGoal(baseGoal: number, exercise: number): number {
+  if (baseGoal <= 0) return 0;
+  return baseGoal + Math.max(0, exercise);
+}
+
 // The day's energy balance. `net > 0` is a deficit.
 export function dailyBalance(input: {
   intake: number;

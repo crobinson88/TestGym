@@ -3,9 +3,11 @@ import { Flame, Pencil, Plus, Target, UtensilsCrossed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { todayIsoDate, relativeDay } from "@/lib/utils";
 import type { FoodEntryRow } from "@/lib/database.types";
-import { useCardioSessionsForDate } from "@/lib/hooks";
+import { useCardioSessionsForDate, useSetsForDate } from "@/lib/hooks";
+import { liftingMetMinutes } from "@/lib/met";
 import { useFoodEntries, useFoodGoals } from "../hooks";
 import {
+  adjustedCalorieGoal,
   baselineBurn,
   dailyBalance,
   exerciseKcalFromMetMinutes,
@@ -22,6 +24,7 @@ export default function FoodDiaryHome() {
   const goals = useFoodGoals();
   const today = todayIsoDate();
   const todayCardio = useCardioSessionsForDate(today);
+  const todaySets = useSetsForDate(today);
   const navigate = useNavigate();
 
   if (entries === undefined || goals === undefined) {
@@ -43,12 +46,14 @@ export default function FoodDiaryHome() {
     weightKg,
   });
   const baseline = baselineBurn(bmr, goals?.activity_factor ?? 1.2);
-  const metMinutes = (todayCardio ?? []).reduce(
+  const cardioMetMinutes = (todayCardio ?? []).reduce(
     (sum, c) => sum + (c.met_minutes ?? c.met_value_snapshot * c.minutes),
     0,
   );
-  const exercise = exerciseKcalFromMetMinutes(metMinutes, weightKg);
+  const liftingMet = liftingMetMinutes((todaySets ?? []).length);
+  const exercise = exerciseKcalFromMetMinutes(cardioMetMinutes + liftingMet, weightKg);
   const balance = dailyBalance({ intake: todayTotals.calories, baseline, exercise });
+  const calorieTarget = adjustedCalorieGoal(calorieGoal, exercise);
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -87,7 +92,8 @@ export default function FoodDiaryHome() {
           <Macro
             label="Calories"
             unit="kcal"
-            progress={goalProgress(todayTotals.calories, calorieGoal)}
+            progress={goalProgress(todayTotals.calories, calorieTarget)}
+            boost={calorieGoal > 0 ? exercise : 0}
           />
           <Macro
             label="Protein"
@@ -235,10 +241,14 @@ function Macro({
   label,
   unit,
   progress,
+  boost = 0,
 }: {
   label: string;
   unit: string;
   progress: GoalProgress;
+  // Portion of the goal earned back from logged exercise (cardio + sets), shown
+  // as a breakdown under the target. 0 when there's no exercise or no goal.
+  boost?: number;
 }) {
   const hasGoal = progress.goal > 0;
   const value = label === "Protein" ? formatProtein(progress.value) : progress.value;
@@ -260,6 +270,11 @@ function Macro({
           {hasGoal ? `/ ${progress.goal} ${unit}` : unit}
         </span>
       </div>
+      {hasGoal && boost > 0 && (
+        <div className="mt-0.5 text-xs text-muted">
+          incl. <span className="tabular-nums text-text">+{boost}</span> from exercise
+        </div>
+      )}
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface2">
         <div
           className={cn(
