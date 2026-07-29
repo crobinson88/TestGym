@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FoodEntryRow } from "@/lib/database.types";
 import {
+  adjustedCalorieGoal,
   baselineBurn,
   cmToFtIn,
   dailyBalance,
@@ -159,6 +160,24 @@ describe("exerciseKcalFromMetMinutes", () => {
 
   it("returns 0 when weight is unknown", () => {
     expect(exerciseKcalFromMetMinutes(300, null)).toBe(0);
+  });
+});
+
+describe("adjustedCalorieGoal", () => {
+  it("adds the exercise burn to the base goal", () => {
+    expect(adjustedCalorieGoal(2000, 473)).toBe(2473);
+  });
+
+  it("leaves the goal untouched with no exercise", () => {
+    expect(adjustedCalorieGoal(2000, 0)).toBe(2000);
+  });
+
+  it("never drops below the base goal on a negative burn", () => {
+    expect(adjustedCalorieGoal(2000, -100)).toBe(2000);
+  });
+
+  it("stays 0 when the base goal is unset", () => {
+    expect(adjustedCalorieGoal(0, 473)).toBe(0);
   });
 });
 
