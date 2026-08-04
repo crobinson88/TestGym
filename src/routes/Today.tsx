@@ -218,6 +218,8 @@ export function Today() {
                   activityName={activityById.get(c.activity_id)?.name ?? "Activity"}
                   minutes={c.minutes}
                   metMinutes={c.met_minutes ?? c.met_value_snapshot * c.minutes}
+                  distance={c.distance}
+                  calories={c.calories}
                 />
               ))}
             </ul>
@@ -312,12 +314,16 @@ function CardioRow({
   activityName,
   minutes,
   metMinutes,
+  distance,
+  calories,
 }: {
   sessionId: string;
   index: number;
   activityName: string;
   minutes: number;
   metMinutes: number;
+  distance: number | null;
+  calories: number | null;
 }) {
   const [confirm, setConfirm] = useState(false);
 
@@ -332,7 +338,11 @@ function CardioRow({
         <div className="min-w-0">
           <div className="truncate text-base font-medium">{activityName}</div>
           <div className="text-xs text-muted tabular-nums">
-            {minutes} min · {Math.round(metMinutes)} MET-min
+            {minutes} min
+            {distance != null && ` · ${distance} dist`}
+            {calories != null
+              ? ` · ${calories} kcal`
+              : ` · ${Math.round(metMinutes)} MET-min`}
           </div>
         </div>
       </div>

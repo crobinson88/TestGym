@@ -1,4 +1,4 @@
-import type { BodySex, FoodEntryRow } from "@/lib/database.types";
+import type { BodySex, CardioSessionRow, FoodEntryRow } from "@/lib/database.types";
 
 export interface DailyTotals {
   calories: number;
@@ -154,6 +154,21 @@ export function exerciseKcalFromMetMinutes(
 ): number {
   if (weightKg == null || weightKg <= 0) return 0;
   return Math.round(metMinutes * weightKg * 0.0175);
+}
+
+// Calories burned by a single cardio session. A directly-logged `calories`
+// value (from the machine/watch readout) wins; otherwise fall back to the
+// MET-based estimate. Sum over a day's sessions for the cardio exercise burn.
+export function cardioSessionKcal(
+  session: Pick<
+    CardioSessionRow,
+    "calories" | "met_minutes" | "met_value_snapshot" | "minutes"
+  >,
+  weightKg: number | null,
+): number {
+  if (session.calories != null && session.calories >= 0) return session.calories;
+  const metMinutes = session.met_minutes ?? session.met_value_snapshot * session.minutes;
+  return exerciseKcalFromMetMinutes(metMinutes, weightKg);
 }
 
 export interface DailyBalance {

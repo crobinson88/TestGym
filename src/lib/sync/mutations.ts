@@ -75,6 +75,7 @@ export interface AddCardioSessionInput {
   minutes: number;
   performed_at?: string;
   distance?: number | null;
+  calories?: number | null;
   notes?: string | null;
 }
 
@@ -413,6 +414,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       performed_at: input.performed_at ?? todayIsoDate(),
       minutes: input.minutes,
       distance: input.distance ?? null,
+      calories: input.calories ?? null,
       notes: input.notes ?? null,
       met_value_snapshot: activity.met_value,
       met_minutes: activity.met_value * input.minutes,

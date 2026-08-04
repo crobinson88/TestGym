@@ -140,6 +140,33 @@ describe("mutations.addSet", () => {
     expect(session.performed_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  it("addCardioSession stores logged calories and distance", async () => {
+    db = await newTestDb();
+    const act = makeMetActivity({ met_value: 8 });
+    await db.met_activities.put({ ...act, sync_status: "synced" });
+
+    const m = createMutations({ db });
+    const session = await m.addCardioSession({
+      activity_id: act.id,
+      minutes: 25,
+      distance: 3.1,
+      calories: 280,
+    });
+
+    expect(session.calories).toBe(280);
+    expect(session.distance).toBe(3.1);
+  });
+
+  it("addCardioSession defaults calories to null when not logged", async () => {
+    db = await newTestDb();
+    const act = makeMetActivity();
+    await db.met_activities.put({ ...act, sync_status: "synced" });
+
+    const m = createMutations({ db });
+    const session = await m.addCardioSession({ activity_id: act.id, minutes: 30 });
+    expect(session.calories).toBeNull();
+  });
+
   it("addCardioSession throws when activity_id is unknown", async () => {
     db = await newTestDb();
     const m = createMutations({ db });

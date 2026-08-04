@@ -97,6 +97,7 @@ export function makeCardioSession(
     performed_at: "2026-05-19",
     minutes: 30,
     distance: null,
+    calories: null,
     notes: null,
     met_value_snapshot: 9.8,
     met_minutes: 294,
