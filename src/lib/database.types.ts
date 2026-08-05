@@ -69,6 +69,10 @@ export interface CardioSessionRow {
   performed_at: string;
   minutes: number;
   distance: number | null;
+  // Calories burned, logged directly by the user (machine/watch readout). Null
+  // when not logged — the food-diary balance then falls back to the MET-based
+  // estimate. When set, it's the exercise burn used in the daily balance.
+  calories: number | null;
   notes: string | null;
   met_value_snapshot: number;
   met_minutes: number | null;

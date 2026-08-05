@@ -3,6 +3,7 @@ import type { FoodEntryRow } from "@/lib/database.types";
 import {
   adjustedCalorieGoal,
   baselineBurn,
+  cardioSessionKcal,
   cmToFtIn,
   dailyBalance,
   exerciseKcalFromMetMinutes,
@@ -160,6 +161,29 @@ describe("exerciseKcalFromMetMinutes", () => {
 
   it("returns 0 when weight is unknown", () => {
     expect(exerciseKcalFromMetMinutes(300, null)).toBe(0);
+  });
+});
+
+describe("cardioSessionKcal", () => {
+  const base = { calories: null, met_minutes: 300, met_value_snapshot: 10, minutes: 30 };
+
+  it("uses logged calories when present, even without weight", () => {
+    expect(cardioSessionKcal({ ...base, calories: 280 }, null)).toBe(280);
+    expect(cardioSessionKcal({ ...base, calories: 280 }, 90)).toBe(280);
+  });
+
+  it("treats a logged zero as a real value, not missing", () => {
+    expect(cardioSessionKcal({ ...base, calories: 0 }, 90)).toBe(0);
+  });
+
+  it("falls back to the MET estimate when calories are null", () => {
+    expect(cardioSessionKcal({ ...base, calories: null }, 90)).toBe(473);
+  });
+
+  it("derives met_minutes from the snapshot when null", () => {
+    expect(
+      cardioSessionKcal({ calories: null, met_minutes: null, met_value_snapshot: 10, minutes: 30 }, 90),
+    ).toBe(473);
   });
 });
 

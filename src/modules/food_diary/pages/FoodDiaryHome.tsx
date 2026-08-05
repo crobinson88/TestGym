@@ -9,6 +9,7 @@ import { useFoodEntries, useFoodGoals } from "../hooks";
 import {
   adjustedCalorieGoal,
   baselineBurn,
+  cardioSessionKcal,
   dailyBalance,
   exerciseKcalFromMetMinutes,
   goalProgress,
@@ -46,12 +47,17 @@ export default function FoodDiaryHome() {
     weightKg,
   });
   const baseline = baselineBurn(bmr, goals?.activity_factor ?? 1.2);
-  const cardioMetMinutes = (todayCardio ?? []).reduce(
-    (sum, c) => sum + (c.met_minutes ?? c.met_value_snapshot * c.minutes),
+  // Cardio burn: a session's directly-logged calories win, else the MET
+  // estimate (per session, so logged + estimated sessions can mix).
+  const cardioKcal = (todayCardio ?? []).reduce(
+    (sum, c) => sum + cardioSessionKcal(c, weightKg),
     0,
   );
-  const liftingMet = liftingMetMinutes((todaySets ?? []).length);
-  const exercise = exerciseKcalFromMetMinutes(cardioMetMinutes + liftingMet, weightKg);
+  const liftingKcal = exerciseKcalFromMetMinutes(
+    liftingMetMinutes((todaySets ?? []).length),
+    weightKg,
+  );
+  const exercise = cardioKcal + liftingKcal;
   const balance = dailyBalance({ intake: todayTotals.calories, baseline, exercise });
   const calorieTarget = adjustedCalorieGoal(calorieGoal, exercise);
 

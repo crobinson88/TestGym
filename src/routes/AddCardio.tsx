@@ -15,6 +15,7 @@ export function AddCardio() {
   const [activityId, setActivityId] = useState<string | null>(null);
   const [minutes, setMinutes] = useState(30);
   const [distance, setDistance] = useState("");
+  const [calories, setCalories] = useState("");
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState(false);
 
@@ -33,10 +34,12 @@ export function AddCardio() {
     setSaving(true);
     try {
       const distNum = distance.trim() === "" ? null : Number(distance);
+      const calNum = calories.trim() === "" ? null : Math.round(Number(calories));
       await syncEngine.mutations.addCardioSession({
         activity_id: activityId,
         minutes,
         distance: Number.isFinite(distNum) ? distNum : null,
+        calories: calNum != null && Number.isFinite(calNum) && calNum >= 0 ? calNum : null,
       });
       setFlash(true);
       setTimeout(() => navigate("/"), 700);
@@ -111,7 +114,7 @@ export function AddCardio() {
               </div>
             </div>
 
-            <div className="mt-6">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <label className="block space-y-2">
                 <span className="text-xs uppercase tracking-wide text-muted">
                   Distance (optional)
@@ -125,7 +128,23 @@ export function AddCardio() {
                   disabled={saving}
                 />
               </label>
+              <label className="block space-y-2">
+                <span className="text-xs uppercase tracking-wide text-muted">
+                  Calories (optional)
+                </span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={calories}
+                  onChange={(e) => setCalories(e.target.value)}
+                  placeholder="e.g. 320"
+                  disabled={saving}
+                />
+              </label>
             </div>
+            <p className="mt-2 text-xs text-muted">
+              Calories burned feed your food diary. Leave blank to estimate from MET-minutes.
+            </p>
 
             <div className="mt-auto pt-6">
               <Button
