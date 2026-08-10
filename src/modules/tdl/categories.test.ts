@@ -14,6 +14,7 @@ import {
   deleteCategory,
   renameCategory,
   reorderCategories,
+  setCategoryArchived,
 } from "./categories";
 
 // pokeOutbox() short-circuits when offline; keep the drain from touching the
@@ -69,6 +70,11 @@ describe("createCategory", () => {
     expect(b.key).not.toBe(a.key);
     expect(b.sort_order).toBe(a.sort_order + 1);
     expect(a.sync_status).toBe("pending");
+  });
+
+  it("starts unarchived", async () => {
+    const a = await createCategory("Reading");
+    expect(a.is_archived).toBe(false);
   });
 
   it("rejects a blank label", async () => {
@@ -127,6 +133,37 @@ describe("blockingItemCount", () => {
       item("other", { status: "open" }),
     ]);
     expect(await blockingItemCount(cat.key, TODAY)).toBe(3);
+  });
+});
+
+describe("setCategoryArchived", () => {
+  it("archives and unarchives, marking the row pending each time", async () => {
+    const cat = await createCategory("Work");
+    const archived = await setCategoryArchived(cat.id, true);
+    expect(archived?.is_archived).toBe(true);
+    expect(archived?.sync_status).toBe("pending");
+
+    const restored = await setCategoryArchived(cat.id, false);
+    expect(restored?.is_archived).toBe(false);
+    expect(restored?.sync_status).toBe("pending");
+  });
+
+  it("is unrestricted even with active items (they orphan to Uncategorised)", async () => {
+    const cat = await createCategory("Work");
+    await db.tdl_items.put(item(cat.key, { status: "worked_today" }));
+    const archived = await setCategoryArchived(cat.id, true);
+    expect(archived?.is_archived).toBe(true);
+  });
+
+  it("no-ops when already in the requested state", async () => {
+    const cat = await createCategory("Work");
+    const same = await setCategoryArchived(cat.id, false);
+    expect(same?.updated_at).toBe(cat.updated_at);
+    expect(same?.sync_status).toBe(cat.sync_status);
+  });
+
+  it("returns null for an unknown id", async () => {
+    expect(await setCategoryArchived(uuid(), true)).toBeNull();
   });
 });
 

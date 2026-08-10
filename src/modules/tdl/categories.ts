@@ -35,11 +35,14 @@ export function useCategoryRows(): LocalTdlCategory[] | undefined {
 const DEFAULT_CONFIGS: SectionConfig[] = [...SECTIONS];
 
 // Board-facing category configs. Falls back to the seeded defaults until the
-// first sync populates the table (offline-first first run).
+// first sync populates the table (offline-first first run). Archived categories
+// are excluded — they drop off the board but keep their history.
 export function useCategories(): SectionConfig[] {
   const live = useLiveQuery(async () => {
     const rows = await db.tdl_categories.toArray();
-    return sortRows(rows).map(toSectionConfig);
+    return sortRows(rows)
+      .filter((r) => !r.is_archived)
+      .map(toSectionConfig);
   }, []);
   if (live === undefined) return DEFAULT_CONFIGS;
   return live.length > 0 ? live : DEFAULT_CONFIGS;
@@ -94,6 +97,7 @@ export async function createCategory(label: string): Promise<LocalTdlCategory> {
     sort_order,
     has_due_date: true,
     has_time_estimate: true,
+    is_archived: false,
     created_at: ts,
     updated_at: ts,
     deleted_at: null,
@@ -112,6 +116,28 @@ export async function renameCategory(id: string, label: string): Promise<LocalTd
   const updated: LocalTdlCategory = {
     ...existing,
     label: trimmed,
+    updated_at: nowIso(),
+    sync_status: "pending",
+  };
+  await db.tdl_categories.put(updated);
+  pokeOutbox();
+  return updated;
+}
+
+// Archiving retires a category from the board without deleting it. Unlike
+// delete it's unrestricted and reversible: any active items keep their section
+// key and fall into "Uncategorised" while archived, then snap back when the
+// category is unarchived. History is untouched either way.
+export async function setCategoryArchived(
+  id: string,
+  archived: boolean,
+): Promise<LocalTdlCategory | null> {
+  const existing = await db.tdl_categories.get(id);
+  if (!existing || existing.deleted_at) return existing ?? null;
+  if (existing.is_archived === archived) return existing;
+  const updated: LocalTdlCategory = {
+    ...existing,
+    is_archived: archived,
     updated_at: nowIso(),
     sync_status: "pending",
   };
