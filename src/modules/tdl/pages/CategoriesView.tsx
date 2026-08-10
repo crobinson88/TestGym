@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronLeft, Check, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronLeft,
+  Check,
+  GripVertical,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   DndContext,
@@ -25,6 +35,7 @@ import {
   deleteCategory,
   renameCategory,
   reorderCategories,
+  setCategoryArchived,
   useBlockingCounts,
   useCategoryRows,
 } from "../categories";
@@ -126,6 +137,16 @@ export default function CategoriesView() {
     }
   }
 
+  async function onArchive(id: string, archived: boolean) {
+    setError(null);
+    cancelDelete();
+    setEditingId(null);
+    await setCategoryArchived(id, archived);
+  }
+
+  const activeRows = orderedRows.filter((r) => !r.is_archived);
+  const archivedRows = orderedRows.filter((r) => r.is_archived);
+
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-bg/95 px-4 py-3 backdrop-blur">
@@ -140,7 +161,7 @@ export default function CategoriesView() {
         </Button>
         <h1 className="text-base font-semibold">Categories</h1>
         <span className="ml-auto rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted">
-          {rows?.length ?? 0}
+          {activeRows.length}
         </span>
       </header>
 
@@ -160,11 +181,11 @@ export default function CategoriesView() {
             onDragEnd={onDragEnd}
           >
             <SortableContext
-              items={orderedRows.map((r) => r.id)}
+              items={activeRows.map((r) => r.id)}
               strategy={verticalListSortingStrategy}
             >
               <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
-                {orderedRows.map((cat) => {
+                {activeRows.map((cat) => {
                   const blockingCount = blocking?.get(cat.key) ?? 0;
                   const editing = editingId === cat.id;
                   const confirming = confirmId === cat.id;
@@ -255,6 +276,16 @@ export default function CategoriesView() {
                       <Button
                         size="icon"
                         variant="ghost"
+                        onClick={() => void onArchive(cat.id, true)}
+                        aria-label={`Archive ${cat.label}`}
+                        title="Archive — hides it from the board, keeps history"
+                        className="h-9 w-9 text-muted"
+                      >
+                        <Archive className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
                         disabled={blockingCount > 0}
                         onClick={() => startDelete(cat.id)}
                         aria-label={`Delete ${cat.label}`}
@@ -278,6 +309,87 @@ export default function CategoriesView() {
               </ul>
             </SortableContext>
           </DndContext>
+        )}
+
+        {archivedRows.length > 0 && (
+          <div className="mt-6">
+            <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-muted">
+              Archived
+            </div>
+            <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
+              {archivedRows.map((cat) => {
+                const blockingCount = blocking?.get(cat.key) ?? 0;
+                const confirming = confirmId === cat.id;
+                return (
+                  <li
+                    key={cat.id}
+                    className="flex items-center gap-2 border-b border-line/50 bg-surface px-3 py-2 last:border-b-0"
+                  >
+                    {confirming ? (
+                      <>
+                        <div className="min-w-0 flex-1 text-sm text-danger">
+                          {confirmStage === 1
+                            ? `Delete “${cat.label}”?`
+                            : "Are you sure? This can’t be undone."}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() =>
+                            confirmStage === 1 ? setConfirmStage(2) : void onDelete(cat.id)
+                          }
+                        >
+                          {confirmStage === 1 ? "Delete" : "Confirm"}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={cancelDelete}>
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm text-muted">{cat.label}</div>
+                          {blockingCount > 0 && (
+                            <div className="text-[11px] text-muted">
+                              {blockingCount} in Uncategorised while archived
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => void onArchive(cat.id, false)}
+                          aria-label={`Unarchive ${cat.label}`}
+                          title="Unarchive — bring it back to the board"
+                          className="h-9 w-9 text-muted"
+                        >
+                          <ArchiveRestore className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          disabled={blockingCount > 0}
+                          onClick={() => startDelete(cat.id)}
+                          aria-label={`Delete ${cat.label}`}
+                          title={
+                            blockingCount > 0
+                              ? "Move or finish active/snoozed items first"
+                              : undefined
+                          }
+                          className={cn(
+                            "h-9 w-9",
+                            blockingCount > 0 ? "text-muted/40" : "text-danger",
+                          )}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
 
         <div className="mt-3">
@@ -311,8 +423,10 @@ export default function CategoriesView() {
         </div>
 
         <p className="mt-4 px-1 text-[11px] leading-relaxed text-muted">
-          A category can only be deleted once it has no active or snoozed items.
-          Done or archived history stays put and shows under “Uncategorised”.
+          Archive a category to hide it from the board without losing its
+          history — it can be brought back any time, and its items reappear when
+          you do. Deleting is permanent and only allowed once a category has no
+          active or snoozed items; done history stays under “Uncategorised”.
         </p>
       </div>
     </div>

@@ -103,6 +103,7 @@ export interface TdlCategoryRow {
   sort_order: number;
   has_due_date: boolean;
   has_time_estimate: boolean;
+  is_archived: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
