@@ -465,14 +465,6 @@ export function SectionColumn({
                   className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm text-text placeholder:text-muted outline-none focus:border-accent"
                 />
                 <ImageEditor images={images} onChange={setImages} />
-                <div className="flex gap-2">
-                  <Button size="sm" variant="primary" onClick={() => void submit()}>
-                    Add task
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={resetAdd}>
-                    Cancel
-                  </Button>
-                </div>
               </>
             ) : (
               <button
@@ -484,6 +476,14 @@ export function SectionColumn({
                 + Add details
               </button>
             )}
+            <div className="flex gap-2">
+              <Button size="sm" variant="primary" onClick={() => void submit()}>
+                Add task
+              </Button>
+              <Button size="sm" variant="ghost" onClick={resetAdd}>
+                Cancel
+              </Button>
+            </div>
           </div>
         ) : (
           <Button
