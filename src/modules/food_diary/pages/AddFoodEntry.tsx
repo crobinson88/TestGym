@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Camera, Check, ChevronLeft, History, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Camera, Check, ChevronLeft, ImagePlus, Library, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { todayIsoDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useFoodEntries, useFoodEntry } from "../hooks";
-import { recentFoods, type RecentFood } from "../compute";
+import { foodLibrary, type LibraryFood } from "../compute";
 import { estimateFoodPhoto, estimateFoodText } from "../photo";
 
 export default function AddFoodEntry() {
@@ -96,13 +96,12 @@ export default function AddFoodEntry() {
     }
   }
 
-  // Foods logged on earlier days, so a repeat meal can be re-logged onto the
-  // day being added with one tap. Hidden while editing an existing entry.
-  const recent = editing
-    ? []
-    : recentFoods(allEntries ?? [], { excludeDate: date, limit: 12 });
+  // The food library: every distinct food ever logged (a food is saved here
+  // the first time its title is logged), so a repeat meal can be re-logged with
+  // one tap. Hidden while editing an existing entry.
+  const library = editing ? [] : foodLibrary(allEntries ?? [], { limit: 24 });
 
-  function pickRecent(food: RecentFood) {
+  function pickFood(food: LibraryFood) {
     setName(food.name);
     setCalories(String(food.calories));
     setProtein(String(food.protein));
@@ -224,16 +223,16 @@ export default function AddFoodEntry() {
           </div>
         )}
 
-        {!editing && recent.length > 0 && (
+        {!editing && library.length > 0 && (
           <div className="rounded-2xl border border-line bg-surface p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
-              <History className="h-3.5 w-3.5 text-accent" /> Log again
+              <Library className="h-3.5 w-3.5 text-accent" /> Library
             </div>
             <ul className="flex flex-wrap gap-2">
-              {recent.map((food) => (
+              {library.map((food) => (
                 <li key={food.name}>
                   <button
-                    onClick={() => pickRecent(food)}
+                    onClick={() => pickFood(food)}
                     className="flex min-h-11 flex-col items-start rounded-xl border border-line bg-surface2 px-3 py-1.5 text-left transition active:scale-[0.98]"
                   >
                     <span className="max-w-[60vw] truncate text-sm font-medium text-text">

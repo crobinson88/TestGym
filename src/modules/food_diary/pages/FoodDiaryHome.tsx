@@ -10,6 +10,7 @@ import {
   adjustedCalorieGoal,
   baselineBurn,
   cardioSessionKcal,
+  coverageByEntry,
   dailyBalance,
   exerciseKcalFromMetMinutes,
   goalProgress,
@@ -60,6 +61,12 @@ export default function FoodDiaryHome() {
   const exercise = cardioKcal + liftingKcal;
   const balance = dailyBalance({ intake: todayTotals.calories, baseline, exercise });
   const calorieTarget = adjustedCalorieGoal(calorieGoal, exercise);
+  // Per-item calorie coverage against the day's energy burn: how much of each
+  // food falls within what the body burns today. Only when the burn is known.
+  const coverage =
+    balance.burn != null && balance.burn > 0
+      ? coverageByEntry(todayEntries, balance.burn)
+      : null;
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -128,7 +135,12 @@ export default function FoodDiaryHome() {
       {todayEntries.length > 0 && (
         <Section title="Today's food">
           {todayEntries.map((e) => (
-            <EntryRow key={e.id} entry={e} onEdit={() => navigate(`/food/add/${e.id}`)} />
+            <EntryRow
+              key={e.id}
+              entry={e}
+              coverage={coverage?.get(e.id) ?? null}
+              onEdit={() => navigate(`/food/add/${e.id}`)}
+            />
           ))}
         </Section>
       )}
@@ -294,7 +306,17 @@ function Macro({
   );
 }
 
-function EntryRow({ entry, onEdit }: { entry: FoodEntryRow; onEdit: () => void }) {
+function EntryRow({
+  entry,
+  coverage,
+  onEdit,
+}: {
+  entry: FoodEntryRow;
+  // Fraction [0, 1] of this food's calories covered by the day's burn, or null
+  // when the burn is unknown (no body profile) — then no pie is shown.
+  coverage: number | null;
+  onEdit: () => void;
+}) {
   return (
     <li className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3">
       <div className="min-w-0 flex-1">
@@ -303,6 +325,7 @@ function EntryRow({ entry, onEdit }: { entry: FoodEntryRow; onEdit: () => void }
           {entry.calories} kcal · {formatProtein(entry.protein)} g protein
         </div>
       </div>
+      {coverage != null && <CoveragePie pct={coverage} />}
       <button
         onClick={onEdit}
         aria-label="Edit"
@@ -311,6 +334,25 @@ function EntryRow({ entry, onEdit }: { entry: FoodEntryRow; onEdit: () => void }
         <Pencil className="h-4 w-4" />
       </button>
     </li>
+  );
+}
+
+// A small pie showing what share of a food's calories the day's burn covers.
+// Full (100%, in deficit) reads success-green; a partial slice reads accent.
+function CoveragePie({ pct }: { pct: number }) {
+  const clamped = Math.max(0, Math.min(1, pct));
+  const deg = clamped * 360;
+  const full = clamped >= 0.999;
+  const fill = full ? "#10b981" : "#22d3ee";
+  const label = `${Math.round(clamped * 100)}% of calories covered by today's burn`;
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      title={label}
+      className="h-6 w-6 shrink-0 rounded-full ring-1 ring-line"
+      style={{ background: `conic-gradient(${fill} ${deg}deg, #222222 ${deg}deg)` }}
+    />
   );
 }
 
