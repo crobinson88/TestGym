@@ -19,7 +19,12 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { todayIsoDate } from "@/lib/utils";
 import { useDay, usePrevDateWithItems } from "../hooks";
-import { reorderCategories, useCategories, useCategoryRows } from "../categories";
+import {
+  reorderCategories,
+  setCategoryArchived,
+  useCategories,
+  useCategoryRows,
+} from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { selectPriorityItems } from "../priority";
 import { selectDoFirstItems } from "../quadrant";
@@ -453,6 +458,7 @@ export default function DayView() {
                 )}
                 {visibleColumns.map((cfg) => {
                   const lists = listsFor(cfg.key);
+                  const rowId = keyToRowId.get(cfg.key);
                   return (
                     <SectionColumn
                       key={cfg.key}
@@ -471,6 +477,11 @@ export default function DayView() {
                       selectedIds={selected}
                       onToggleSelect={toggleSelect}
                       onBulkActed={() => setSelected(new Set())}
+                      onArchive={
+                        rowId
+                          ? () => void setCategoryArchived(rowId, true)
+                          : undefined
+                      }
                     />
                   );
                 })}

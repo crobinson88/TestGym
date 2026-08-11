@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronRight, GripVertical, Plus } from "lucide-react";
+import { Archive, ChevronRight, GripVertical, MoreVertical, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -48,6 +48,7 @@ export function SectionColumn({
   selectedIds,
   onToggleSelect,
   onBulkActed,
+  onArchive,
 }: {
   cfg: SectionConfig;
   categories: SectionConfig[];
@@ -64,8 +65,12 @@ export function SectionColumn({
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onBulkActed?: () => void;
+  // Archive this category (tag) straight from the board header. Omitted for the
+  // virtual Uncategorised column and before the categories table has synced.
+  onArchive?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [draft, setDraft] = useState("");
   const [estimate, setEstimate] = useState("");
   const [estError, setEstError] = useState(false);
@@ -110,7 +115,7 @@ export function SectionColumn({
       i.status === "ready_for_testing",
   ).length;
   const chips = [
-    { key: "open", label: "open", n: counts.open, cls: "bg-surface2 text-muted" },
+    { key: "open", label: "open", n: counts.open, cls: "bg-blue-500/15 text-blue-400" },
     {
       key: "worked_today",
       label: "in progress",
@@ -243,7 +248,7 @@ export function SectionColumn({
         </h2>
         <span
           className={cn(
-            "rounded-full bg-surface2 px-2 py-0.5 text-[11px] tabular-nums text-muted",
+            "rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] tabular-nums text-blue-400",
             !isCollapsed && "hidden",
           )}
         >
@@ -267,6 +272,40 @@ export function SectionColumn({
             </span>
           ))}
         </div>
+        {onArchive && (
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setMenu((m) => !m)}
+              aria-label={`More options for ${cfg.label}`}
+              aria-expanded={menu}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted hover:text-text"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+            {menu && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setMenu(false)}
+                  aria-hidden
+                />
+                <div className="absolute right-0 top-7 z-40 min-w-[180px] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onArchive();
+                      setMenu(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+                  >
+                    <Archive className="h-4 w-4" /> Archive tag
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       {recurring.length > 0 && (
