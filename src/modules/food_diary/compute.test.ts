@@ -5,11 +5,14 @@ import {
   baselineBurn,
   cardioSessionKcal,
   cmToFtIn,
+  coverageByEntry,
   dailyBalance,
   exerciseKcalFromMetMinutes,
+  foodLibrary,
   ftInToCm,
   goalProgress,
   groupByDate,
+  isInLibrary,
   lbToKg,
   mifflinBmr,
   recentFoods,
@@ -93,6 +96,59 @@ describe("recentFoods", () => {
       { limit: 1 },
     );
     expect(foods.map((f) => f.name)).toEqual(["A"]);
+  });
+});
+
+describe("foodLibrary", () => {
+  it("holds every distinct title incl. today, deduped, newest first", () => {
+    const lib = foodLibrary([
+      entry({ name: "Oats", entry_date: "2026-07-14", created_at: "2026-07-14T08:00:00.000Z" }),
+      entry({ name: "Latte", entry_date: "2026-07-16", created_at: "2026-07-16T09:00:00.000Z" }),
+      entry({ name: "oats", entry_date: "2026-07-16", created_at: "2026-07-16T08:00:00.000Z" }),
+    ]);
+    expect(lib.map((f) => f.name)).toEqual(["Latte", "oats"]);
+  });
+});
+
+describe("isInLibrary", () => {
+  const entries = [entry({ name: "Latte" }), entry({ name: "Berry loaf cake" })];
+
+  it("matches an existing title case-insensitively and trimmed", () => {
+    expect(isInLibrary(entries, "  latte ")).toBe(true);
+    expect(isInLibrary(entries, "Flat white")).toBe(false);
+  });
+
+  it("treats a blank title as not in the library", () => {
+    expect(isInLibrary(entries, "   ")).toBe(false);
+  });
+
+  it("ignores soft-deleted entries", () => {
+    expect(isInLibrary([entry({ name: "Latte", deleted_at: "x" })], "Latte")).toBe(false);
+  });
+});
+
+describe("coverageByEntry", () => {
+  it("covers every entry fully while intake stays under the budget", () => {
+    const a = entry({ id: "a", calories: 150, created_at: "2026-07-16T09:00:00.000Z" });
+    const b = entry({ id: "b", calories: 320, created_at: "2026-07-16T10:00:00.000Z" });
+    const cov = coverageByEntry([b, a], 2222);
+    expect(cov.get("a")).toBe(1);
+    expect(cov.get("b")).toBe(1);
+  });
+
+  it("partially covers the entry that crosses the budget, later ones 0", () => {
+    const a = entry({ id: "a", calories: 400, created_at: "2026-07-16T09:00:00.000Z" });
+    const b = entry({ id: "b", calories: 400, created_at: "2026-07-16T10:00:00.000Z" });
+    const c = entry({ id: "c", calories: 400, created_at: "2026-07-16T11:00:00.000Z" });
+    const cov = coverageByEntry([c, b, a], 600);
+    expect(cov.get("a")).toBe(1); // 0..400 all under 600
+    expect(cov.get("b")).toBeCloseTo(0.5); // 400..800, half under 600
+    expect(cov.get("c")).toBe(0); // starts past the budget
+  });
+
+  it("treats a zero-calorie entry as fully covered", () => {
+    const z = entry({ id: "z", calories: 0 });
+    expect(coverageByEntry([z], 0).get("z")).toBe(1);
   });
 });
 

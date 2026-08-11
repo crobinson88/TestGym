@@ -97,6 +97,55 @@ function isNewerEntry(a: FoodEntryRow, b: FoodEntryRow): boolean {
   return a.entry_date > b.entry_date;
 }
 
+export type LibraryFood = RecentFood;
+
+// The food library: every distinct food ever logged, keyed by unique title
+// (case-insensitive, trimmed). A food joins the library the first time a new
+// title is logged; a repeat title just refreshes it (most recent macros win),
+// so the library never holds duplicate titles. Most-recently-logged first.
+// This is the whole-history view (today included) that `recentFoods` narrows
+// (excluding a day) for the "log again" picker.
+export function foodLibrary(
+  entries: FoodEntryRow[],
+  opts: { limit?: number } = {},
+): LibraryFood[] {
+  return recentFoods(entries, { limit: opts.limit });
+}
+
+// Whether a food title is already in the library (case-insensitive, trimmed).
+// A blank title is never "in" the library. Used to decide whether logging a
+// food adds a new library entry (unique title) or refreshes an existing one.
+export function isInLibrary(entries: FoodEntryRow[], name: string): boolean {
+  const key = name.trim().toLowerCase();
+  if (!key) return false;
+  return entries.some((e) => !e.deleted_at && e.name.trim().toLowerCase() === key);
+}
+
+// How much of each entry's calories the day's energy budget (its burn) covers,
+// filled in chronological order (oldest first) like a waterfall: the burn
+// covers what you ate earliest first, so once cumulative intake passes the
+// budget the latest entries are the ones that fall into surplus (partly, then
+// fully uncovered). Returns entry id → covered fraction in [0, 1]. While intake
+// stays under the budget every entry reads 100%. A zero-calorie entry is 1.
+export function coverageByEntry(
+  entries: FoodEntryRow[],
+  budget: number,
+): Map<string, number> {
+  const chrono = [...entries].sort((a, b) => {
+    if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+    return a.id < b.id ? -1 : 1;
+  });
+  const out = new Map<string, number>();
+  let running = 0;
+  for (const e of chrono) {
+    const cals = Math.max(0, e.calories);
+    const covered = Math.max(0, Math.min(cals, budget - running));
+    out.set(e.id, cals > 0 ? covered / cals : 1);
+    running += cals;
+  }
+  return out;
+}
+
 // Progress of a running total against a goal. A goal of 0 (or unset) means "no
 // goal": pct stays 0 and nothing reads as over.
 export function goalProgress(value: number, goal: number): GoalProgress {
