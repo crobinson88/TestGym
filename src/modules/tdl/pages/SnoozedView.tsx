@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useSnoozedItems } from "../hooks";
 import { useCategories } from "../categories";
+import { matchesQuery } from "../search";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { unsnoozeItem } from "../repo";
 import type { LocalTdlItem } from "../types";
@@ -16,14 +17,7 @@ export default function SnoozedView() {
   const categories = useCategories();
 
   const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
-  const searching = q.length > 0;
-  const filtered = (items ?? []).filter(
-    (i) =>
-      !searching ||
-      i.title.toLowerCase().includes(q) ||
-      (i.notes ?? "").toLowerCase().includes(q),
-  );
+  const filtered = (items ?? []).filter((i) => matchesQuery(i, query));
 
   const liveKeys = new Set(categories.map((c) => c.key));
   const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
