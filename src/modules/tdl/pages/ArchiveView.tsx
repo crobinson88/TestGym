@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useArchivedItems } from "../hooks";
 import { useCategories } from "../categories";
+import { matchesQuery } from "../search";
 import { unarchiveItem } from "../repo";
 
 export default function ArchiveView() {
@@ -15,14 +16,7 @@ export default function ArchiveView() {
   const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
 
   const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
-  const searching = q.length > 0;
-  const filtered = (items ?? []).filter(
-    (i) =>
-      !searching ||
-      i.title.toLowerCase().includes(q) ||
-      (i.notes ?? "").toLowerCase().includes(q),
-  );
+  const filtered = (items ?? []).filter((i) => matchesQuery(i, query));
 
   return (
     <div className="flex min-h-full flex-col">

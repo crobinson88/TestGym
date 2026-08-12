@@ -18,7 +18,13 @@ import { CheckSquare, ChevronsDownUp, ChevronsUpDown, Search } from "lucide-reac
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { todayIsoDate } from "@/lib/utils";
-import { useDay, usePrevDateWithItems } from "../hooks";
+import {
+  useArchivedItems,
+  useDay,
+  usePrevDateWithItems,
+  useSnoozedItems,
+} from "../hooks";
+import { matchesQuery as matchesTdlQuery } from "../search";
 import {
   reorderCategories,
   setCategoryArchived,
@@ -50,6 +56,7 @@ import { DoFirstColumn } from "../components/DoFirstColumn";
 import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
+import { OffBoardResults } from "../components/OffBoardResults";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -74,6 +81,10 @@ export default function DayView() {
   const date = params.date ?? todayIsoDate();
   const bundle = useDay(date);
   const prev = usePrevDateWithItems(date);
+  // Archived and snoozed items are day-independent and off the board; the search
+  // surfaces matches from them too (see OffBoardResults below).
+  const archivedItems = useArchivedItems();
+  const snoozedItems = useSnoozedItems();
   const categories = useCategories();
   const categoryRows = useCategoryRows();
   // Map category key → persisted row id, so a board column drag can write
@@ -293,10 +304,7 @@ export default function DayView() {
 
   const q = query.trim().toLowerCase();
   const searching = q.length > 0;
-  const matchesQuery = (i: LocalTdlItem) =>
-    !searching ||
-    i.title.toLowerCase().includes(q) ||
-    (i.notes ?? "").toLowerCase().includes(q);
+  const matchesQuery = (i: LocalTdlItem) => matchesTdlQuery(i, query);
 
   // Selectable = every live item currently visible on the board (search-aware).
   const selectableIds = bundle.items.filter(matchesQuery).map((i) => i.id);
@@ -336,11 +344,22 @@ export default function DayView() {
   const showPriorityColumn = !searching || priorityItems.length > 0;
   const doFirstItems = selectDoFirstItems(bundle.items).filter(matchesQuery);
   const showDoFirstColumn = !searching || doFirstItems.length > 0;
-  const nothingMatches =
-    searching &&
+
+  // While searching, also surface matching archived/snoozed items (they never
+  // appear on the board). Empty when not searching so nothing renders below.
+  const archivedMatches = searching ? (archivedItems ?? []).filter(matchesQuery) : [];
+  const snoozedMatches = searching ? (snoozedItems ?? []).filter(matchesQuery) : [];
+
+  const boardEmpty =
     visibleColumns.length === 0 &&
     priorityItems.length === 0 &&
     doFirstItems.length === 0;
+  const showBoard = !searching || !boardEmpty;
+  const nothingMatches =
+    searching &&
+    boardEmpty &&
+    archivedMatches.length === 0 &&
+    snoozedMatches.length === 0;
 
   // "Collapse all" targets every column on the board (the Priorities and Do First
   // mirrors plus each category), independent of the search filter so the toggle
@@ -420,9 +439,10 @@ export default function DayView() {
             <RollForwardButton fromDate={prev} toDate={date} />
           </div>
         )}
-        {nothingMatches ? (
+        {nothingMatches && (
           <div className="py-8 text-center text-sm text-muted">No tasks match “{query.trim()}”.</div>
-        ) : (
+        )}
+        {showBoard && (
           <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}>
             <SortableContext items={sortableColumnIds} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -488,6 +508,13 @@ export default function DayView() {
               </div>
             </SortableContext>
           </DndContext>
+        )}
+        {searching && (
+          <OffBoardResults
+            archived={archivedMatches}
+            snoozed={snoozedMatches}
+            categories={categories}
+          />
         )}
         {selecting && (
           <BulkActionBar
