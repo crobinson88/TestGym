@@ -18,6 +18,7 @@ import { drivingRoutes } from "@/modules/driving/routes";
 import { readingRoutes } from "@/modules/reading_list/routes";
 import { foodRoutes } from "@/modules/food_diary/routes";
 import { doorRoutes } from "@/modules/doors/routes";
+import { workstreamRoutes } from "@/modules/workstreams/routes";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
 const Dashboard = lazy(() => import("@/routes/Dashboard"));
@@ -80,6 +81,7 @@ export function App() {
               {readingRoutes()}
               {foodRoutes()}
               {doorRoutes()}
+              {workstreamRoutes()}
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

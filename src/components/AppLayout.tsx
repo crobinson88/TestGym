@@ -12,6 +12,7 @@ import {
   History,
   Languages,
   ListChecks,
+  LayoutGrid,
   LogOut,
   Plus,
   Receipt,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { useIsDesktop, useWorkstreamAlert } from "@/modules/workstreams/hooks";
 
 type Tab = {
   to: string;
@@ -50,6 +52,8 @@ export function AppLayout() {
   const [logOpen, setLogOpen] = useState(false);
   const navigate = useNavigate();
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const isDesktop = useIsDesktop();
+  const { active, waiting } = useWorkstreamAlert(isDesktop);
 
   useEffect(() => {
     if (!logOpen) return;
@@ -76,13 +80,37 @@ export function AppLayout() {
           <span className="text-muted">Signed in as</span>
           <span className="font-medium">{email}</span>
         </div>
-        <button
-          onClick={signOut}
-          className="flex h-10 w-10 items-center justify-center rounded-xl text-muted hover:bg-surface2"
-          aria-label="Sign out"
-        >
-          <LogOut className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Desktop only: the command centre is a dense table that needs a wide
+              screen, and it is the one view driven by other machines. */}
+          {isDesktop && (
+            <button
+              onClick={() => navigate("/workstreams")}
+              className="flex h-10 items-center gap-2 rounded-xl border border-line px-3 text-sm font-medium text-text transition hover:bg-surface2"
+              aria-label="Open Workstream Command Center"
+            >
+              <LayoutGrid className="h-4 w-4 text-accent" />
+              Command Center
+              {active > 0 && (
+                <span
+                  className={cn(
+                    "min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                    waiting > 0 ? "bg-warn text-bg" : "bg-surface2 text-muted",
+                  )}
+                >
+                  {active}
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            onClick={signOut}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-muted hover:bg-surface2"
+            aria-label="Sign out"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-x-hidden overflow-y-auto pb-32">

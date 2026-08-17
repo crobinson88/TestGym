@@ -444,6 +444,25 @@ export interface MarketNoteRow {
 // (day marked "Smoked" without a number), 0 on a smoke-free day. One live row
 // per `log_date` is kept (deduped client-side). Same sync / RLS / soft-delete
 // rules as `sets`.
+export type WorkstreamType = "code_cli" | "web_chat" | "email_task";
+export type WorkstreamStatus = "in_progress" | "waiting_input" | "completed" | "failed";
+
+export interface WorkstreamRow {
+  id: string;
+  title: string;
+  type: WorkstreamType;
+  status: WorkstreamStatus;
+  // Terminal session id, web session id, or Gmail thread id. Null when typed by hand.
+  source_id: string | null;
+  last_action: string | null;
+  metadata: Record<string, unknown>;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface SmokingLogRow {
   id: string;
   log_date: string;
@@ -660,6 +679,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<FoodGoalRow>;
+      };
+      workstreams: {
+        Row: WorkstreamRow;
+        Insert: Omit<WorkstreamRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<WorkstreamRow>;
       };
     };
   };

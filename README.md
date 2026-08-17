@@ -98,6 +98,74 @@ pg_dump "postgresql://postgres:[PWD]@db.rgslyxzeyjiypzilpxpf.supabase.co:5432/po
 
 Get `[PWD]` from Supabase dashboard → Project Settings → Database → Connection string.
 
+## Workstream Command Center (desktop)
+
+A live table of every Claude workstream — CLI sessions, web/Cowork chats, and
+actionable email — at `/workstreams`. The **Command Center** button appears in
+the app header on desktop only (≥1024px with a mouse); on a phone the route
+shows a "desktop-only" notice instead.
+
+Rows push in over Supabase Realtime — no polling, no reload.
+
+### 1. Feed it your CLI sessions
+
+```
+cp scripts/workstream-hook.sh ~/.claude/workstream-hook.sh
+chmod +x ~/.claude/workstream-hook.sh
+printf 'SUPABASE_URL=https://rgslyxzeyjiypzilpxpf.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=<service key>\n' > ~/.claude/workstream.env
+chmod 600 ~/.claude/workstream.env
+```
+
+Then in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "~/.claude/workstream-hook.sh" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "~/.claude/workstream-hook.sh" }] }],
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "~/.claude/workstream-hook.sh" }] }],
+    "SessionEnd":   [{ "hooks": [{ "type": "command", "command": "~/.claude/workstream-hook.sh" }] }]
+  }
+}
+```
+
+The hook posts to the `workstream_upsert` RPC in a detached subshell and always
+exits 0 — a Supabase outage or missing config can never block or fail a CLI
+turn. It needs `curl` and `jq`; without either it exits silently.
+
+Status mapping: `SessionStart` → running, `Notification` → **waiting on you**,
+`Stop`/`SessionEnd` → done. Repeat fires for one session update the same row
+(deduped on the terminal session id), so the board shows one line per terminal,
+not one per turn. A session killed without a Stop is greyed out as *stale* after
+30 minutes.
+
+### 2. Email triage (optional)
+
+The **Triage email** button pulls recent unread Gmail, has Claude
+(`claude-sonnet-4-6`) pick out what genuinely needs you to act, and logs one row
+per thread. Re-triaging is safe — rows dedup on the Gmail thread id.
+
+It reuses the Google service account already delegated for calendar sync, so
+there are no new credentials. You do need to authorise the extra scope once, in
+Workspace admin → Security → API controls → Domain-wide delegation → the
+existing client id → add:
+
+```
+https://www.googleapis.com/auth/gmail.readonly
+```
+
+Read-only: nothing is ever marked read, replied to, or moved. Until the scope is
+added the button returns `unauthorized_client` and everything else keeps working.
+
+It runs on demand rather than on a cron because Vercel Hobby crons only fire once
+a day, which is useless for a live board.
+
+### 3. Web/Cowork chats
+
+There's no public webhook for Claude web or Cowork sessions, so those rows are
+added by hand with **+ Web session** (optionally with the claude.ai link) and
+their status is edited from the table.
+
 ## Re-import from Excel (rare)
 
 `scripts/import.py` is a placeholder. The 1,456 historicals are already loaded. If you ever add new rows to the spreadsheet, call the `public.bulk_load_sets(payload jsonb)` Postgres function — it's idempotent on `(exercise_id, performed_at, weight, reps)`, so re-running is safe.
