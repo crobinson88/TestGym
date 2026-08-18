@@ -9,6 +9,8 @@
 //     one request per meeting, so no single request blows the time limit.
 //  2. action:"calendar-sync" — creates the "Add Calendar" events on the user's
 //     Google Calendar from a client-supplied, already-scheduled event list.
+//  3. action:"workstream-triage" — Gmail → Claude → `workstreams` rows for the
+//     desktop Command Center. Same reason it lives here: no function slots left.
 import {
   authedUser,
   json,
@@ -18,6 +20,7 @@ import {
   type Db,
 } from "./_fireflies.js";
 import { createCalendarEvent, getCalendarAccessToken, getCalendarBusy } from "./_gcal.js";
+import { triageInbox } from "./_workstreams.js";
 
 // Listing is quick; the calendar branch loops a handful of REST calls. 60s covers
 // both comfortably.
@@ -31,6 +34,7 @@ type CalendarEventInput = {
 };
 type CalendarSyncBody = {
   action?: string;
+  // Triage takes no arguments; the server picks the Gmail window itself.
   timeZone?: string;
   events?: CalendarEventInput[];
   // calendar-busy window (RFC3339 with offset/Z).
@@ -58,6 +62,7 @@ export async function POST(request: Request): Promise<Response> {
     const body = await readOptionalBody(request);
     if (body?.action === "calendar-sync") return handleCalendarSync(body);
     if (body?.action === "calendar-busy") return handleCalendarBusy(body);
+    if (body?.action === "workstream-triage") return json(await triageInbox(supabase), 200);
 
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);

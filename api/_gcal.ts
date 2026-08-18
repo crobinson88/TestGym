@@ -10,10 +10,20 @@ function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+
 // Mint an OAuth access token for the calendar scope by signing a service-account
 // JWT and exchanging it at the token endpoint. `sub` impersonates the user whose
 // calendar we write to (domain-wide delegation on a Workspace domain).
 export async function getCalendarAccessToken(): Promise<string> {
+  return getGoogleAccessToken(CALENDAR_SCOPE);
+}
+
+// Same JWT dance for any delegated scope. Each scope must also be authorised on
+// the service account's client id in Workspace admin, or the exchange 401s with
+// "unauthorized_client".
+export async function getGoogleAccessToken(scope: string): Promise<string> {
   const clientEmail = env("GOOGLE_SA_CLIENT_EMAIL");
   // The private key is stored with literal "\n" in env vars; restore newlines.
   const privateKey = env("GOOGLE_SA_PRIVATE_KEY").replace(/\\n/g, "\n");
@@ -24,7 +34,7 @@ export async function getCalendarAccessToken(): Promise<string> {
   const claim = {
     iss: clientEmail,
     sub: subject,
-    scope: "https://www.googleapis.com/auth/calendar.events",
+    scope,
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600,
