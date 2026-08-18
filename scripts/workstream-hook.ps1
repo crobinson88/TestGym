@@ -33,6 +33,11 @@ try {
     if ([string]::IsNullOrWhiteSpace($raw)) { $raw = [Console]::In.ReadToEnd() }
     if ([string]::IsNullOrWhiteSpace($raw)) { if ($debug) { Write-Host "no stdin payload" }; exit 0 }
     if ($debug) { Write-Host "payload: $raw" }
+    if ($logPath) {
+        try {
+            Add-Content -Path $logPath -Value ("{0}  {1}" -f (Get-Date -Format 'HH:mm:ss.fff'), $raw)
+        } catch { }
+    }
     $payload = $raw | ConvertFrom-Json
 
     $envFile = if ($env:WORKSTREAM_ENV_FILE) { $env:WORKSTREAM_ENV_FILE }
