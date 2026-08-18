@@ -89,10 +89,15 @@ try {
     # Windows PowerShell 5.1 can still default to TLS 1.0, which Supabase rejects.
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+    # -UserAgent is not optional. PowerShell's default UA starts with
+    # "Mozilla/5.0 (Windows NT ...)", and Supabase refuses an sb_secret_ key on
+    # any request whose UA looks like a browser ("Forbidden use of secret API key
+    # in browser"). Identify as a script and the same request succeeds.
     Invoke-RestMethod -Method Post `
         -Uri "$supabaseUrl/rest/v1/rpc/workstream_upsert" `
         -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } `
         -ContentType 'application/json' `
+        -UserAgent 'workstream-hook/1.0' `
         -Body $body `
         -TimeoutSec 5 | Out-Null
 
