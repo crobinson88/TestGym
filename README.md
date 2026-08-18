@@ -139,6 +139,77 @@ Status mapping: `SessionStart` → running, `Notification` → **waiting on you*
 not one per turn. A session killed without a Stop is greyed out as *stale* after
 30 minutes.
 
+#### Windows (native PowerShell)
+
+Use `scripts/workstream-hook.ps1` instead of the `.sh` — no curl or jq needed.
+Run this once in PowerShell from the repo root:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude" | Out-Null
+Copy-Item scripts\workstream-hook.ps1 "$HOME\.claude\workstream-hook.ps1" -Force
+
+# Env file, written WITHOUT a BOM — a BOM corrupts the first key.
+$envText = "SUPABASE_URL=https://rgslyxzeyjiypzilpxpf.supabase.co`nSUPABASE_SERVICE_ROLE_KEY=PASTE_KEY_HERE`n"
+[System.IO.File]::WriteAllText("$HOME\.claude\workstream.env", $envText, (New-Object System.Text.UTF8Encoding($false)))
+```
+
+Then merge the hooks into `settings.json` (backs up first, safe to re-run):
+
+```powershell
+$path = "$HOME\.claude\settings.json"
+if (-not (Test-Path $path)) {
+  [System.IO.File]::WriteAllText($path, '{}', (New-Object System.Text.UTF8Encoding($false)))
+}
+Copy-Item $path "$path.bak" -Force
+
+$s = Get-Content $path -Raw | ConvertFrom-Json
+if (-not $s) { $s = [PSCustomObject]@{} }
+if (-not $s.PSObject.Properties['hooks']) {
+  $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([PSCustomObject]@{})
+}
+
+$cmd = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $HOME + '\.claude\workstream-hook.ps1"'
+foreach ($e in 'SessionStart','Notification','Stop','SessionEnd') {
+  if (-not $s.hooks.PSObject.Properties[$e]) {
+    $s.hooks | Add-Member -NotePropertyName $e -NotePropertyValue @()
+  }
+  $existing = @($s.hooks.$e)
+  $already = $false
+  foreach ($entry in $existing) {
+    foreach ($h in @($entry.hooks)) { if ($h.command -eq $cmd) { $already = $true } }
+  }
+  if (-not $already) {
+    $s.hooks.$e = $existing + @([PSCustomObject]@{
+      hooks = @([PSCustomObject]@{ type = 'command'; command = $cmd })
+    })
+  }
+}
+
+# ConvertTo-Json then write without a BOM — Node chokes on a BOM in settings.json.
+[System.IO.File]::WriteAllText($path, ($s | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
+Get-Content $path
+```
+
+Test it without opening a session:
+
+```powershell
+'{"hook_event_name":"SessionStart","session_id":"manual-test","cwd":"' + ($PWD.Path -replace '\\','\\\\') + '"}' | & "$HOME\.claude\workstream-hook.ps1"
+```
+
+A row should appear on the board within a second. The hook swallows all errors by
+design, so to see what actually failed, run the request by hand:
+
+```powershell
+$cfg = @{}; Get-Content "$HOME\.claude\workstream.env" | ForEach-Object {
+  if ($_ -match '^\s*([A-Za-z_]+)\s*=\s*(.*)$') { $cfg[$matches[1]] = $matches[2].Trim() } }
+Invoke-RestMethod -Method Post -Uri "$($cfg.SUPABASE_URL)/rest/v1/rpc/workstream_upsert" `
+  -Headers @{ apikey = $cfg.SUPABASE_SERVICE_ROLE_KEY; Authorization = "Bearer $($cfg.SUPABASE_SERVICE_ROLE_KEY)" } `
+  -ContentType 'application/json' `
+  -Body '{"p_type":"code_cli","p_source_id":"ps-test","p_title":"PowerShell test"}'
+```
+
+A UUID back means the key and database are fine and the problem is the hook wiring.
+
 ### Naming a workstream
 
 Click any row's title to type your own name for it — "Fixing the food pie chart"
