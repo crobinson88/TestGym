@@ -139,6 +139,20 @@ Status mapping: `SessionStart` → running, `Notification` → **waiting on you*
 not one per turn. A session killed without a Stop is greyed out as *stale* after
 30 minutes.
 
+### Naming a workstream
+
+Click any row's title to type your own name for it — "Fixing the food pie chart"
+reads better than `gym-tracker (claude/food-pie)` when five terminals are open.
+
+Your name is stored in `metadata.label`, never over `title`. The CLI hook
+rewrites `title` from repo + branch on every turn, so a row that overwrote the
+title would lose your name on the next fire; the upsert RPC merges metadata
+rather than replacing it, so the label survives. Both are shown — your name
+leads, the system title and branch sit underneath. Clear the field to go back to
+the system name.
+
+Search matches either one.
+
 ### 2. Email triage (optional)
 
 The **Triage email** button pulls recent unread Gmail, has Claude

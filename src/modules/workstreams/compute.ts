@@ -62,6 +62,33 @@ export function summaryMetrics(rows: readonly WorkstreamRow[]): Metrics {
   return { totalActive, waitingInput, codeSessions, pendingEmail };
 }
 
+// The name you typed for a workstream, kept in metadata so the CLI hook — which
+// rewrites `title` from repo + branch on every turn — can never overwrite it.
+export function workstreamLabel(row: WorkstreamRow): string | null {
+  const label = (row.metadata as { label?: unknown })?.label;
+  return typeof label === "string" && label.trim() ? label.trim() : null;
+}
+
+// Your name leads when you set one; otherwise the system title stands alone.
+export function displayTitle(row: WorkstreamRow): string {
+  return workstreamLabel(row) ?? row.title;
+}
+
+// The line under the title. When a label is showing, the system title is kept
+// here so the board never hides where a session actually is — you always see
+// both the human name and the repo/branch or sender it came from.
+export function subtitle(row: WorkstreamRow): string | null {
+  const meta = row.metadata as { cwd?: unknown; branch?: unknown; from?: unknown };
+  const cwd = typeof meta?.cwd === "string" ? meta.cwd : null;
+  const branch = typeof meta?.branch === "string" && meta.branch ? meta.branch : null;
+  const from = typeof meta?.from === "string" ? meta.from : null;
+
+  const source = branch ? [cwd, branch].filter(Boolean).join(" · ") : (from ?? cwd);
+  const system = workstreamLabel(row) ? row.title : null;
+  const parts = [system, source].filter((p): p is string => Boolean(p));
+  return parts.length ? parts.join(" · ") : null;
+}
+
 export function matchesTab(row: WorkstreamRow, tab: FilterTab): boolean {
   switch (tab) {
     case "all":
@@ -80,6 +107,7 @@ export function matchesSearch(row: WorkstreamRow, query: string): boolean {
   if (!q) return true;
   const haystack = [
     row.title,
+    workstreamLabel(row) ?? "",
     row.last_action ?? "",
     STATUS_LABEL[row.status],
     TYPE_LABEL[row.type],

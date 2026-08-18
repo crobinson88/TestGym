@@ -87,6 +87,26 @@ export async function addWorkstream(input: AddWorkstreamInput): Promise<Workstre
   return data as WorkstreamRow;
 }
 
+// A name you type for a workstream. Deliberately stored in `metadata.label`
+// rather than overwriting `title`: the CLI hook rewrites `title` on every turn
+// from the repo + branch, so a renamed row would be clobbered on the next fire.
+// The upsert RPC merges metadata instead of replacing it, so a label set here
+// survives every subsequent hook. Passing an empty string clears the label.
+export async function setWorkstreamLabel(
+  row: WorkstreamRow,
+  label: string,
+): Promise<void> {
+  const next: Record<string, unknown> = { ...row.metadata };
+  const trimmed = label.trim();
+  if (trimmed) next.label = trimmed;
+  else delete next.label;
+
+  const { error } = await writes()
+    .update({ metadata: next, updated_at: new Date().toISOString() } as never)
+    .eq("id", row.id);
+  if (error) throw new Error(error.message);
+}
+
 export interface TriageResult {
   scanned: number;
   logged: number;

@@ -10,6 +10,7 @@ import {
   PauseCircle,
   Plus,
   RefreshCw,
+  Pencil,
   Search,
   Terminal,
   Trash2,
@@ -24,16 +25,20 @@ import {
   TAB_LABEL,
   TYPE_LABEL,
   type FilterTab,
+  displayTitle,
   isStale,
   relativeTime,
+  subtitle,
   summaryMetrics,
   visibleWorkstreams,
+  workstreamLabel,
 } from "../compute";
 import { useIsDesktop, useNow, useWorkstreams } from "../hooks";
 import {
   addWorkstream,
   clearCompleted,
   dismissWorkstream,
+  setWorkstreamLabel,
   setWorkstreamStatus,
   triageEmail,
 } from "../api";
@@ -268,6 +273,7 @@ export default function WorkstreamsView() {
                 busy={busy === row.id}
                 onStatus={(s) => void run(row.id, () => setWorkstreamStatus(row.id, s))}
                 onDismiss={() => void run(row.id, () => dismissWorkstream(row.id))}
+                onRename={(name) => void run(row.id, () => setWorkstreamLabel(row, name))}
               />
             ))}
           </tbody>
@@ -309,20 +315,21 @@ function Row({
   busy,
   onStatus,
   onDismiss,
+  onRename,
 }: {
   row: WorkstreamRow;
   now: number;
   busy: boolean;
   onStatus: (s: WorkstreamStatus) => void;
   onDismiss: () => void;
+  onRename: (name: string) => void;
 }) {
   const TypeIcon = TYPE_ICON[row.type];
   const StatusIcon = STATUS_ICON[row.status];
   const stale = isStale(row, now);
-  const meta = row.metadata as { cwd?: string; branch?: string; from?: string; url?: string };
-  const subtitle = meta.branch
-    ? `${meta.cwd ?? ""}${meta.cwd ? " · " : ""}${meta.branch}`
-    : (meta.from ?? meta.cwd ?? null);
+  const meta = row.metadata as { url?: string };
+  const sub = subtitle(row);
+  const label = workstreamLabel(row);
 
   return (
     <tr className={cn("border-b border-line/60 last:border-0 hover:bg-surface/60", stale && "opacity-50")}>
@@ -333,8 +340,13 @@ function Row({
         </span>
       </td>
       <td className="px-4 py-3">
-        <div className="font-medium">{row.title}</div>
-        {subtitle && <div className="mt-0.5 truncate text-xs text-muted">{subtitle}</div>}
+        <TitleCell
+          value={label ?? ""}
+          display={displayTitle(row)}
+          named={label !== null}
+          onRename={onRename}
+        />
+        {sub && <div className="mt-0.5 truncate text-xs text-muted">{sub}</div>}
       </td>
       <td className="px-4 py-3">
         <span
@@ -402,6 +414,63 @@ function Row({
         </div>
       </td>
     </tr>
+  );
+}
+
+// Click the title to name a workstream. The typed name is stored alongside the
+// system title, never over it — the row below keeps showing where the session
+// actually is, and the next CLI hook fire leaves the name alone.
+function TitleCell({
+  value,
+  display,
+  named,
+  onRename,
+}: {
+  value: string;
+  display: string;
+  named: boolean;
+  onRename: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  function commit() {
+    setEditing(false);
+    if (draft.trim() !== value) onRename(draft);
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        placeholder="Name this workstream"
+        className="h-8 w-full rounded-lg border border-accent bg-bg px-2 text-sm outline-none placeholder:text-muted"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => {
+        setDraft(value);
+        setEditing(true);
+      }}
+      title={named ? "Rename" : "Name this workstream"}
+      className="group flex max-w-full items-center gap-1.5 text-left font-medium hover:text-accent"
+    >
+      <span className="truncate">{display}</span>
+      <Pencil className="h-3 w-3 shrink-0 text-muted opacity-0 transition group-hover:opacity-100" />
+    </button>
   );
 }
 

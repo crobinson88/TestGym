@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { WorkstreamRow } from "@/lib/database.types";
 import {
   STALE_AFTER_MS,
+  displayTitle,
   isStale,
+  subtitle,
+  workstreamLabel,
   relativeTime,
   sortWorkstreams,
   summaryMetrics,
@@ -150,5 +153,76 @@ describe("relativeTime", () => {
 
   it("survives an unparseable timestamp", () => {
     expect(relativeTime("not-a-date", NOW)).toBe("—");
+  });
+});
+
+describe("workstreamLabel / displayTitle", () => {
+  it("falls back to the system title when unnamed", () => {
+    const r = row();
+    expect(workstreamLabel(r)).toBeNull();
+    expect(displayTitle(r)).toBe("gym-tracker");
+  });
+
+  it("prefers a typed name over the system title", () => {
+    const r = row({ metadata: { label: "Fixing the food pie chart" } });
+    expect(displayTitle(r)).toBe("Fixing the food pie chart");
+  });
+
+  it("ignores a blank or non-string label", () => {
+    expect(workstreamLabel(row({ metadata: { label: "   " } }))).toBeNull();
+    expect(workstreamLabel(row({ metadata: { label: 42 } }))).toBeNull();
+    expect(displayTitle(row({ metadata: { label: "  " } }))).toBe("gym-tracker");
+  });
+
+  it("trims the stored name", () => {
+    expect(workstreamLabel(row({ metadata: { label: "  Ocean Rd quote  " } }))).toBe(
+      "Ocean Rd quote",
+    );
+  });
+});
+
+describe("subtitle", () => {
+  it("shows cwd and branch for a CLI row", () => {
+    const r = row({ metadata: { cwd: "~/code/TestGym", branch: "main" } });
+    expect(subtitle(r)).toBe("~/code/TestGym · main");
+  });
+
+  it("keeps the system title visible once a name is typed", () => {
+    const r = row({
+      title: "gym-tracker (claude/food-pie)",
+      metadata: { label: "Food pie chart", cwd: "~/code/gym-tracker", branch: "claude/food-pie" },
+    });
+    expect(subtitle(r)).toBe("gym-tracker (claude/food-pie) · ~/code/gym-tracker · claude/food-pie");
+  });
+
+  it("uses the sender for an email row", () => {
+    const r = row({ type: "email_task", metadata: { from: "kyp@wallinnovations.com" } });
+    expect(subtitle(r)).toBe("kyp@wallinnovations.com");
+  });
+
+  it("is null when there is nothing to show", () => {
+    expect(subtitle(row({ type: "web_chat", metadata: {} }))).toBeNull();
+  });
+
+  it("drops an empty branch rather than rendering a dangling separator", () => {
+    const r = row({ metadata: { cwd: "~/code/TestGym", branch: "" } });
+    expect(subtitle(r)).toBe("~/code/TestGym");
+  });
+});
+
+describe("search over a typed name", () => {
+  it("finds a row by the name you gave it", () => {
+    const rows = [
+      row({ id: "a", title: "gym-tracker (claude/food-pie)", metadata: { label: "Food pie chart" } }),
+      row({ id: "b", title: "inspection-portal" }),
+    ];
+    expect(visibleWorkstreams(rows, "all", "pie chart").map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("still finds it by the system title", () => {
+    const rows = [
+      row({ id: "a", title: "gym-tracker (claude/food-pie)", metadata: { label: "Food pie chart" } }),
+    ];
+    expect(visibleWorkstreams(rows, "all", "gym-tracker").map((r) => r.id)).toEqual(["a"]);
   });
 });
