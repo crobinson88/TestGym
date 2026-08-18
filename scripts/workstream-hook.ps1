@@ -20,14 +20,24 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Set WORKSTREAM_DEBUG=1 to surface errors instead of swallowing them.
+$debug = $env:WORKSTREAM_DEBUG -eq '1'
+
 try {
-    $raw = [Console]::In.ReadToEnd()
-    if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
+    # Two different callers, two different stdin. Claude Code spawns this as a
+    # child process and writes to real stdin ([Console]::In); a human testing it
+    # with `'...' | & hook.ps1` sends the text down the PowerShell pipeline
+    # ($input) and leaves [Console]::In attached to the console, where
+    # ReadToEnd() blocks or returns nothing. Read whichever one has the payload.
+    $raw = (@($input) | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($raw)) { $raw = [Console]::In.ReadToEnd() }
+    if ([string]::IsNullOrWhiteSpace($raw)) { if ($debug) { Write-Host "no stdin payload" }; exit 0 }
+    if ($debug) { Write-Host "payload: $raw" }
     $payload = $raw | ConvertFrom-Json
 
     $envFile = if ($env:WORKSTREAM_ENV_FILE) { $env:WORKSTREAM_ENV_FILE }
                else { Join-Path $HOME '.claude\workstream.env' }
-    if (-not (Test-Path $envFile)) { exit 0 }
+    if (-not (Test-Path $envFile)) { if ($debug) { Write-Host "no env file at $envFile" }; exit 0 }
 
     $cfg = @{}
     foreach ($line in (Get-Content $envFile)) {
@@ -37,10 +47,10 @@ try {
     }
     $supabaseUrl = $cfg['SUPABASE_URL']
     $serviceKey  = $cfg['SUPABASE_SERVICE_ROLE_KEY']
-    if (-not $supabaseUrl -or -not $serviceKey) { exit 0 }
+    if (-not $supabaseUrl -or -not $serviceKey) { if ($debug) { Write-Host "env file missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }; exit 0 }
 
     $session = $payload.session_id
-    if (-not $session) { exit 0 }
+    if (-not $session) { if ($debug) { Write-Host "payload has no session_id" }; exit 0 }
 
     $cwd = if ($payload.cwd) { $payload.cwd } else { (Get-Location).Path }
 
@@ -85,9 +95,11 @@ try {
         -ContentType 'application/json' `
         -Body $body `
         -TimeoutSec 5 | Out-Null
+
+    if ($debug) { Write-Host "posted ok: $title / $status" }
 } catch {
     # Swallow everything. A hook must never break a CLI turn.
-    # To debug, run the script by hand — see the README's Windows section.
+    if ($debug) { Write-Host "FAILED: $($_.Exception.Message)" }
 }
 
 exit 0
