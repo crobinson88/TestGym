@@ -5,15 +5,29 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Archive, ChevronRight, GripVertical, MoreVertical, Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  Archive,
+  ChevronRight,
+  Clock,
+  FolderMinus,
+  GripVertical,
+  MoreVertical,
+  Plus,
+} from "lucide-react";
+import { addDays, cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { Calendar } from "@/components/ui/Calendar";
 import type { LocalTdlItem } from "../types";
 import { UNCATEGORISED_KEY, type SectionConfig } from "../sections";
 import { groupByQuadrant, QUADRANTS } from "../quadrant";
 import type { TdlQuadrant } from "@/lib/database.types";
-import { createItem } from "../repo";
+import {
+  archiveCategoryItems,
+  countCategoryItems,
+  createItem,
+  snoozeCategoryItems,
+} from "../repo";
 import { sectionStatusCounts } from "../hooks";
 import { ImageEditor } from "./ImageEditor";
 import { ItemRow } from "./ItemRow";
@@ -49,6 +63,7 @@ export function SectionColumn({
   onToggleSelect,
   onBulkActed,
   onArchive,
+  bulkSections,
 }: {
   cfg: SectionConfig;
   categories: SectionConfig[];
@@ -68,9 +83,17 @@ export function SectionColumn({
   // Archive this category (tag) straight from the board header. Omitted for the
   // virtual Uncategorised column and before the categories table has synced.
   onArchive?: () => void;
+  // Section keys the header's "archive/snooze all items" actions target. Normally
+  // just this column's key; the virtual Uncategorised column stands in for every
+  // orphaned key at once, so it passes several.
+  bulkSections?: string[];
 }) {
   const [adding, setAdding] = useState(false);
   const [menu, setMenu] = useState(false);
+  // Category-level bulk actions are two-step: pick one, then confirm against a
+  // count read from the store (never the search-filtered column).
+  const [bulkMode, setBulkMode] = useState<"archive" | "snooze" | null>(null);
+  const [bulkCount, setBulkCount] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [estimate, setEstimate] = useState("");
   const [estError, setEstError] = useState(false);
@@ -94,6 +117,34 @@ export function SectionColumn({
   // view open regardless.
   const isCollapsed = forceExpanded ? false : collapsed;
   const canAdd = cfg.key !== UNCATEGORISED_KEY;
+
+  const bulkKeys = bulkSections ?? (cfg.key === UNCATEGORISED_KEY ? [] : [cfg.key]);
+  const canBulk = bulkKeys.length > 0;
+
+  function closeMenu() {
+    setMenu(false);
+    setBulkMode(null);
+    setBulkCount(null);
+  }
+
+  async function openBulk(mode: "archive" | "snooze") {
+    setBulkMode(mode);
+    setBulkCount(null);
+    setBulkCount(await countCategoryItems(snapshot_date, bulkKeys));
+  }
+
+  async function runArchiveAll() {
+    await archiveCategoryItems(snapshot_date, bulkKeys);
+    onBulkActed?.();
+    closeMenu();
+  }
+
+  async function runSnoozeAll(until: string) {
+    if (until <= snapshot_date) return;
+    await snoozeCategoryItems(snapshot_date, bulkKeys, until);
+    onBulkActed?.();
+    closeMenu();
+  }
 
   // Column drag-to-reorder (desktop only — the handle is hidden below `sm`).
   // useSortable is called unconditionally, but setNodeRef/listeners are only
@@ -272,11 +323,11 @@ export function SectionColumn({
             </span>
           ))}
         </div>
-        {onArchive && (
+        {(canBulk || onArchive) && (
           <div className="relative shrink-0">
             <button
               type="button"
-              onClick={() => setMenu((m) => !m)}
+              onClick={() => (menu ? closeMenu() : setMenu(true))}
               aria-label={`More options for ${cfg.label}`}
               aria-expanded={menu}
               className="flex h-6 w-6 items-center justify-center rounded text-muted hover:text-text"
@@ -285,22 +336,73 @@ export function SectionColumn({
             </button>
             {menu && (
               <>
-                <div
-                  className="fixed inset-0 z-30"
-                  onClick={() => setMenu(false)}
-                  aria-hidden
-                />
-                <div className="absolute right-0 top-7 z-40 min-w-[180px] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onArchive();
-                      setMenu(false);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
-                  >
-                    <Archive className="h-4 w-4" /> Archive tag
-                  </button>
+                <div className="fixed inset-0 z-30" onClick={closeMenu} aria-hidden />
+                <div className="absolute right-0 top-7 z-40 min-w-[220px] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
+                  {canBulk && (
+                    <>
+                      {bulkMode === "archive" ? (
+                        <button
+                          type="button"
+                          disabled={bulkCount === 0}
+                          onClick={() => void runArchiveAll()}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-accent hover:bg-surface2 disabled:text-muted"
+                        >
+                          <Archive className="h-4 w-4" />
+                          {bulkCount == null
+                            ? "Checking…"
+                            : bulkCount === 0
+                              ? "Nothing to archive"
+                              : `Archive ${bulkCount} item${bulkCount === 1 ? "" : "s"}?`}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void openBulk("archive")}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+                        >
+                          <Archive className="h-4 w-4" /> Archive all items
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          bulkMode === "snooze" ? setBulkMode(null) : void openBulk("snooze")
+                        }
+                        aria-expanded={bulkMode === "snooze"}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+                      >
+                        <Clock className="h-4 w-4" />
+                        {bulkMode !== "snooze" || bulkCount == null
+                          ? "Snooze all items…"
+                          : bulkCount === 0
+                            ? "Nothing to snooze"
+                            : `Snooze ${bulkCount} item${bulkCount === 1 ? "" : "s"} until…`}
+                      </button>
+                      {bulkMode === "snooze" && (bulkCount ?? 0) > 0 && (
+                        <div className="border-t border-line px-2 py-2">
+                          <Calendar
+                            min={addDays(snapshot_date, 1)}
+                            onSelect={(until) => void runSnoozeAll(until)}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {onArchive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onArchive();
+                        closeMenu();
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2",
+                        canBulk && "border-t border-line text-muted",
+                      )}
+                    >
+                      <FolderMinus className="h-4 w-4" /> Archive tag
+                    </button>
+                  )}
                 </div>
               </>
             )}

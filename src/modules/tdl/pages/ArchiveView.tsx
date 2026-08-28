@@ -6,17 +6,22 @@ import { Input } from "@/components/ui/Input";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useArchivedItems } from "../hooks";
 import { useCategories } from "../categories";
+import { groupBySection } from "../grouping";
 import { matchesQuery } from "../search";
+import { SectionFilter } from "../components/SectionFilter";
 import { unarchiveItem } from "../repo";
 
 export default function ArchiveView() {
   const navigate = useNavigate();
   const items = useArchivedItems();
   const categories = useCategories();
-  const labelByKey = new Map(categories.map((c) => [c.key, c.label]));
 
   const [query, setQuery] = useState("");
+  const [section, setSection] = useState<string | null>(null);
+
   const filtered = (items ?? []).filter((i) => matchesQuery(i, query));
+  const groups = groupBySection(filtered, categories);
+  const shown = section ? groups.filter((g) => g.cfg.key === section) : groups;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -36,54 +41,72 @@ export default function ArchiveView() {
         </span>
       </header>
 
-      <div className="p-3">
+      <div className="space-y-4 p-3">
         {!items ? (
           <div className="p-6 text-center text-muted">Loading...</div>
         ) : items.length === 0 ? (
           <div className="p-6 text-center text-muted">Nothing archived.</div>
         ) : (
           <>
-            <div className="relative mb-3">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-              <Input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search archived…"
-                aria-label="Search archived items"
-                className="h-10 pl-9 text-sm"
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search archived…"
+                  aria-label="Search archived items"
+                  className="h-10 pl-9 text-sm"
+                />
+              </div>
+              <SectionFilter
+                groups={groups}
+                total={filtered.length}
+                value={section}
+                onChange={setSection}
               />
             </div>
-            {filtered.length === 0 ? (
+            {shown.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted">
-                No archived items match “{query.trim()}”.
+                {query.trim()
+                  ? `No archived items match “${query.trim()}”.`
+                  : "No archived items in this category."}
               </div>
             ) : (
-          <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
-            {filtered.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center gap-2 border-b border-line/50 px-3 py-2 last:border-b-0"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{item.title}</div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
-                    <span>{labelByKey.get(item.section) ?? item.section}</span>
-                    <span>·</span>
-                    <span>{dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}</span>
-                  </div>
+              shown.map((g) => (
+                <div key={g.cfg.key}>
+                  <h2 className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    {g.cfg.label}
+                    <span className="tabular-nums text-muted/70">{g.items.length}</span>
+                  </h2>
+                  <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
+                    {g.items.map((item) => (
+                      <li
+                        key={item.id}
+                        className="flex items-center gap-2 border-b border-line/50 px-3 py-2 last:border-b-0"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm">{item.title}</div>
+                          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+                            <span>
+                              {dayMonth(item.origin_snapshot_date ?? item.snapshot_date)}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void unarchiveItem(item.id)}
+                          className="text-muted"
+                        >
+                          <ArchiveRestore className="mr-1 h-4 w-4" /> Unarchive
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void unarchiveItem(item.id)}
-                  className="text-muted"
-                >
-                  <ArchiveRestore className="mr-1 h-4 w-4" /> Unarchive
-                </Button>
-              </li>
-            ))}
-          </ul>
+              ))
             )}
           </>
         )}

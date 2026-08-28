@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
 import type { LocalTdlItem } from "@/lib/db";
 import type { TdlItemRow } from "./types";
 import {
+  archiveCategoryItems,
   archiveItems,
+  countCategoryItems,
   cancelItems,
   createItem,
   deleteItems,
@@ -16,6 +18,7 @@ import {
   pauseItems,
   resumeItems,
   setReluctantItems,
+  snoozeCategoryItems,
   snoozeItems,
   unarchiveItem,
   unsnoozeItems,
@@ -160,5 +163,56 @@ describe("tdl bulk actions", () => {
     const posA = (await db.tdl_items.get(a.id))?.position;
     const posB = (await db.tdl_items.get(b.id))?.position;
     expect(posA).not.toBe(posB);
+  });
+});
+
+describe("tdl category bulk actions", () => {
+  it("archives every live item in a category, leaving other categories alone", async () => {
+    const a = await seed({ section: "tanya" });
+    const b = await seed({ section: "tanya", is_recurring: true });
+    const other = await seed({ section: "product" });
+
+    const changed = await archiveCategoryItems(DAY, ["tanya"]);
+
+    expect(changed).toBe(2);
+    expect((await db.tdl_items.get(a.id))?.is_archived).toBe(true);
+    expect((await db.tdl_items.get(b.id))?.is_archived).toBe(true);
+    expect((await db.tdl_items.get(other.id))?.is_archived).toBe(false);
+  });
+
+  it("leaves other days, and already off-board items, untouched", async () => {
+    const otherDay = await createItem({
+      snapshot_date: "2026-06-11",
+      section: "tanya",
+      title: "Yesterday",
+    });
+    await seed({ section: "tanya", is_archived: true });
+    await seed({ section: "tanya", snoozed_until: "2026-07-01" });
+    const live = await seed({ section: "tanya" });
+
+    expect(await countCategoryItems(DAY, ["tanya"])).toBe(1);
+    expect(await archiveCategoryItems(DAY, ["tanya"])).toBe(1);
+    expect((await db.tdl_items.get(otherDay.id))?.is_archived).toBe(false);
+    expect((await db.tdl_items.get(live.id))?.is_archived).toBe(true);
+  });
+
+  it("snoozes every live item in a category to the chosen date", async () => {
+    const a = await seed({ section: "tanya" });
+    const other = await seed({ section: "product" });
+
+    const changed = await snoozeCategoryItems(DAY, ["tanya"], "2026-06-20");
+
+    expect(changed).toBe(1);
+    expect((await db.tdl_items.get(a.id))?.snoozed_until).toBe("2026-06-20");
+    expect((await db.tdl_items.get(other.id))?.snoozed_until).toBeNull();
+  });
+
+  it("spans several section keys at once (the Uncategorised column)", async () => {
+    await seed({ section: "gone_a" });
+    await seed({ section: "gone_b" });
+    await seed({ section: "tanya" });
+
+    expect(await countCategoryItems(DAY, ["gone_a", "gone_b"])).toBe(2);
+    expect(await archiveCategoryItems(DAY, ["gone_a", "gone_b"])).toBe(2);
   });
 });

@@ -502,6 +502,9 @@ export default function DayView() {
                           ? () => void setCategoryArchived(rowId, true)
                           : undefined
                       }
+                      bulkSections={
+                        cfg.key === UNCATEGORISED_KEY ? orphanSections : [cfg.key]
+                      }
                     />
                   );
                 })}
