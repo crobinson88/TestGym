@@ -4,6 +4,7 @@ import type { LocalTdlDay, LocalTdlItem } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import { todayIsoDate } from "@/lib/utils";
 import { isResettable } from "./snooze";
+import { selectCategoryTargets } from "./grouping";
 import { nextLastWorkedAt } from "./age";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
 import type { TdlQuadrant } from "@/lib/database.types";
@@ -332,6 +333,46 @@ export async function setReluctantItems(ids: string[], reluctant: boolean): Prom
     if (it.is_reluctant === reluctant) return null;
     return reluctant ? { is_reluctant: true } : { is_reluctant: false, reluctance_reason: null };
   });
+}
+
+// Every live board item a category-level bulk action would hit on one day. The
+// Uncategorised column stands in for several orphaned section keys, so this
+// takes a list. Read from the store rather than the rendered column: a board
+// search filters what's on screen, and "archive all" must not mean "archive the
+// ones matching my search".
+async function categoryTargets(
+  snapshot_date: string,
+  sections: string[],
+): Promise<LocalTdlItem[]> {
+  const rows = await db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray();
+  return selectCategoryTargets(rows, snapshot_date, sections);
+}
+
+// How many items a category-level archive/snooze would move, for the confirm step.
+export async function countCategoryItems(
+  snapshot_date: string,
+  sections: string[],
+): Promise<number> {
+  return (await categoryTargets(snapshot_date, sections)).length;
+}
+
+// Archive every live item in a category on one day, straight from the board.
+export async function archiveCategoryItems(
+  snapshot_date: string,
+  sections: string[],
+): Promise<number> {
+  const targets = await categoryTargets(snapshot_date, sections);
+  return archiveItems(targets.map((t) => t.id));
+}
+
+// Snooze every live item in a category on one day until `until`.
+export async function snoozeCategoryItems(
+  snapshot_date: string,
+  sections: string[],
+  until: string,
+): Promise<number> {
+  const targets = await categoryTargets(snapshot_date, sections);
+  return snoozeItems(targets.map((t) => t.id), until);
 }
 
 // Bulk-move the given items to a section, appending each after that section's
