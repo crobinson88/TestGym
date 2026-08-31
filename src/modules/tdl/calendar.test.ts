@@ -4,11 +4,20 @@ import type { SectionConfig } from "./sections";
 import type { LocalTdlItem, TdlStatus } from "./types";
 import {
   DEFAULT_DURATION_MIN,
+  MAX_DURATION_MIN,
+  MIN_DURATION_MIN,
+  clampDuration,
   collectCalendarCandidates,
+  layoutLanes,
+  matchesCandidateQuery,
   mergeBusy,
   minutesToTime,
   parseTimeToMinutes,
+  prettyDuration,
+  prettyHourLabel,
+  prettyMinutes,
   scheduleEvents,
+  timelineRange,
 } from "./calendar";
 
 function item(over: Partial<LocalTdlItem> = {}): LocalTdlItem {
@@ -281,5 +290,250 @@ describe("time helpers", () => {
     for (const t of ["09:00", "08:30", "23:59", "00:15"]) {
       expect(minutesToTime(parseTimeToMinutes(t)!)).toBe(t);
     }
+  });
+});
+
+describe("prettyMinutes / prettyDuration", () => {
+  it("renders a 12h clock label", () => {
+    expect(prettyMinutes(9 * 60)).toBe("9:00 AM");
+    expect(prettyMinutes(0)).toBe("12:00 AM");
+    expect(prettyMinutes(12 * 60 + 5)).toBe("12:05 PM");
+    expect(prettyMinutes(13 * 60 + 30)).toBe("1:30 PM");
+  });
+
+  it("wraps past midnight", () => {
+    expect(prettyMinutes(25 * 60)).toBe("1:00 AM");
+  });
+
+  it("renders durations", () => {
+    expect(prettyDuration(45)).toBe("45m");
+    expect(prettyDuration(60)).toBe("1h");
+    expect(prettyDuration(90)).toBe("1h 30m");
+  });
+});
+
+describe("clampDuration", () => {
+  it("keeps a sane block length", () => {
+    expect(clampDuration(45)).toBe(45);
+    expect(clampDuration(1)).toBe(MIN_DURATION_MIN);
+    expect(clampDuration(-10)).toBe(MIN_DURATION_MIN);
+    expect(clampDuration(99999)).toBe(MAX_DURATION_MIN);
+    expect(clampDuration(32.4)).toBe(32);
+    expect(clampDuration(Number.NaN)).toBe(DEFAULT_DURATION_MIN);
+  });
+});
+
+describe("matchesCandidateQuery", () => {
+  const c = { title: "Send Reports", source: "priorities" as const };
+
+  it("matches everything on an empty query", () => {
+    expect(matchesCandidateQuery(c, "")).toBe(true);
+    expect(matchesCandidateQuery(c, "   ")).toBe(true);
+  });
+
+  it("matches the title case-insensitively", () => {
+    expect(matchesCandidateQuery(c, "repo")).toBe(true);
+    expect(matchesCandidateQuery(c, "SEND")).toBe(true);
+    expect(matchesCandidateQuery(c, "invoice")).toBe(false);
+  });
+
+  it("matches the source label", () => {
+    expect(matchesCandidateQuery(c, "priority")).toBe(true);
+    expect(matchesCandidateQuery({ title: "x", source: "daily_tasks" }, "daily")).toBe(true);
+    expect(matchesCandidateQuery({ title: "x", source: "do_first" }, "priority")).toBe(false);
+  });
+});
+
+describe("scheduleEvents with per-item overrides", () => {
+  const two = [
+    { id: "a", title: "a", timeEstimateMin: 30, source: "priorities" as const },
+    { id: "b", title: "b", timeEstimateMin: 30, source: "priorities" as const },
+  ];
+
+  it("uses a duration override instead of the estimate and reflows the chain", () => {
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      overrides: { a: { durationMin: 90 } },
+    });
+    expect(events[0]).toMatchObject({ id: "a", durationMin: 90, startMinutes: 540 });
+    expect(events[1]).toMatchObject({ id: "b", startMinutes: 630, durationMin: 30 });
+  });
+
+  it("clamps an out-of-range duration override", () => {
+    const events = scheduleEvents(two.slice(0, 1), {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      overrides: { a: { durationMin: 99999 } },
+    });
+    expect(events[0].durationMin).toBe(MAX_DURATION_MIN);
+  });
+
+  it("ignores a null or zero override and falls back to the estimate", () => {
+    const events = scheduleEvents(two.slice(0, 1), {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      overrides: { a: { durationMin: null, startMinutes: null } },
+    });
+    expect(events[0]).toMatchObject({ durationMin: 30, startMinutes: 540, pinned: false });
+  });
+
+  it("pins a block to the given start and flags it", () => {
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      overrides: { b: { startMinutes: 14 * 60 } },
+    });
+    const b = events.find((e) => e.id === "b")!;
+    expect(b).toMatchObject({
+      pinned: true,
+      startMinutes: 14 * 60,
+      startDateTime: "2026-07-27T14:00:00",
+      endDateTime: "2026-07-27T14:30:00",
+    });
+    expect(events.find((e) => e.id === "a")!.startMinutes).toBe(9 * 60);
+  });
+
+  it("routes flowing blocks around a pinned one", () => {
+    // a flows from 9:00 but b is pinned to 9:00–9:30, so a lands at 9:30.
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      overrides: { b: { startMinutes: 9 * 60 } },
+    });
+    expect(events.find((e) => e.id === "b")!.startMinutes).toBe(9 * 60);
+    expect(events.find((e) => e.id === "a")!.startMinutes).toBe(9 * 60 + 30);
+  });
+
+  it("returns events in chronological order", () => {
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      overrides: { a: { startMinutes: 16 * 60 } },
+    });
+    expect(events.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+
+  it("still honours calendar busy time alongside a pin", () => {
+    const events = scheduleEvents(two, {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      busy: [{ start: 9 * 60, end: 10 * 60 }],
+      overrides: { a: { startMinutes: 8 * 60 } },
+    });
+    // a keeps its explicit 8:00 even though it is before the start time;
+    // b flows past the 9–10 meeting.
+    expect(events.map((e) => [e.id, e.startMinutes])).toEqual([
+      ["a", 8 * 60],
+      ["b", 10 * 60],
+    ]);
+  });
+
+  it("exposes start/end minutes for every event", () => {
+    const events = scheduleEvents(two.slice(0, 1), { date: "2026-07-27", startMinutes: 9 * 60 });
+    expect(events[0]).toMatchObject({ startMinutes: 540, endMinutes: 570, pinned: false });
+  });
+});
+
+describe("timelineRange", () => {
+  it("snaps out to whole hours around the blocks", () => {
+    expect(
+      timelineRange([{ start: 9 * 60 + 15, end: 17 * 60 + 20 }], { from: 9 * 60 + 15 }),
+    ).toEqual({ start: 9 * 60, end: 18 * 60 });
+  });
+
+  it("keeps a minimum span when the day is nearly empty", () => {
+    expect(timelineRange([], { from: 9 * 60 })).toEqual({ start: 9 * 60, end: 13 * 60 });
+    expect(timelineRange([], { from: 9 * 60, minSpanMin: 120 })).toEqual({
+      start: 9 * 60,
+      end: 11 * 60,
+    });
+  });
+
+  it("includes a block that starts before the chosen start time", () => {
+    expect(timelineRange([{ start: 7 * 60 + 30, end: 8 * 60 }], { from: 9 * 60 })).toEqual({
+      start: 7 * 60,
+      end: 13 * 60,
+    });
+  });
+
+  it("never runs before midnight", () => {
+    expect(timelineRange([{ start: 0, end: 30 }], { from: 0 }).start).toBe(0);
+  });
+});
+
+describe("layoutLanes", () => {
+  it("gives non-overlapping blocks a single lane each", () => {
+    const out = layoutLanes([
+      { start: 540, end: 570 },
+      { start: 570, end: 600 },
+    ]);
+    expect(out.map((o) => [o.lane, o.lanes])).toEqual([
+      [0, 1],
+      [0, 1],
+    ]);
+  });
+
+  it("splits an overlapping pair into two lanes", () => {
+    const out = layoutLanes([
+      { start: 540, end: 620 },
+      { start: 560, end: 600 },
+    ]);
+    expect(out.map((o) => [o.lane, o.lanes])).toEqual([
+      [0, 2],
+      [1, 2],
+    ]);
+  });
+
+  it("widths the whole overlap cluster to its busiest point", () => {
+    const out = layoutLanes([
+      { start: 540, end: 660 },
+      { start: 550, end: 570 },
+      { start: 555, end: 565 },
+    ]);
+    expect(out.every((o) => o.lanes === 3)).toBe(true);
+    expect(out.map((o) => o.lane)).toEqual([0, 1, 2]);
+  });
+
+  it("starts a fresh cluster once the previous one ends", () => {
+    const out = layoutLanes([
+      { start: 540, end: 600 },
+      { start: 550, end: 590 },
+      { start: 600, end: 630 },
+    ]);
+    expect(out.map((o) => o.lanes)).toEqual([2, 2, 1]);
+  });
+
+  it("preserves input order in the output", () => {
+    const out = layoutLanes([
+      { start: 700, end: 730 },
+      { start: 540, end: 570 },
+    ]);
+    expect(out.map((o) => o.block.start)).toEqual([700, 540]);
+  });
+
+  it("reuses a lane freed by an earlier block", () => {
+    const out = layoutLanes([
+      { start: 540, end: 600 },
+      { start: 550, end: 610 },
+      { start: 600, end: 620 },
+    ]);
+    // Third block starts when the first ends → back into lane 0.
+    expect(out[2].lane).toBe(0);
+    expect(out.every((o) => o.lanes === 2)).toBe(true);
+  });
+});
+
+describe("prettyHourLabel", () => {
+  it("labels whole hours compactly", () => {
+    expect(prettyHourLabel(9 * 60)).toBe("9 AM");
+    expect(prettyHourLabel(12 * 60)).toBe("12 PM");
+    expect(prettyHourLabel(0)).toBe("12 AM");
+    expect(prettyHourLabel(17 * 60)).toBe("5 PM");
+    expect(prettyHourLabel(25 * 60)).toBe("1 AM");
+  });
+
+  it("falls back to the full clock off the hour", () => {
+    expect(prettyHourLabel(9 * 60 + 30)).toBe("9:30 AM");
   });
 });
