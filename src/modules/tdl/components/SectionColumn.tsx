@@ -15,22 +15,20 @@ import {
   Plus,
 } from "lucide-react";
 import { addDays, cn } from "@/lib/utils";
-import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Calendar } from "@/components/ui/Calendar";
 import type { LocalTdlItem } from "../types";
 import { UNCATEGORISED_KEY, type SectionConfig } from "../sections";
-import { groupByQuadrant, QUADRANTS } from "../quadrant";
+import { groupByQuadrant } from "../quadrant";
 import type { TdlQuadrant } from "@/lib/database.types";
 import {
   archiveCategoryItems,
   countCategoryItems,
-  createItem,
   snoozeCategoryItems,
 } from "../repo";
 import { sectionStatusCounts } from "../hooks";
-import { ImageEditor } from "./ImageEditor";
 import { ItemRow } from "./ItemRow";
+import { TaskComposer } from "./TaskComposer";
 
 // Section (category) columns become sortable on the desktop board; their
 // dnd-kit ids get this prefix so DayView can route column drags separately from
@@ -94,14 +92,6 @@ export function SectionColumn({
   // count read from the store (never the search-filtered column).
   const [bulkMode, setBulkMode] = useState<"archive" | "snooze" | null>(null);
   const [bulkCount, setBulkCount] = useState<number | null>(null);
-  const [draft, setDraft] = useState("");
-  const [estimate, setEstimate] = useState("");
-  const [estError, setEstError] = useState(false);
-  const [quadrant, setQuadrant] = useState<TdlQuadrant | null>(null);
-  const [quadError, setQuadError] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [images, setImages] = useState<string[]>([]);
   // Per-quadrant collapse within this column (ephemeral UI, keyed by quadrant).
   // Search forces every group open so results are never hidden.
   const [collapsedQuadrants, setCollapsedQuadrants] = useState<Set<string>>(new Set());
@@ -182,64 +172,6 @@ export function SectionColumn({
     { key: "paused", label: "paused", n: counts.paused, cls: "bg-warn/15 text-warn" },
     { key: "done", label: "done", n: counts.done, cls: "bg-success/15 text-success" },
   ].filter((c) => c.key === "open" || c.n > 0);
-
-  // Categories flagged with a time estimate require one on every new item;
-  // categories without the flag never show or ask for it.
-  const requiresEstimate = cfg.hasTimeEstimate;
-
-  function parsedEstimate(): number | null {
-    const raw = estimate.trim();
-    if (raw === "") return null;
-    const n = Math.trunc(Number(raw));
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-
-  function resetAdd() {
-    setAdding(false);
-    setShowDetails(false);
-    setDraft("");
-    setEstimate("");
-    setEstError(false);
-    setQuadrant(null);
-    setQuadError(false);
-    setNotes("");
-    setImages([]);
-  }
-
-  async function submit() {
-    const title = draft.trim();
-    if (!title) {
-      if (!showDetails) setAdding(false);
-      return;
-    }
-    // Both the (optional) time estimate and the Eisenhower quadrant gate the
-    // save; validate both so every missing field lights up at once.
-    const est = parsedEstimate();
-    const estMissing = requiresEstimate && est == null;
-    const quadMissing = quadrant == null;
-    if (estMissing) setEstError(true);
-    if (quadMissing) setQuadError(true);
-    if (estMissing || quadMissing) return;
-    await createItem({
-      snapshot_date,
-      section: cfg.key,
-      title,
-      time_estimate_min: est,
-      eisenhower_quadrant: quadrant,
-      notes: notes.trim() ? notes.trim() : null,
-      images,
-    });
-    // Keep the composer open for the next quick add, collapsing details again.
-    setDraft("");
-    setEstimate("");
-    setEstError(false);
-    setQuadrant(null);
-    setQuadError(false);
-    setNotes("");
-    setImages([]);
-    setShowDetails(false);
-    setAdding(true);
-  }
 
   const recurringIds = recurring.map((r) => r.id);
   // Dated items are broken into the Eisenhower matrix. One SortableContext still
@@ -510,122 +442,13 @@ export function SectionColumn({
       {canAdd && (
       <div className={cn("border-t border-line/50 p-2", isCollapsed && "hidden")}>
         {adding ? (
-          <div className="space-y-2">
-            <Input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submit();
-                if (e.key === "Escape") resetAdd();
-              }}
-              onBlur={() => {
-                if (!showDetails && !draft.trim()) setAdding(false);
-              }}
-              placeholder="New task..."
-              className="h-9 text-sm"
-            />
-            {requiresEstimate && (
-              <div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    step={1}
-                    value={estimate}
-                    onChange={(e) => {
-                      setEstimate(e.target.value);
-                      if (estError) setEstError(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void submit();
-                      if (e.key === "Escape") resetAdd();
-                    }}
-                    placeholder="Est."
-                    aria-label="Time to complete estimate in minutes"
-                    aria-invalid={estError}
-                    className={cn("h-9 w-20 text-sm", estError && "border-danger")}
-                  />
-                  <span className="text-xs text-muted">min to complete</span>
-                </div>
-                {estError && (
-                  <div className="mt-1 text-xs text-danger">
-                    Add a time-to-complete estimate (minutes) to save.
-                  </div>
-                )}
-              </div>
-            )}
-            <div>
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-muted/70">
-                Eisenhower priority
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {QUADRANTS.map((q) => {
-                  const selected = quadrant === q.key;
-                  return (
-                    <button
-                      key={q.key}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setQuadrant((cur) => (cur === q.key ? null : q.key));
-                        if (quadError) setQuadError(false);
-                      }}
-                      aria-pressed={selected}
-                      title={`${q.label} — ${q.hint}`}
-                      className={cn(
-                        "flex min-h-[44px] flex-col items-start justify-center rounded-lg border px-2 py-1 text-left transition",
-                        selected
-                          ? "border-accent bg-accent/15 text-text"
-                          : "border-line text-muted hover:bg-surface2",
-                        quadError && !selected && "border-danger/60",
-                      )}
-                    >
-                      <span className="text-[11px] font-semibold uppercase leading-tight">
-                        {q.short} · {q.label}
-                      </span>
-                      <span className="text-[10px] leading-tight text-muted">{q.hint}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {quadError && (
-                <div className="mt-1 text-xs text-danger">
-                  Pick an Eisenhower priority quadrant to save.
-                </div>
-              )}
-            </div>
-            {showDetails ? (
-              <>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Details…"
-                  rows={3}
-                  className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm text-text placeholder:text-muted outline-none focus:border-accent"
-                />
-                <ImageEditor images={images} onChange={setImages} />
-              </>
-            ) : (
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setShowDetails(true)}
-                className="text-xs text-muted hover:text-text"
-              >
-                + Add details
-              </button>
-            )}
-            <div className="flex gap-2">
-              <Button size="sm" variant="primary" onClick={() => void submit()}>
-                Add task
-              </Button>
-              <Button size="sm" variant="ghost" onClick={resetAdd}>
-                Cancel
-              </Button>
-            </div>
-          </div>
+          <TaskComposer
+            snapshot_date={snapshot_date}
+            categories={categories}
+            fixedSection={cfg}
+            collapseWhenEmpty
+            onCancel={() => setAdding(false)}
+          />
         ) : (
           <Button
             size="sm"

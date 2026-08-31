@@ -57,6 +57,7 @@ import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
 import { OffBoardResults } from "../components/OffBoardResults";
+import { QuickAdd } from "../components/QuickAdd";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -157,7 +158,8 @@ export default function DayView() {
   const onKey = useCallback(
     (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT"))
+        return;
       if (!bundle) return;
       if (e.key === "j") {
         e.preventDefault();
@@ -392,6 +394,7 @@ export default function DayView() {
         onNavigate={(d) => navigate(`/tdl/${d}`)}
       />
       <div className="p-3">
+        <QuickAdd snapshot_date={date} categories={categories} />
         {!empty && (
           <div className="mb-3 flex items-center gap-2">
             <div className="relative flex-1">
