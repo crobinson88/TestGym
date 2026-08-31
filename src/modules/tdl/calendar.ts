@@ -1,7 +1,8 @@
 // Pure helpers for the "Add Calendar" flow: gather the day's Priorities /
-// Daily Tasks / Do First items into a deduped, ordered candidate list and lay
-// them out back-to-back on the day's timeline. Kept free of the sync/db and
-// network layers so it stays import-safe in tests.
+// Daily Tasks / Do First items into a deduped, ordered candidate list, lay them
+// out on the day's timeline around whatever is already booked, and describe
+// that timeline well enough for the modal to draw it. Kept free of the sync/db
+// and network layers so it stays import-safe in tests.
 
 import { addDays } from "@/lib/utils";
 import type { SectionConfig } from "./sections";
@@ -31,6 +32,11 @@ export const DEFAULT_START_HOUR = 9;
 // Same default expressed as minutes-from-midnight, for the time picker.
 export const DEFAULT_START_MINUTES = DEFAULT_START_HOUR * 60;
 
+// Bounds for a hand-adjusted block length.
+export const MIN_DURATION_MIN = 5;
+export const MAX_DURATION_MIN = 12 * 60;
+export const DURATION_STEP_MIN = 5;
+
 // Parse an "HH:MM" 24h time string into minutes-from-midnight, or null if it
 // isn't a valid time. Used to turn the picker's value into a schedule start.
 export function parseTimeToMinutes(value: string): number | null {
@@ -46,6 +52,40 @@ export function parseTimeToMinutes(value: string): number | null {
 export function minutesToTime(minutes: number): string {
   const within = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
   return `${pad(Math.floor(within / 60))}:${pad(within % 60)}`;
+}
+
+// Minutes-from-midnight as a 12h clock label ("9:30 AM"), rolling past midnight
+// so a chain that overruns still reads sensibly.
+export function prettyMinutes(minutes: number): string {
+  const within = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(within / 60);
+  const m = within % 60;
+  const period = h < 12 ? "AM" : "PM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${pad(m)} ${period}`;
+}
+
+// Compact gridline label for the day view: "9 AM", "12 PM". Falls back to the
+// full clock for an off-the-hour minute.
+export function prettyHourLabel(minutes: number): string {
+  const within = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  if (within % 60 !== 0) return prettyMinutes(minutes);
+  const h = within / 60;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12} ${h < 12 ? "AM" : "PM"}`;
+}
+
+// "45m" / "1h" / "1h 30m" — the block length as it reads on a calendar.
+export function prettyDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+export function clampDuration(minutes: number): number {
+  if (!Number.isFinite(minutes)) return DEFAULT_DURATION_MIN;
+  return Math.min(MAX_DURATION_MIN, Math.max(MIN_DURATION_MIN, Math.round(minutes)));
 }
 
 // Statuses that still represent work to do — done/cancelled items don't earn a
@@ -111,8 +151,36 @@ export function collectCalendarCandidates(
   return out;
 }
 
+// Free-text filter for the modal's search box: case-insensitive substring over
+// the title and the source label ("priority", "daily task"), so a long day can
+// be narrowed to the one block you want to move. Empty query matches all.
+export function matchesCandidateQuery(
+  candidate: Pick<CalendarCandidate, "title" | "source">,
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    candidate.title.toLowerCase().includes(q) ||
+    CALENDAR_SOURCE_LABEL[candidate.source].toLowerCase().includes(q)
+  );
+}
+
+// Per-item adjustments made in the modal. A duration replaces the item's time
+// estimate; a start pins the block to that minute-of-day instead of letting it
+// flow in the back-to-back chain.
+export interface CalendarOverride {
+  durationMin?: number | null;
+  startMinutes?: number | null;
+}
+
 export interface ScheduledEvent extends CalendarCandidate {
   durationMin: number;
+  // Minutes-from-midnight of the viewed day, for the timeline drawing.
+  startMinutes: number;
+  endMinutes: number;
+  // True when the user pinned this block rather than letting it flow.
+  pinned: boolean;
   // Naive local wall-clock strings (no offset); the caller pairs them with an
   // IANA timeZone so Google places them correctly regardless of DST.
   startDateTime: string;
@@ -180,11 +248,14 @@ function localDateTime(date: string, minutesFromMidnight: number): string {
 }
 
 // Lay the candidates out from `startMinutes` (or `startHour`) on `date`. Each
-// block is its time estimate (or the default when unset). Order is preserved,
-// so the Priorities land earliest in the day. When `busy` intervals are given,
-// each block is pushed to the earliest free slot at or after the running cursor
-// so nothing clashes with an existing calendar event; with no busy intervals it
-// falls back to a plain back-to-back chain.
+// block is its time estimate (or an override, or the default when unset).
+//
+// Pinned blocks are placed first, exactly where the user put them, and then
+// count as busy so the flowing blocks route around them. Everything else keeps
+// the candidate order and takes the earliest free slot at or after the running
+// cursor, so nothing clashes with an existing calendar event; with no busy
+// intervals that degrades to a plain back-to-back chain. The result is sorted
+// by start time — the order the day actually happens in.
 export function scheduleEvents(
   candidates: readonly CalendarCandidate[],
   opts: {
@@ -193,22 +264,124 @@ export function scheduleEvents(
     startMinutes?: number;
     defaultDurationMin?: number;
     busy?: readonly BusyInterval[];
+    overrides?: Readonly<Record<string, CalendarOverride>>;
   },
 ): ScheduledEvent[] {
   const startMinutes =
     opts.startMinutes ?? (opts.startHour ?? DEFAULT_START_HOUR) * 60;
   const defaultDuration = opts.defaultDurationMin ?? DEFAULT_DURATION_MIN;
-  const busy = mergeBusy(opts.busy ?? []);
-  let cursor = startMinutes;
-  const out: ScheduledEvent[] = [];
+  const overrides = opts.overrides ?? {};
+
+  const durationOf = (c: CalendarCandidate): number => {
+    const over = overrides[c.id]?.durationMin;
+    if (over != null && over > 0) return clampDuration(over);
+    return c.timeEstimateMin != null && c.timeEstimateMin > 0
+      ? c.timeEstimateMin
+      : defaultDuration;
+  };
+  const pinOf = (c: CalendarCandidate): number | null => {
+    const pin = overrides[c.id]?.startMinutes;
+    if (pin == null || !Number.isFinite(pin)) return null;
+    return Math.max(0, Math.round(pin));
+  };
+
+  const placed = new Map<string, { start: number; duration: number }>();
+  const pinnedBusy: BusyInterval[] = [];
   for (const c of candidates) {
-    const durationMin =
-      c.timeEstimateMin != null && c.timeEstimateMin > 0 ? c.timeEstimateMin : defaultDuration;
-    const start = nextFreeStart(cursor, durationMin, busy);
-    const startDateTime = localDateTime(opts.date, start);
-    const endDateTime = localDateTime(opts.date, start + durationMin);
-    out.push({ ...c, durationMin, startDateTime, endDateTime });
-    cursor = start + durationMin;
+    const pin = pinOf(c);
+    if (pin == null) continue;
+    const duration = durationOf(c);
+    placed.set(c.id, { start: pin, duration });
+    pinnedBusy.push({ start: pin, end: pin + duration });
   }
-  return out;
+
+  const busy = mergeBusy([...(opts.busy ?? []), ...pinnedBusy]);
+  let cursor = startMinutes;
+  for (const c of candidates) {
+    if (placed.has(c.id)) continue;
+    const duration = durationOf(c);
+    const start = nextFreeStart(cursor, duration, busy);
+    placed.set(c.id, { start, duration });
+    cursor = start + duration;
+  }
+
+  return candidates
+    .map((c) => {
+      const { start, duration } = placed.get(c.id) as { start: number; duration: number };
+      return {
+        ...c,
+        durationMin: duration,
+        startMinutes: start,
+        endMinutes: start + duration,
+        pinned: pinOf(c) != null,
+        startDateTime: localDateTime(opts.date, start),
+        endDateTime: localDateTime(opts.date, start + duration),
+      };
+    })
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
+// The window the day view draws: wide enough for every block and the chosen
+// start time, snapped out to whole hours so the gridlines read as a clock.
+export function timelineRange(
+  blocks: readonly { start: number; end: number }[],
+  opts: { from: number; minSpanMin?: number },
+): { start: number; end: number } {
+  const minSpan = opts.minSpanMin ?? 4 * 60;
+  let start = opts.from;
+  let end = opts.from + minSpan;
+  for (const b of blocks) {
+    if (b.start < start) start = b.start;
+    if (b.end > end) end = b.end;
+  }
+  start = Math.max(0, Math.floor(start / 60) * 60);
+  end = Math.ceil(end / 60) * 60;
+  if (end - start < minSpan) end = start + minSpan;
+  return { start, end };
+}
+
+// Side-by-side placement for blocks that overlap in time: each gets a lane and
+// the number of lanes its overlapping cluster needs, so the day view can render
+// a clash (a pinned block over an existing event) as two columns rather than
+// one block hidden behind another. Input order is preserved in the output.
+export function layoutLanes<T extends { start: number; end: number }>(
+  blocks: readonly T[],
+): { block: T; lane: number; lanes: number }[] {
+  const order = blocks
+    .map((block, index) => ({ block, index }))
+    .sort((a, b) => a.block.start - b.block.start || a.index - b.index);
+
+  const out: { block: T; index: number; lane: number; lanes: number }[] = [];
+  let cluster: typeof out = [];
+  let clusterEnd = -Infinity;
+  let laneEnds: number[] = [];
+
+  const closeCluster = () => {
+    for (const entry of cluster) entry.lanes = laneEnds.length;
+    cluster = [];
+    laneEnds = [];
+  };
+
+  for (const { block, index } of order) {
+    if (block.start >= clusterEnd) {
+      closeCluster();
+      clusterEnd = -Infinity;
+    }
+    let lane = laneEnds.findIndex((end) => end <= block.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(block.end);
+    } else {
+      laneEnds[lane] = block.end;
+    }
+    const entry = { block, index, lane, lanes: laneEnds.length };
+    cluster.push(entry);
+    out.push(entry);
+    clusterEnd = Math.max(clusterEnd, block.end);
+  }
+  closeCluster();
+
+  return out
+    .sort((a, b) => a.index - b.index)
+    .map(({ block, lane, lanes }) => ({ block, lane, lanes }));
 }
