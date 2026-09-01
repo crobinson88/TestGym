@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, cn, prettyDate, todayIsoDate } from "@/lib/utils";
 import {
+  BED_TASK_NAME,
   HABIT_COLUMNS,
   currentStreak,
   nextMarkValue,
@@ -109,8 +110,9 @@ export function HabitGrid() {
         ))}
       </div>
       <div className="mt-1 text-[11px] text-muted">
-        Tap 5:30 / 9:30 to cycle Y → N → blank. The other four are read from your hours, to-do list
-        and gym log.
+        5:30 hits when time is logged before 6am; 9:30 when “{BED_TASK_NAME}” is logged by 9:30pm.
+        Tap either to override a day (Y → N → back to the time log). The other four are read from
+        your hours, to-do list and gym log.
       </div>
     </div>
   );
@@ -145,13 +147,15 @@ function DayRow({ row, isToday }: { row: HabitDayRow; isToday: boolean }) {
             </div>
           );
         }
+        const habit = col.key as ManualHabitKey;
         return (
           <ManualCell
             key={col.key}
             date={row.date}
-            habit={col.key as ManualHabitKey}
+            habit={habit}
             label={col.label}
             cell={cell}
+            override={row.marks[habit]}
             disabled={row.isFuture}
           />
         );
@@ -160,25 +164,27 @@ function DayRow({ row, isToday }: { row: HabitDayRow; isToday: boolean }) {
   );
 }
 
+// Derived from the time log; tapping cycles a hand-set override on top of it.
 function ManualCell({
   date,
   habit,
   label,
   cell,
+  override,
   disabled,
 }: {
   date: string;
   habit: ManualHabitKey;
   label: string;
   cell: HabitCell;
+  override: boolean | null;
   disabled: boolean;
 }) {
-  const current = cell.state === "hit" ? true : cell.state === "miss" ? false : null;
   return (
     <button
       type="button"
       disabled={disabled}
-      onClick={() => void setHabitMark(date, habit, nextMarkValue(current))}
+      onClick={() => void setHabitMark(date, habit, nextMarkValue(override))}
       title={`${label} — ${cell.title}`}
       className={cn(
         "flex h-11 items-center justify-center text-xs font-semibold transition disabled:opacity-40",

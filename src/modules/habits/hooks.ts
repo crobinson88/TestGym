@@ -5,6 +5,7 @@ import { dayCompletion } from "@/modules/tdl";
 import { HOURS_PER_SLOT } from "@/lib/time";
 import { addDays, todayIsoDate } from "@/lib/utils";
 import {
+  BED_TASK_NAME,
   GYM_GROWTH_WINDOW_DAYS,
   ROLLING_HOURS_WINDOW_DAYS,
   buildHabitRows,
@@ -24,9 +25,10 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
     const windowStart = dates[0];
     const fetchStart = addDays(windowStart, -LOOKBACK_DAYS);
 
-    const [habitRows, allocs, tdlItems, sets] = await Promise.all([
+    const [habitRows, allocs, timeTasks, tdlItems, sets] = await Promise.all([
       db.daily_habits.where("habit_date").between(windowStart, endDate, true, true).toArray(),
       db.timeAllocations.where("date").between(fetchStart, endDate, true, true).toArray(),
+      db.timeTasks.toArray(),
       db.tdl_items.where("snapshot_date").between(windowStart, endDate, true, true).toArray(),
       db.sets.where("performed_at").between(fetchStart, endDate, true, true).toArray(),
     ]);
@@ -42,10 +44,26 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
       marks.set(row.habit_date, { early_start: row.early_start, early_bed: row.early_bed });
     }
 
+    // Duplicate live tasks can share a name (two devices adding "Bed" offline),
+    // so match by name rather than a single id.
+    const bedTaskIds = new Set(
+      timeTasks
+        .filter((t) => !t.deleted_at && t.name.trim().toLowerCase() === BED_TASK_NAME.toLowerCase())
+        .map((t) => t.id),
+    );
+
     const hours = new Map<string, number>();
+    const firstSlot = new Map<string, number>();
+    const firstBedSlot = new Map<string, number>();
     for (const a of allocs) {
       if (a.deleted_at) continue;
       hours.set(a.date, (hours.get(a.date) ?? 0) + HOURS_PER_SLOT);
+      const earliest = firstSlot.get(a.date);
+      if (earliest === undefined || a.slot < earliest) firstSlot.set(a.date, a.slot);
+      if (bedTaskIds.has(a.task_id)) {
+        const earliestBed = firstBedSlot.get(a.date);
+        if (earliestBed === undefined || a.slot < earliestBed) firstBedSlot.set(a.date, a.slot);
+      }
     }
 
     const itemsByDate = new Map<string, typeof tdlItems>();
@@ -72,7 +90,15 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
       gymVolume.set(s.performed_at, (gymVolume.get(s.performed_at) ?? 0) + s.weight * s.reps);
     }
 
-    return buildHabitRows(dates, { marks, hours, tdl, gymVolume, today: todayIsoDate() });
+    return buildHabitRows(dates, {
+      marks,
+      hours,
+      firstSlot,
+      firstBedSlot,
+      tdl,
+      gymVolume,
+      today: todayIsoDate(),
+    });
   }, [endDate, days]);
 }
 

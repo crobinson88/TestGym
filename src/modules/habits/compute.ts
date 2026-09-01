@@ -1,8 +1,9 @@
-import { formatHours } from "@/lib/time";
+import { SLOT_MINUTES, formatHours } from "@/lib/time";
 import { addDays } from "@/lib/utils";
 
-// The two hand-marked habits. Everything else in the grid is derived from data
-// the app already holds, so there is nothing to tap.
+// Every column is derived from data the app already holds. These two read the
+// time log, and a stored `daily_habits` flag overrides the derived value for a
+// day the log doesn't tell the truth about.
 export type ManualHabitKey = "early_start" | "early_bed";
 
 export type HabitColumnKey =
@@ -24,6 +25,23 @@ export const ROLLING_HOURS_WINDOW_DAYS = 7;
 // Matches the target floor on the Stats rolling-hours chart.
 export const ROLLING_HOURS_TARGET = 70;
 export const GYM_GROWTH_WINDOW_DAYS = 5;
+// 5:30 column: any time logged before 6am counts as an early start.
+export const EARLY_START_BEFORE_MINUTES = 6 * 60;
+// 9:30 column: the Bed category logged starting at or before 9:30pm.
+export const EARLY_BED_BY_MINUTES = 21 * 60 + 30;
+// The time-tracking task whose slots mark bedtime.
+export const BED_TASK_NAME = "Bed";
+
+// Minutes past midnight → "5:30am" / "9:30pm", for the column hints and titles.
+export function clockLabel(minutes: number): string {
+  const h24 = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const suffix = h24 < 12 ? "am" : "pm";
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}:${String(m).padStart(2, "0")}${suffix}`;
+}
+
+export const slotStartMinutes = (slot: number) => slot * SLOT_MINUTES;
 
 // Column order mirrors the spreadsheet this replaces.
 export const HABIT_COLUMNS: readonly HabitColumn[] = [
@@ -32,14 +50,14 @@ export const HABIT_COLUMNS: readonly HabitColumn[] = [
     label: "5:30am Start",
     short: "5:30",
     manual: true,
-    hint: "Up and started by 5:30am",
+    hint: `Time logged before ${clockLabel(EARLY_START_BEFORE_MINUTES)}`,
   },
   {
     key: "early_bed",
     label: "9:30pm Bed",
     short: "9:30",
     manual: true,
-    hint: "In bed by 9:30pm, no screens",
+    hint: `"${BED_TASK_NAME}" logged by ${clockLabel(EARLY_BED_BY_MINUTES)}`,
   },
   {
     key: "rolling_hours",
@@ -96,13 +114,20 @@ export interface HabitDayRow {
   date: string;
   isWeekend: boolean;
   isFuture: boolean;
+  // The stored overrides for the day, null where the column is running derived.
+  marks: HabitMark;
   cells: Record<HabitColumnKey, HabitCell>;
 }
 
 export interface HabitSources {
+  // Hand-set overrides; a non-null flag wins over the derived value.
   marks: ReadonlyMap<string, HabitMark>;
   // Hours logged per day, all tasks — the same series behind the rolling-hours chart.
   hours: ReadonlyMap<string, number>;
+  // Earliest time-tracking slot logged that day, any task.
+  firstSlot: ReadonlyMap<string, number>;
+  // Earliest slot logged that day against the "Bed" task.
+  firstBedSlot: ReadonlyMap<string, number>;
   tdl: ReadonlyMap<string, TdlDaySummary>;
   // Lifted volume (weight × reps) per day.
   gymVolume: ReadonlyMap<string, number>;
@@ -134,13 +159,48 @@ function sumWindow(
   return total;
 }
 
-function markCell(value: boolean | null, label: string): HabitCell {
-  if (value === null) return { ...BLANK, title: `${label}: not marked` };
+function overrideCell(value: boolean, label: string): HabitCell {
   return {
     state: value ? "hit" : "miss",
     text: value ? "Y" : "N",
-    title: `${label}: ${value ? "yes" : "no"}`,
+    title: `${label}: ${value ? "yes" : "no"} (set by hand)`,
   };
+}
+
+function yesNoCell(hit: boolean, title: string): HabitCell {
+  return { state: hit ? "hit" : "miss", text: hit ? "Y" : "N", title };
+}
+
+// 5:30 column: Y when the day's first logged slot starts before 6am. A day with
+// nothing logged says nothing, so it stays blank rather than counting as a miss.
+export function earlyStartCell(
+  firstSlot: number | undefined,
+  override: boolean | null,
+): HabitCell {
+  if (override !== null) return overrideCell(override, "5:30am start");
+  if (firstSlot === undefined) return { ...BLANK, title: "No time logged that day" };
+  const start = slotStartMinutes(firstSlot);
+  return yesNoCell(
+    start < EARLY_START_BEFORE_MINUTES,
+    `First time logged at ${clockLabel(start)} (before ${clockLabel(EARLY_START_BEFORE_MINUTES)} counts)`,
+  );
+}
+
+// 9:30 column: Y when the day's first "Bed" slot starts at or before 9:30pm. No
+// Bed logged means the day is unknown, not a miss.
+export function earlyBedCell(
+  firstBedSlot: number | undefined,
+  override: boolean | null,
+): HabitCell {
+  if (override !== null) return overrideCell(override, "9:30pm bed");
+  if (firstBedSlot === undefined) {
+    return { ...BLANK, title: `No "${BED_TASK_NAME}" time logged that day` };
+  }
+  const start = slotStartMinutes(firstBedSlot);
+  return yesNoCell(
+    start <= EARLY_BED_BY_MINUTES,
+    `${BED_TASK_NAME} logged from ${clockLabel(start)} (by ${clockLabel(EARLY_BED_BY_MINUTES)} counts)`,
+  );
 }
 
 function rollingHoursCell(hours: ReadonlyMap<string, number>, date: string): HabitCell {
@@ -197,15 +257,22 @@ export function gymGrowthCell(
 export function buildHabitRows(dates: readonly string[], src: HabitSources): HabitDayRow[] {
   return dates.map((date) => {
     const mark = src.marks.get(date);
+    const marks: HabitMark = {
+      early_start: mark?.early_start ?? null,
+      early_bed: mark?.early_bed ?? null,
+    };
     const future = date > src.today;
     const tdl = src.tdl.get(date);
     return {
       date,
       isWeekend: isWeekend(date),
       isFuture: future,
+      marks,
       cells: {
-        early_start: future ? BLANK : markCell(mark?.early_start ?? null, "5:30am start"),
-        early_bed: future ? BLANK : markCell(mark?.early_bed ?? null, "9:30pm bed"),
+        early_start: future
+          ? BLANK
+          : earlyStartCell(src.firstSlot.get(date), marks.early_start),
+        early_bed: future ? BLANK : earlyBedCell(src.firstBedSlot.get(date), marks.early_bed),
         rolling_hours: future ? BLANK : rollingHoursCell(src.hours, date),
         priority_task: future ? BLANK : priorityCell(tdl),
         task_completion: future ? BLANK : completionCell(tdl),
