@@ -13,6 +13,7 @@ import {
   DURATION_STEP_MIN,
   MAX_DURATION_MIN,
   MIN_DURATION_MIN,
+  applyCandidateOrder,
   clampDuration,
   collectCalendarCandidates,
   matchesCandidateQuery,
@@ -20,6 +21,8 @@ import {
   parseTimeToMinutes,
   prettyDuration,
   prettyMinutes,
+  reorderByStep,
+  reorderForDrop,
   scheduleEvents,
   type BusyInterval,
   type CalendarCandidate,
@@ -83,6 +86,9 @@ export function CalendarSyncButton({
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [startTime, setStartTime] = useState(minutesToTime(DEFAULT_START_MINUTES));
   const [overrides, setOverrides] = useState<Record<string, CalendarOverride>>({});
+  // Hand-picked block order from dragging the day view; null = the canonical
+  // Priorities → Daily Tasks → Do First order.
+  const [order, setOrder] = useState<string[] | null>(null);
   const [query, setQuery] = useState("");
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -97,23 +103,25 @@ export function CalendarSyncButton({
 
   const startMinutes = parseTimeToMinutes(startTime) ?? DEFAULT_START_MINUTES;
 
-  // Canonical order (Priorities → Daily Tasks → Do First) — the list keeps it
-  // so rows don't jump around as blocks are moved; the timeline shows the
-  // actual chronological shape of the day.
+  // Canonical order: Priorities → Daily Tasks → Do First.
   const candidates = useMemo(
     () => collectCalendarCandidates(items, categories),
     [items, categories],
   );
+
+  // …re-sequenced by whatever the user dragged. Both the list and the timeline
+  // read from this, so a block moved on the day view moves its row too.
+  const ordered = useMemo(() => applyCandidateOrder(candidates, order), [candidates, order]);
 
   // Only the checked items get a slot, so unchecking one frees its time and the
   // rest of the day compacts up.
   const scheduled = useMemo<ScheduledEvent[]>(
     () =>
       scheduleEvents(
-        candidates.filter((c) => !excluded.has(c.id)),
+        ordered.filter((c) => !excluded.has(c.id)),
         { date: snapshot_date, startMinutes, busy, overrides },
       ),
-    [candidates, excluded, snapshot_date, startMinutes, busy, overrides],
+    [ordered, excluded, snapshot_date, startMinutes, busy, overrides],
   );
 
   const byId = useMemo(
@@ -122,8 +130,8 @@ export function CalendarSyncButton({
   );
 
   const visible = useMemo(
-    () => candidates.filter((c) => matchesCandidateQuery(c, query)),
-    [candidates, query],
+    () => ordered.filter((c) => matchesCandidateQuery(c, query)),
+    [ordered, query],
   );
   const searching = query.trim().length > 0;
 
@@ -179,6 +187,7 @@ export function CalendarSyncButton({
     setExcluded(new Set());
     setStartTime(minutesToTime(DEFAULT_START_MINUTES));
     setOverrides({});
+    setOrder(null);
     setQuery("");
     setFocusedId(null);
     setExpandedId(null);
@@ -245,6 +254,40 @@ export function CalendarSyncButton({
     setFocusedId(id);
     setExpandedId(id);
     setPane("list");
+  }
+
+  // Dropping a block on the day view. A pinned block keeps its own time, so the
+  // drag just moves the pin; anything else is re-sequenced, and the whole chain
+  // re-flows — every following block's start and end shift to suit.
+  function moveBlock(id: string, dropStartMinutes: number) {
+    const event = byId.get(id);
+    if (!event) return;
+    setFocusedId(id);
+    if (event.pinned) {
+      patchOverride(id, { startMinutes: dropStartMinutes });
+      return;
+    }
+    setOrder(
+      reorderForDrop(
+        ordered.map((c) => c.id),
+        scheduled.filter((e) => !e.pinned),
+        id,
+        dropStartMinutes,
+      ),
+    );
+  }
+
+  // Keyboard equivalent: arrow a focused block one slot earlier or later.
+  function nudgeBlock(id: string, delta: number) {
+    setFocusedId(id);
+    setOrder(
+      reorderByStep(
+        ordered.map((c) => c.id),
+        scheduled.filter((e) => !e.pinned).map((e) => e.id),
+        id,
+        delta,
+      ),
+    );
   }
 
   async function create() {
@@ -329,7 +372,7 @@ export function CalendarSyncButton({
           onClick={() => (running ? null : setOpen(false))}
         >
           <div
-            className="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-t-2xl border border-line bg-surface sm:rounded-2xl"
+            className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-t-2xl border border-line bg-surface sm:rounded-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
@@ -381,6 +424,17 @@ export function CalendarSyncButton({
                   {searching ? ` · ${visible.length} matching “${query.trim()}”` : ""}
                 </span>
                 <span className="flex items-center gap-1">
+                  {order && (
+                    <button
+                      type="button"
+                      onClick={() => setOrder(null)}
+                      disabled={running}
+                      className="rounded-lg px-2 py-1 hover:bg-surface2 hover:text-text disabled:opacity-50"
+                      title="Back to Priorities → Daily Tasks → Do First"
+                    >
+                      Reset order
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setAllVisible(true)}
@@ -415,7 +469,7 @@ export function CalendarSyncButton({
               </div>
             </div>
 
-            <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_26rem]">
               <ul
                 className={`min-h-0 space-y-1 overflow-y-auto p-2 ${pane === "list" ? "" : "hidden"} lg:block`}
               >
@@ -589,10 +643,13 @@ export function CalendarSyncButton({
                   pane === "day" ? "" : "hidden"
                 }`}
               >
-                <div className="mb-2 flex items-center justify-between text-xs text-muted">
-                  <span className="font-medium text-text">Your day</span>
+                <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                  <span className="text-sm font-medium text-text">Your day</span>
                   <span>{prettyDuration(scheduled.reduce((n, e) => n + e.durationMin, 0))}</span>
                 </div>
+                <p className="mb-3 text-xs text-muted">
+                  Drag a block by its handle to reorder your day — everything else shifts to fit.
+                </p>
                 {scheduled.length === 0 && busy.length === 0 ? (
                   <p className="py-8 text-center text-xs text-muted">Nothing scheduled.</p>
                 ) : (
@@ -602,6 +659,8 @@ export function CalendarSyncButton({
                     fromMinutes={startMinutes}
                     focusedId={focusedId}
                     onSelect={focusFromTimeline}
+                    onMove={moveBlock}
+                    onNudge={nudgeBlock}
                   />
                 )}
               </div>
