@@ -4,6 +4,10 @@ import type { SectionConfig } from "./sections";
 import type { LocalTdlItem, TdlStatus } from "./types";
 import {
   DEFAULT_DURATION_MIN,
+  applyCandidateOrder,
+  reorderByStep,
+  reorderForDrop,
+  snapMinutes,
   MAX_DURATION_MIN,
   MIN_DURATION_MIN,
   clampDuration,
@@ -535,5 +539,135 @@ describe("prettyHourLabel", () => {
 
   it("falls back to the full clock off the hour", () => {
     expect(prettyHourLabel(9 * 60 + 30)).toBe("9:30 AM");
+  });
+});
+
+describe("snapMinutes", () => {
+  it("snaps to the 5-minute grid", () => {
+    expect(snapMinutes(542)).toBe(540);
+    expect(snapMinutes(543)).toBe(545);
+    expect(snapMinutes(547.5)).toBe(550);
+  });
+
+  it("never goes negative", () => {
+    expect(snapMinutes(-30)).toBe(0);
+  });
+});
+
+describe("applyCandidateOrder", () => {
+  const list = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("leaves the list alone with no custom order", () => {
+    expect(applyCandidateOrder(list, null).map((c) => c.id)).toEqual(["a", "b", "c"]);
+    expect(applyCandidateOrder(list, []).map((c) => c.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("re-sequences to the given order", () => {
+    expect(applyCandidateOrder(list, ["c", "a", "b"]).map((c) => c.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("sinks ids the order doesn't know about to the end, in list order", () => {
+    const withNew = [...list, { id: "d" }, { id: "e" }];
+    expect(applyCandidateOrder(withNew, ["c", "a"]).map((c) => c.id)).toEqual([
+      "c",
+      "a",
+      "b",
+      "d",
+      "e",
+    ]);
+  });
+
+  it("ignores ids in the order that aren't in the list", () => {
+    expect(applyCandidateOrder(list, ["gone", "b", "a", "c"]).map((c) => c.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+  });
+});
+
+describe("reorderForDrop", () => {
+  // Three back-to-back 30m blocks from 9am.
+  const placed = [
+    { id: "a", startMinutes: 540, endMinutes: 570 },
+    { id: "b", startMinutes: 570, endMinutes: 600 },
+    { id: "c", startMinutes: 600, endMinutes: 630 },
+  ];
+  const order = ["a", "b", "c"];
+
+  it("keeps the order when the block barely moves", () => {
+    expect(reorderForDrop(order, placed, "a", 545)).toEqual(["a", "b", "c"]);
+  });
+
+  it("swaps once the dragged block's middle passes the next one's", () => {
+    // a dropped at 9:30 → its centre (9:45) is past b's centre (9:45 boundary).
+    expect(reorderForDrop(order, placed, "a", 570)).toEqual(["b", "a", "c"]);
+  });
+
+  it("drops a block to the end of the day", () => {
+    expect(reorderForDrop(order, placed, "a", 700)).toEqual(["b", "c", "a"]);
+  });
+
+  it("pulls a late block up to the front", () => {
+    expect(reorderForDrop(order, placed, "c", 480)).toEqual(["c", "a", "b"]);
+  });
+
+  it("keeps unscheduled ids in place around the moved one", () => {
+    expect(reorderForDrop(["a", "skipped", "b", "c"], placed, "c", 480)).toEqual([
+      "c",
+      "a",
+      "skipped",
+      "b",
+    ]);
+  });
+
+  it("ignores a drag of an id it doesn't hold", () => {
+    expect(reorderForDrop(order, placed, "zz", 480)).toEqual(["a", "b", "c"]);
+  });
+
+  it("re-flows every following block after the move", () => {
+    const candidates = [
+      { id: "a", title: "A", timeEstimateMin: 30, source: "priorities" as const },
+      { id: "b", title: "B", timeEstimateMin: 30, source: "priorities" as const },
+      { id: "c", title: "C", timeEstimateMin: 30, source: "priorities" as const },
+    ];
+    const next = reorderForDrop(order, placed, "c", 480);
+    const out = scheduleEvents(applyCandidateOrder(candidates, next), {
+      date: "2026-07-27",
+      startMinutes: 540,
+    });
+    expect(out.map((e) => [e.id, e.startMinutes])).toEqual([
+      ["c", 540],
+      ["a", 570],
+      ["b", 600],
+    ]);
+  });
+});
+
+describe("reorderByStep", () => {
+  const order = ["a", "b", "c"];
+  const sequence = ["a", "b", "c"];
+
+  it("moves a block one slot earlier", () => {
+    expect(reorderByStep(order, sequence, "c", -1)).toEqual(["a", "c", "b"]);
+  });
+
+  it("moves a block one slot later", () => {
+    expect(reorderByStep(order, sequence, "a", 1)).toEqual(["b", "a", "c"]);
+  });
+
+  it("stops at the ends of the day", () => {
+    expect(reorderByStep(order, sequence, "a", -1)).toEqual(["a", "b", "c"]);
+    expect(reorderByStep(order, sequence, "c", 1)).toEqual(["a", "b", "c"]);
+  });
+
+  it("steps over ids that aren't in the flowing sequence", () => {
+    // "b" is pinned, so it isn't an anchor: "c" steps up past it to before "a".
+    expect(reorderByStep(["a", "b", "c"], ["a", "c"], "c", -1)).toEqual(["c", "a", "b"]);
+  });
+
+  it("ignores an id or delta it can't act on", () => {
+    expect(reorderByStep(order, sequence, "zz", -1)).toEqual(["a", "b", "c"]);
+    expect(reorderByStep(order, sequence, "a", 0)).toEqual(["a", "b", "c"]);
   });
 });

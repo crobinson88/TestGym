@@ -385,3 +385,90 @@ export function layoutLanes<T extends { start: number; end: number }>(
     .sort((a, b) => a.index - b.index)
     .map(({ block, lane, lanes }) => ({ block, lane, lanes }));
 }
+
+// --- Drag to reorder -------------------------------------------------------
+
+// Dragged blocks land on a clean 5-minute grid.
+export const DRAG_SNAP_MIN = 5;
+
+export function snapMinutes(minutes: number, step: number = DRAG_SNAP_MIN): number {
+  const s = Math.max(1, Math.round(step));
+  return Math.max(0, Math.round(minutes / s) * s);
+}
+
+// Re-sequence the candidate list to a hand-picked order. Ids missing from
+// `order` (an item that appeared after the modal opened) keep their relative
+// position at the end; a null/empty order leaves the list alone.
+export function applyCandidateOrder<T extends { id: string }>(
+  candidates: readonly T[],
+  order: readonly string[] | null | undefined,
+): T[] {
+  if (!order || order.length === 0) return [...candidates];
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return candidates
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => {
+      const ra = rank.get(a.c.id);
+      const rb = rank.get(b.c.id);
+      if (ra == null && rb == null) return a.i - b.i;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      return ra - rb;
+    })
+    .map(({ c }) => c);
+}
+
+interface PlacedBlock {
+  id: string;
+  startMinutes: number;
+  endMinutes: number;
+}
+
+// Where a dragged block lands in the sequence: it goes before the first other
+// block whose midpoint sits after the dragged block's own midpoint at the drop
+// point — the usual "past the halfway line and they swap" rule, which gives a
+// little hysteresis so blocks don't flicker back and forth under the finger.
+// Only flowing (unpinned) blocks are anchors; pinned ones hold their own time
+// whatever the order says. The chain re-flows from the returned order, so every
+// following block's start and end shift automatically.
+export function reorderForDrop(
+  order: readonly string[],
+  placed: readonly PlacedBlock[],
+  draggedId: string,
+  dropStartMinutes: number,
+): string[] {
+  if (!order.includes(draggedId)) return [...order];
+  const dragged = placed.find((p) => p.id === draggedId);
+  const duration = dragged ? dragged.endMinutes - dragged.startMinutes : 0;
+  const center = dropStartMinutes + duration / 2;
+
+  const others = placed
+    .filter((p) => p.id !== draggedId)
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+  const anchor = others.find((p) => center < (p.startMinutes + p.endMinutes) / 2);
+
+  const rest = order.filter((id) => id !== draggedId);
+  const at = anchor ? rest.indexOf(anchor.id) : -1;
+  if (at < 0) return [...rest, draggedId];
+  return [...rest.slice(0, at), draggedId, ...rest.slice(at)];
+}
+
+// Keyboard equivalent of a drag: swap a block one slot earlier (delta < 0) or
+// later in the flowing sequence, leaving pinned and unscheduled ids untouched.
+export function reorderByStep(
+  order: readonly string[],
+  sequence: readonly string[],
+  id: string,
+  delta: number,
+): string[] {
+  const at = sequence.indexOf(id);
+  if (at < 0 || delta === 0) return [...order];
+  const target = at + (delta < 0 ? -1 : 1);
+  if (target < 0 || target >= sequence.length) return [...order];
+  const rest = order.filter((x) => x !== id);
+  const idx = rest.indexOf(sequence[target]);
+  if (idx < 0) return [...order];
+  return delta < 0
+    ? [...rest.slice(0, idx), id, ...rest.slice(idx)]
+    : [...rest.slice(0, idx + 1), id, ...rest.slice(idx + 1)];
+}
