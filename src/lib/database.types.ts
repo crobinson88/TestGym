@@ -477,6 +477,23 @@ export interface SmokingLogRow {
 
 // One food logged on a given day: its name plus the calories and grams of
 // protein it contributed. Same sync / RLS / soft-delete rules as `sets`.
+// One day's hand-marked habits, behind the Stats page's daily-habit grid. Only
+// the manual habits are stored; the grid's other columns are derived from time
+// allocations, tdl_items and sets at read time. A null flag means the day is
+// unmarked for that habit. One live row per `habit_date` is kept (deduped
+// client-side), matching `smoking_logs`.
+export interface DailyHabitRow {
+  id: string;
+  habit_date: string;
+  early_start: boolean | null;
+  early_bed: boolean | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface FoodEntryRow {
   id: string;
   entry_date: string;
@@ -663,6 +680,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<SmokingLogRow>;
+      };
+      daily_habits: {
+        Row: DailyHabitRow;
+        Insert: Omit<DailyHabitRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<DailyHabitRow>;
       };
       food_entries: {
         Row: FoodEntryRow;

@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type {
   CardioSessionRow,
+  DailyHabitRow,
   CategoryRow,
   ConflictRow,
   ExerciseRow,
@@ -134,6 +135,10 @@ export interface LocalSmokingLog extends SmokingLogRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalDailyHabit extends DailyHabitRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalFoodEntry extends FoodEntryRow {
   sync_status: SyncStatus;
 }
@@ -164,6 +169,7 @@ export class GymDB extends Dexie {
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
   smoking_logs!: Table<LocalSmokingLog, string>;
+  daily_habits!: Table<LocalDailyHabit, string>;
   food_entries!: Table<LocalFoodEntry, string>;
   food_goals!: Table<LocalFoodGoal, string>;
   ir_cache!: Table<IrCacheRow, string>;
@@ -353,6 +359,9 @@ export class GymDB extends Dexie {
     });
     this.version(26).stores({
       driving_attempts: "id, section, started_at, updated_at, sync_status, deleted_at",
+    });
+    this.version(27).stores({
+      daily_habits: "id, habit_date, updated_at, sync_status, deleted_at",
     });
   }
 }
