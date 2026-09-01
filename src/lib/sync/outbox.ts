@@ -2,6 +2,7 @@ import type {
   GymDB,
   LocalCardioSession,
   LocalCategory,
+  LocalDailyHabit,
   LocalDrivingAttempt,
   LocalExercise,
   LocalFoodEntry,
@@ -45,6 +46,7 @@ type PendingRow =
   | LocalTip
   | LocalMarketNote
   | LocalSmokingLog
+  | LocalDailyHabit
   | LocalFoodEntry
   | LocalFoodGoal;
 
@@ -88,6 +90,7 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   tips: "id",
   market_notes: "id",
   smoking_logs: "id",
+  daily_habits: "id",
   food_entries: "id",
   food_goals: "id",
 };
@@ -162,6 +165,9 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   }
   if (table === "smoking_logs") {
     return db.smoking_logs.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "daily_habits") {
+    return db.daily_habits.where("sync_status").equals("pending").limit(limit).toArray();
   }
   if (table === "food_entries") {
     return db.food_entries.where("sync_status").equals("pending").limit(limit).toArray();

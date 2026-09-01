@@ -2,6 +2,7 @@ import type { GymDB } from "../db";
 import type {
   CardioSessionRow,
   CategoryRow,
+  DailyHabitRow,
   DrivingAttemptRow,
   ExerciseRow,
   FoodEntryRow,
@@ -325,6 +326,18 @@ async function mergeSmokingLogs(db: GymDB, rows: SmokingLogRow[]) {
   });
 }
 
+async function mergeDailyHabits(db: GymDB, rows: DailyHabitRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.daily_habits, async () => {
+    for (const remote of rows) {
+      const local = await db.daily_habits.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.daily_habits.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 async function mergeFoodEntries(db: GymDB, rows: FoodEntryRow[]) {
   if (rows.length === 0) return;
   await db.transaction("rw", db.food_entries, async () => {
@@ -389,6 +402,7 @@ const META_KEYS: Record<SyncTable, string> = {
   tips: "last_pull_tips",
   market_notes: "last_pull_market_notes",
   smoking_logs: "last_pull_smoking_logs",
+  daily_habits: "last_pull_daily_habits",
   food_entries: "last_pull_food_entries",
   food_goals: "last_pull_food_goals",
 };
@@ -424,6 +438,7 @@ export function createPull({ client, db, log }: PullDeps) {
       tips: 0,
       market_notes: 0,
       smoking_logs: 0,
+      daily_habits: 0,
       food_entries: 0,
       food_goals: 0,
     };
@@ -546,6 +561,13 @@ export function createPull({ client, db, log }: PullDeps) {
           fetched.smoking_logs = rows.length;
           if (rows.length > 0) {
             await writeMark("smoking_logs", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "daily_habits") {
+          const rows = await fetchSince<DailyHabitRow>(client, "daily_habits", since);
+          await mergeDailyHabits(db, rows);
+          fetched.daily_habits = rows.length;
+          if (rows.length > 0) {
+            await writeMark("daily_habits", rows[rows.length - 1].updated_at);
           }
         } else if (table === "food_entries") {
           const rows = await fetchSince<FoodEntryRow>(client, "food_entries", since);

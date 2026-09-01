@@ -3,6 +3,7 @@ import type {
   GymDB,
   LocalCardioSession,
   LocalCategory,
+  LocalDailyHabit,
   LocalExercise,
   LocalFoodEntry,
   LocalDrivingAttempt,
@@ -21,6 +22,7 @@ import type {
   BodySex,
   CardioSessionRow,
   CategoryRow,
+  DailyHabitRow,
   DrivingAttemptDetail,
   DrivingAttemptRow,
   DrivingSection,
@@ -163,6 +165,10 @@ export interface AddFoodEntryInput {
 
 export type UpdateFoodEntryInput = Partial<AddFoodEntryInput>;
 
+// The hand-marked habits on a `daily_habits` row. The grid's other columns are
+// derived from other tables, so they are not settable.
+export type DailyHabitKey = "early_start" | "early_bed";
+
 export interface SetFoodGoalsInput {
   calorie_goal: number;
   protein_goal: number;
@@ -230,6 +236,10 @@ function pendingMarketNote(row: MarketNoteRow): LocalMarketNote {
 }
 
 function pendingSmokingLog(row: SmokingLogRow): LocalSmokingLog {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingDailyHabit(row: DailyHabitRow): LocalDailyHabit {
   return { ...row, sync_status: "pending" };
 }
 
@@ -896,6 +906,65 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return writeSmoking(date, n > 0, n, live[0]);
   }
 
+  async function liveHabitRows(date: string): Promise<LocalDailyHabit[]> {
+    const all = await db.daily_habits.toArray();
+    return all
+      .filter((r) => r.habit_date === date && !r.deleted_at)
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+  }
+
+  // The Stats habit grid: mark one hand-tracked habit for a day. `true` = hit,
+  // `false` = missed, `null` = unmarked. The day's row is soft-deleted once no
+  // habit on it is marked, so an all-null day reads as "no data" everywhere.
+  async function setDailyHabit(
+    date: string,
+    habit: DailyHabitKey,
+    value: boolean | null,
+  ): Promise<LocalDailyHabit | null> {
+    const live = await liveHabitRows(date);
+    const existing = live[0];
+    const ts = now();
+    // Soft-delete stray duplicates left by offline races, keeping the newest.
+    for (const dupe of live.slice(1)) {
+      await db.daily_habits.put({
+        ...dupe,
+        deleted_at: ts,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
+    if (existing) {
+      const next: LocalDailyHabit = {
+        ...existing,
+        [habit]: value,
+        updated_at: ts,
+        sync_status: "pending",
+      };
+      const empty = next.early_start === null && next.early_bed === null;
+      await db.daily_habits.put(empty ? { ...next, deleted_at: ts } : next);
+      notify();
+      return empty ? null : next;
+    }
+    if (value === null) {
+      notify();
+      return null;
+    }
+    const id = uuid();
+    const row: DailyHabitRow = {
+      id,
+      habit_date: date,
+      early_start: habit === "early_start" ? value : null,
+      early_bed: habit === "early_bed" ? value : null,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingDailyHabit(row);
+    await db.daily_habits.put(local);
+    notify();
+    return local;
+  }
+
   async function addFoodEntry(input: AddFoodEntryInput): Promise<LocalFoodEntry> {
     const id = uuid();
     const ts = now();
@@ -1053,6 +1122,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addMarketNoteResearch,
     setSmoked,
     setCigaretteCount,
+    setDailyHabit,
     addFoodEntry,
     updateFoodEntry,
     deleteFoodEntry,

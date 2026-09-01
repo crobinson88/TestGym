@@ -30,6 +30,7 @@ import {
 import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
 import { addDays, cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
+import { HabitGrid } from "@/modules/habits";
 import {
   useFrenchWeeklyAccuracy,
   useVocabMastery,
@@ -153,6 +154,13 @@ export default function Dashboard() {
       <section>
         <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Today's goals</h2>
         <DailyGoals date={todayIsoDate()} />
+      </section>
+
+      <section>
+        <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Daily habits</h2>
+        <div className="rounded-2xl border border-line bg-surface p-3">
+          <HabitGrid />
+        </div>
       </section>
 
       <section className="grid grid-cols-3 gap-3">
