@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/auth";
 import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import {
-  CALENDAR_SOURCE_LABEL,
   DEFAULT_DURATION_MIN,
   DEFAULT_START_MINUTES,
   DURATION_STEP_MIN,
@@ -87,7 +86,7 @@ export function CalendarSyncButton({
   const [startTime, setStartTime] = useState(minutesToTime(DEFAULT_START_MINUTES));
   const [overrides, setOverrides] = useState<Record<string, CalendarOverride>>({});
   // Hand-picked block order from dragging the day view; null = the canonical
-  // Priorities → Daily Tasks → Do First order.
+  // Priorities → Do First → Daily Tasks → other categories order.
   const [order, setOrder] = useState<string[] | null>(null);
   const [query, setQuery] = useState("");
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -103,7 +102,7 @@ export function CalendarSyncButton({
 
   const startMinutes = parseTimeToMinutes(startTime) ?? DEFAULT_START_MINUTES;
 
-  // Canonical order: Priorities → Daily Tasks → Do First.
+  // Canonical order: Priorities → Do First → Daily Tasks → other categories.
   const candidates = useMemo(
     () => collectCalendarCandidates(items, categories),
     [items, categories],
@@ -184,7 +183,9 @@ export function CalendarSyncButton({
   }, [open, session, snapshot_date]);
 
   function openModal() {
-    setExcluded(new Set());
+    // The three headline groups start checked; the rest of the day's categories
+    // are listed but opt-in, so opening the modal never queues the whole board.
+    setExcluded(new Set(candidates.filter((c) => c.source === "category").map((c) => c.id)));
     setStartTime(minutesToTime(DEFAULT_START_MINUTES));
     setOverrides({});
     setOrder(null);
@@ -309,7 +310,7 @@ export function CalendarSyncButton({
           timeZone: localTimeZone(),
           events: scheduled.map((e) => ({
             title: e.title,
-            description: `${CALENDAR_SOURCE_LABEL[e.source]} · from TDL`,
+            description: `${e.sourceLabel} · from TDL`,
             startDateTime: e.startDateTime,
             endDateTime: e.endDateTime,
           })),
@@ -528,7 +529,7 @@ export function CalendarSyncButton({
                               ? `${prettyMinutes(event.startMinutes)} · ${prettyDuration(event.durationMin)}`
                               : "Not scheduled"}
                             {" · "}
-                            {CALENDAR_SOURCE_LABEL[c.source]}
+                            {c.sourceLabel}
                           </span>
                         </button>
                         <button

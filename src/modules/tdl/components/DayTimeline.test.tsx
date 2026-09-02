@@ -7,9 +7,15 @@ const HOUR_PX = 128;
 
 function events() {
   const candidates: CalendarCandidate[] = [
-    { id: "a", title: "Alpha", timeEstimateMin: 60, source: "priorities" },
-    { id: "b", title: "Bravo", timeEstimateMin: 60, source: "daily_tasks" },
-    { id: "c", title: "Charlie", timeEstimateMin: 60, source: "do_first" },
+    { id: "a", title: "Alpha", timeEstimateMin: 60, source: "priorities", sourceLabel: "Priority" },
+    {
+      id: "b",
+      title: "Bravo",
+      timeEstimateMin: 60,
+      source: "daily_tasks",
+      sourceLabel: "Daily Task",
+    },
+    { id: "c", title: "Charlie", timeEstimateMin: 60, source: "do_first", sourceLabel: "Do First" },
   ];
   return scheduleEvents(candidates, { date: "2026-07-27", startMinutes: 540 });
 }
