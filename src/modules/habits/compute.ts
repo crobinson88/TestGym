@@ -1,5 +1,6 @@
 import { SLOT_MINUTES, formatHours } from "@/lib/time";
 import { addDays } from "@/lib/utils";
+import { ACTION_TARGET } from "@/modules/tdl/targets";
 
 // Every column is derived from data the app already holds. These two read the
 // time log, and a stored `daily_habits` flag overrides the derived value for a
@@ -78,7 +79,7 @@ export const HABIT_COLUMNS: readonly HabitColumn[] = [
     label: "Task Completion",
     short: "Task",
     manual: false,
-    hint: "Every task on the day's list finished",
+    hint: `Action items worked or done against the daily target of ${ACTION_TARGET} — the to-do list's Action Items pie`,
   },
   {
     key: "gym_growth",
@@ -97,6 +98,8 @@ export interface HabitMark {
 export interface TdlDaySummary {
   total: number;
   done: number;
+  // Worked-today or done — what the to-do list's Action Items pie counts.
+  active: number;
   priorityTotal: number;
   priorityActive: number;
 }
@@ -226,13 +229,15 @@ function priorityCell(day: TdlDaySummary | undefined): HabitCell {
   };
 }
 
-function completionCell(day: TdlDaySummary | undefined): HabitCell {
+// Mirrors the to-do list's Action Items pie exactly: progress toward the daily
+// target of ACTION_TARGET items worked or done, not a share of the day's list.
+export function completionCell(day: TdlDaySummary | undefined): HabitCell {
   if (!day || day.total === 0) return BLANK;
-  const pct = Math.round((day.done / day.total) * 100);
+  const pct = Math.round((day.active / ACTION_TARGET) * 100);
   return {
-    state: day.done === day.total ? "hit" : "miss",
+    state: day.active >= ACTION_TARGET ? "hit" : "miss",
     text: `${pct}%`,
-    title: `${day.done} of ${day.total} tasks done`,
+    title: `${day.active} of ${ACTION_TARGET} action items worked or done`,
   };
 }
 

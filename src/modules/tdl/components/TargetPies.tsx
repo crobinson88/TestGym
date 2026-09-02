@@ -1,8 +1,5 @@
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-
-export const ACTION_TARGET = 30;
-export const PRIORITY_TARGET = 5;
-export const RELUCTANT_TARGET = 5;
+import { ACTION_TARGET, PRIORITY_TARGET, RELUCTANT_TARGET } from "../targets";
 
 function TargetPie({
   label,

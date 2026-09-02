@@ -79,6 +79,7 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
       tdl.set(date, {
         total: c.total,
         done: c.done,
+        active: c.active,
         priorityTotal: c.priorityTotal,
         priorityActive: c.priorityActive,
       });

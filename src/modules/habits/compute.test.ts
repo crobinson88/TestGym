@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACTION_TARGET } from "@/modules/tdl/targets";
 import {
   buildHabitRows,
   currentStreak,
@@ -131,16 +132,29 @@ describe("rolling hours cell", () => {
 describe("to-do cells", () => {
   it("hits priority when a ranked item was worked or done", () => {
     const tdl = new Map([
-      ["2026-08-31", { total: 5, done: 2, priorityTotal: 2, priorityActive: 1 }],
+      ["2026-08-31", { total: 5, done: 2, active: 3, priorityTotal: 2, priorityActive: 1 }],
     ]);
     const rows = buildHabitRows(["2026-08-31"], src({ tdl }));
     expect(rows[0].cells.priority_task.state).toBe("hit");
-    expect(rows[0].cells.task_completion).toMatchObject({ state: "miss", text: "40%" });
   });
 
-  it("hits task completion only when the whole list is done", () => {
+  // The Task column reads the same number as the to-do list's Action Items pie:
+  // items worked or done over the daily target, not a share of the day's list.
+  it("scores task completion against the action-item target", () => {
     const tdl = new Map([
-      ["2026-08-31", { total: 3, done: 3, priorityTotal: 0, priorityActive: 0 }],
+      ["2026-08-31", { total: 5, done: 2, active: 3, priorityTotal: 2, priorityActive: 1 }],
+    ]);
+    const rows = buildHabitRows(["2026-08-31"], src({ tdl }));
+    expect(ACTION_TARGET).toBe(30);
+    expect(rows[0].cells.task_completion).toMatchObject({ state: "miss", text: "10%" });
+  });
+
+  it("hits task completion once the target is met", () => {
+    const tdl = new Map([
+      [
+        "2026-08-31",
+        { total: 40, done: 30, active: ACTION_TARGET, priorityTotal: 0, priorityActive: 0 },
+      ],
     ]);
     const rows = buildHabitRows(["2026-08-31"], src({ tdl }));
     expect(rows[0].cells.task_completion).toMatchObject({ state: "hit", text: "100%" });
