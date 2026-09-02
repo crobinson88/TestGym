@@ -26,6 +26,13 @@ import {
 } from "../hooks";
 import { matchesQuery as matchesTdlQuery } from "../search";
 import {
+  EMPTY_CREATED_RANGE,
+  describeCreatedRange,
+  isCreatedRangeActive,
+  matchesCreatedRange,
+  type CreatedRange,
+} from "../createdRange";
+import {
   reorderCategories,
   setCategoryArchived,
   useCategories,
@@ -58,6 +65,7 @@ import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
 import { OffBoardResults } from "../components/OffBoardResults";
 import { QuickAdd } from "../components/QuickAdd";
+import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -97,6 +105,8 @@ export default function DayView() {
   );
 
   const [query, setQuery] = useState("");
+  const [createdRange, setCreatedRange] = useState<CreatedRange>(EMPTY_CREATED_RANGE);
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   const allIds = useMemo(() => bundle?.items.map((i) => i.id) ?? [], [bundle]);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -305,10 +315,14 @@ export default function DayView() {
   const columns = orphanSections.length > 0 ? [...categories, UNCATEGORISED] : categories;
 
   const q = query.trim().toLowerCase();
-  const searching = q.length > 0;
-  const matchesQuery = (i: LocalTdlItem) => matchesTdlQuery(i, query);
+  // Text and added-date filters stack (AND); "searching" is either of them being
+  // on, which is what narrows the board.
+  const rangeActive = isCreatedRangeActive(createdRange);
+  const searching = q.length > 0 || rangeActive;
+  const matchesQuery = (i: LocalTdlItem) =>
+    matchesTdlQuery(i, query) && matchesCreatedRange(i, createdRange);
 
-  // Selectable = every live item currently visible on the board (search-aware).
+  // Selectable = every live item currently visible on the board (filter-aware).
   const selectableIds = bundle.items.filter(matchesQuery).map((i) => i.id);
 
   async function runBulk(fn: (ids: string[]) => Promise<number>) {
@@ -347,8 +361,8 @@ export default function DayView() {
   const doFirstItems = selectDoFirstItems(bundle.items).filter(matchesQuery);
   const showDoFirstColumn = !searching || doFirstItems.length > 0;
 
-  // While searching, also surface matching archived/snoozed items (they never
-  // appear on the board). Empty when not searching so nothing renders below.
+  // While filtering, also surface matching archived/snoozed items (they never
+  // appear on the board). Empty when unfiltered so nothing renders below.
   const archivedMatches = searching ? (archivedItems ?? []).filter(matchesQuery) : [];
   const snoozedMatches = searching ? (snoozedItems ?? []).filter(matchesQuery) : [];
 
@@ -364,7 +378,7 @@ export default function DayView() {
     snoozedMatches.length === 0;
 
   // "Collapse all" targets every column on the board (the Priorities and Do First
-  // mirrors plus each category), independent of the search filter so the toggle
+  // mirrors plus each category), independent of the filters so the toggle
   // is stable.
   const collapsibleKeys = [
     PRIORITIES_COLLAPSE_KEY,
@@ -373,8 +387,8 @@ export default function DayView() {
   ];
   const allCollapsed = collapsibleKeys.every((k) => collapsedKeys.has(k));
 
-  // Column reorder is a desktop convenience: off while searching (the visible
-  // set is filtered) and until the categories table has synced ids to persist.
+  // Column reorder is a desktop convenience: off while filtering (the visible
+  // set is narrowed) and until the categories table has synced ids to persist.
   const columnsReorderable = !searching && keyToRowId.size > 0;
   const reorderableKeys = columnsReorderable
     ? visibleColumns
@@ -396,7 +410,7 @@ export default function DayView() {
       <div className="p-3">
         <QuickAdd snapshot_date={date} categories={categories} />
         {!empty && (
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input
@@ -408,6 +422,12 @@ export default function DayView() {
                 className="h-10 pl-9 text-sm"
               />
             </div>
+            <CreatedRangeFilter
+              value={createdRange}
+              onChange={setCreatedRange}
+              open={rangeOpen}
+              onToggle={() => setRangeOpen((v) => !v)}
+            />
             <Button
               variant="ghost"
               onClick={() =>
@@ -443,7 +463,10 @@ export default function DayView() {
           </div>
         )}
         {nothingMatches && (
-          <div className="py-8 text-center text-sm text-muted">No tasks match “{query.trim()}”.</div>
+          <div className="py-8 text-center text-sm text-muted">
+            No tasks match {q ? `“${query.trim()}”` : "this filter"}
+            {rangeActive && ` · added ${describeCreatedRange(createdRange)}`}.
+          </div>
         )}
         {showBoard && (
           <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}>
