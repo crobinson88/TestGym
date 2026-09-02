@@ -8,7 +8,14 @@ import { useArchivedItems } from "../hooks";
 import { useCategories } from "../categories";
 import { groupBySection } from "../grouping";
 import { matchesQuery } from "../search";
+import {
+  EMPTY_CREATED_RANGE,
+  isCreatedRangeActive,
+  matchesCreatedRange,
+  type CreatedRange,
+} from "../createdRange";
 import { SectionFilter } from "../components/SectionFilter";
+import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
 import { unarchiveItem } from "../repo";
 
 export default function ArchiveView() {
@@ -18,8 +25,12 @@ export default function ArchiveView() {
 
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<string | null>(null);
+  const [createdRange, setCreatedRange] = useState<CreatedRange>(EMPTY_CREATED_RANGE);
+  const [rangeOpen, setRangeOpen] = useState(false);
 
-  const filtered = (items ?? []).filter((i) => matchesQuery(i, query));
+  const filtered = (items ?? []).filter(
+    (i) => matchesQuery(i, query) && matchesCreatedRange(i, createdRange),
+  );
   const groups = groupBySection(filtered, categories);
   const shown = section ? groups.filter((g) => g.cfg.key === section) : groups;
 
@@ -49,15 +60,23 @@ export default function ArchiveView() {
         ) : (
           <>
             <div className="space-y-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                <Input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search archived…"
-                  aria-label="Search archived items"
-                  className="h-10 pl-9 text-sm"
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search archived…"
+                    aria-label="Search archived items"
+                    className="h-10 pl-9 text-sm"
+                  />
+                </div>
+                <CreatedRangeFilter
+                  value={createdRange}
+                  onChange={setCreatedRange}
+                  open={rangeOpen}
+                  onToggle={() => setRangeOpen((v) => !v)}
                 />
               </div>
               <SectionFilter
@@ -71,7 +90,9 @@ export default function ArchiveView() {
               <div className="py-8 text-center text-sm text-muted">
                 {query.trim()
                   ? `No archived items match “${query.trim()}”.`
-                  : "No archived items in this category."}
+                  : isCreatedRangeActive(createdRange)
+                    ? "No archived items added in this range."
+                    : "No archived items in this category."}
               </div>
             ) : (
               shown.map((g) => (
