@@ -61,7 +61,7 @@ function cat(key: string, label: string): SectionConfig {
 const DAILY = cat("daily-uuid", "Daily Tasks");
 
 describe("collectCalendarCandidates", () => {
-  it("gathers Priorities, Daily Tasks and Do First in that order", () => {
+  it("gathers Priorities, Do First then Daily Tasks in that order", () => {
     const items = [
       item({ id: "p", title: "prio", priority_rank: 2 }),
       item({ id: "d", title: "daily", section: "daily-uuid" }),
@@ -70,8 +70,49 @@ describe("collectCalendarCandidates", () => {
     const out = collectCalendarCandidates(items, [DAILY]);
     expect(out.map((c) => [c.source, c.title])).toEqual([
       ["priorities", "prio"],
-      ["daily_tasks", "daily"],
       ["do_first", "dofirst"],
+      ["daily_tasks", "daily"],
+    ]);
+  });
+
+  it("lists the remaining categories after the headline groups, in board order", () => {
+    const items = [
+      item({ id: "p", title: "prio", section: "product", priority_rank: 1 }),
+      item({ id: "d", title: "daily", section: "daily-uuid" }),
+      item({ id: "t", title: "tgm", section: "tgm" }),
+      item({ id: "q", title: "product", section: "product" }),
+    ];
+    const out = collectCalendarCandidates(items, [
+      DAILY,
+      cat("tgm", "TGM Tasks"),
+      cat("product", "Product"),
+    ]);
+    expect(out.map((c) => [c.sourceLabel, c.title])).toEqual([
+      ["Priority", "prio"],
+      ["Daily Task", "daily"],
+      ["TGM Tasks", "tgm"],
+      ["Product", "product"],
+    ]);
+  });
+
+  it("sorts a category's items by board position", () => {
+    const items = [
+      item({ id: "b", title: "second", section: "tgm", position: 2 }),
+      item({ id: "a", title: "first", section: "tgm", position: 1 }),
+    ];
+    const out = collectCalendarCandidates(items, [DAILY, cat("tgm", "TGM Tasks")]);
+    expect(out.map((c) => c.title)).toEqual(["first", "second"]);
+  });
+
+  it("puts items whose category is gone in Uncategorised, last", () => {
+    const items = [
+      item({ id: "a", title: "orphan", section: "deleted-uuid" }),
+      item({ id: "b", title: "tgm", section: "tgm" }),
+    ];
+    const out = collectCalendarCandidates(items, [DAILY, cat("tgm", "TGM Tasks")]);
+    expect(out.map((c) => [c.sourceLabel, c.title])).toEqual([
+      ["TGM Tasks", "tgm"],
+      ["Uncategorised", "orphan"],
     ]);
   });
 
@@ -97,7 +138,7 @@ describe("collectCalendarCandidates", () => {
     expect(out[0].source).toBe("priorities");
   });
 
-  it("dedupes a Daily Task that is also Do First to daily_tasks", () => {
+  it("dedupes a Daily Task that is also Do First to do_first", () => {
     const both = item({
       id: "y",
       title: "dt+df",
@@ -106,7 +147,14 @@ describe("collectCalendarCandidates", () => {
     });
     const out = collectCalendarCandidates([both], [DAILY]);
     expect(out).toHaveLength(1);
-    expect(out[0].source).toBe("daily_tasks");
+    expect(out[0].source).toBe("do_first");
+  });
+
+  it("dedupes a categorised item that is also ranked to priorities", () => {
+    const both = item({ id: "z", title: "ranked tgm", section: "tgm", priority_rank: 1 });
+    const out = collectCalendarCandidates([both], [DAILY, cat("tgm", "TGM Tasks")]);
+    expect(out).toHaveLength(1);
+    expect(out[0].sourceLabel).toBe("Priority");
   });
 
   it("matches the Daily Tasks category by label, case-insensitively", () => {
@@ -123,8 +171,8 @@ describe("collectCalendarCandidates", () => {
     expect(collectCalendarCandidates(items, [DAILY]).map((c) => c.title)).toEqual(["open"]);
   });
 
-  it("returns nothing when no category is named Daily Tasks and no ranks/quadrants set", () => {
-    const items = [item({ id: "a", section: "daily-uuid" })];
+  it("returns nothing when the day has no actionable items", () => {
+    const items = [item({ id: "a", section: "daily-uuid", status: "done" })];
     expect(collectCalendarCandidates(items, [])).toEqual([]);
   });
 });
@@ -156,8 +204,8 @@ describe("scheduleEvents", () => {
   it("falls back to the default duration when the estimate is missing or zero", () => {
     const events = scheduleEvents(
       [
-        { id: "a", title: "a", timeEstimateMin: null, source: "priorities" },
-        { id: "b", title: "b", timeEstimateMin: 0, source: "priorities" },
+        { id: "a", title: "a", timeEstimateMin: null, source: "priorities", sourceLabel: "Priority" },
+        { id: "b", title: "b", timeEstimateMin: 0, source: "priorities", sourceLabel: "Priority" },
       ],
       { date: "2026-07-27", startHour: 9 },
     );
@@ -167,7 +215,7 @@ describe("scheduleEvents", () => {
 
   it("rolls past midnight into the next day", () => {
     const events = scheduleEvents(
-      [{ id: "a", title: "late", timeEstimateMin: 120, source: "priorities" }],
+      [{ id: "a", title: "late", timeEstimateMin: 120, source: "priorities", sourceLabel: "Priority" }],
       { date: "2026-07-27", startHour: 23 },
     );
     expect(events[0].startDateTime).toBe("2026-07-27T23:00:00");
@@ -177,8 +225,8 @@ describe("scheduleEvents", () => {
   it("honours startMinutes for a sub-hour start", () => {
     const events = scheduleEvents(
       [
-        { id: "a", title: "a", timeEstimateMin: 45, source: "priorities" },
-        { id: "b", title: "b", timeEstimateMin: 30, source: "daily_tasks" },
+        { id: "a", title: "a", timeEstimateMin: 45, source: "priorities", sourceLabel: "Priority" },
+        { id: "b", title: "b", timeEstimateMin: 30, source: "daily_tasks", sourceLabel: "Daily Task" },
       ],
       { date: "2026-07-27", startMinutes: 8 * 60 + 30 },
     );
@@ -189,7 +237,7 @@ describe("scheduleEvents", () => {
 
   it("prefers startMinutes over startHour when both are given", () => {
     const events = scheduleEvents(
-      [{ id: "a", title: "a", timeEstimateMin: 30, source: "priorities" }],
+      [{ id: "a", title: "a", timeEstimateMin: 30, source: "priorities", sourceLabel: "Priority" }],
       { date: "2026-07-27", startHour: 9, startMinutes: 10 * 60 + 15 },
     );
     expect(events[0].startDateTime).toBe("2026-07-27T10:15:00");
@@ -198,8 +246,8 @@ describe("scheduleEvents", () => {
 
 describe("scheduleEvents around busy times", () => {
   const two = [
-    { id: "a", title: "a", timeEstimateMin: 30, source: "priorities" as const },
-    { id: "b", title: "b", timeEstimateMin: 30, source: "priorities" as const },
+    { id: "a", title: "a", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
+    { id: "b", title: "b", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
   ];
 
   it("pushes a clashing block to the end of the busy interval", () => {
@@ -239,7 +287,7 @@ describe("scheduleEvents around busy times", () => {
 
   it("skips past several adjacent busy blocks in one hop", () => {
     const events = scheduleEvents(
-      [{ id: "a", title: "a", timeEstimateMin: 30, source: "priorities" }],
+      [{ id: "a", title: "a", timeEstimateMin: 30, source: "priorities", sourceLabel: "Priority" }],
       {
         date: "2026-07-27",
         startMinutes: 9 * 60,
@@ -328,7 +376,7 @@ describe("clampDuration", () => {
 });
 
 describe("matchesCandidateQuery", () => {
-  const c = { title: "Send Reports", source: "priorities" as const };
+  const c = { title: "Send Reports", sourceLabel: "Priority" };
 
   it("matches everything on an empty query", () => {
     expect(matchesCandidateQuery(c, "")).toBe(true);
@@ -343,15 +391,21 @@ describe("matchesCandidateQuery", () => {
 
   it("matches the source label", () => {
     expect(matchesCandidateQuery(c, "priority")).toBe(true);
-    expect(matchesCandidateQuery({ title: "x", source: "daily_tasks" }, "daily")).toBe(true);
-    expect(matchesCandidateQuery({ title: "x", source: "do_first" }, "priority")).toBe(false);
+    expect(matchesCandidateQuery({ title: "x", sourceLabel: "Daily Task" }, "daily")).toBe(true);
+    expect(matchesCandidateQuery({ title: "x", sourceLabel: "Do First" }, "priority")).toBe(false);
+  });
+
+  it("matches a category name", () => {
+    expect(
+      matchesCandidateQuery({ title: "x", sourceLabel: "TGM Tasks" }, "tgm"),
+    ).toBe(true);
   });
 });
 
 describe("scheduleEvents with per-item overrides", () => {
   const two = [
-    { id: "a", title: "a", timeEstimateMin: 30, source: "priorities" as const },
-    { id: "b", title: "b", timeEstimateMin: 30, source: "priorities" as const },
+    { id: "a", title: "a", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
+    { id: "b", title: "b", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
   ];
 
   it("uses a duration override instead of the estimate and reflows the chain", () => {
@@ -627,9 +681,9 @@ describe("reorderForDrop", () => {
 
   it("re-flows every following block after the move", () => {
     const candidates = [
-      { id: "a", title: "A", timeEstimateMin: 30, source: "priorities" as const },
-      { id: "b", title: "B", timeEstimateMin: 30, source: "priorities" as const },
-      { id: "c", title: "C", timeEstimateMin: 30, source: "priorities" as const },
+      { id: "a", title: "A", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
+      { id: "b", title: "B", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
+      { id: "c", title: "C", timeEstimateMin: 30, source: "priorities" as const, sourceLabel: "Priority" },
     ];
     const next = reorderForDrop(order, placed, "c", 480);
     const out = scheduleEvents(applyCandidateOrder(candidates, next), {

@@ -5,20 +5,25 @@
 // and network layers so it stays import-safe in tests.
 
 import { addDays } from "@/lib/utils";
-import type { SectionConfig } from "./sections";
+import { UNCATEGORISED, type SectionConfig } from "./sections";
 import { selectPriorityItems } from "./priority";
 import { selectDoFirstItems } from "./quadrant";
 import type { LocalTdlItem, TdlStatus } from "./types";
 
-// The three groups an item can be pulled from, in the priority order the user
-// asked for: a Priority beats a Daily Task beats a Do First. An item that sits
-// in more than one gets a single event, tagged with its highest source here.
-export type CalendarSource = "priorities" | "daily_tasks" | "do_first";
+// The groups an item can be pulled from, in the order the user asked for: a
+// Priority beats a Do First beats a Daily Task beats the item's own category.
+// An item that sits in more than one gets a single event, tagged with its
+// highest source here. "category" covers every other live category — those
+// candidates carry the category's own label in `sourceLabel`.
+export type CalendarSource = "priorities" | "do_first" | "daily_tasks" | "category";
 
+// Labels for the three headline groups. A "category" candidate reads as its
+// category instead, so the entry here is only a fallback.
 export const CALENDAR_SOURCE_LABEL: Record<CalendarSource, string> = {
   priorities: "Priority",
-  daily_tasks: "Daily Task",
   do_first: "Do First",
+  daily_tasks: "Daily Task",
+  category: "Task",
 };
 
 // "Daily Tasks" is a user-managed category (its key is a uuid), so match it by
@@ -102,6 +107,9 @@ export interface CalendarCandidate {
   title: string;
   timeEstimateMin: number | null;
   source: CalendarSource;
+  // What the row reads as: "Priority" / "Do First" / "Daily Task", or the
+  // item's category label for everything else.
+  sourceLabel: string;
 }
 
 function dailyTaskKeys(categories: readonly SectionConfig[]): Set<string> {
@@ -112,31 +120,56 @@ function dailyTaskKeys(categories: readonly SectionConfig[]): Set<string> {
   );
 }
 
-// Gather the actionable Priorities, Daily Tasks and Do First items into one
-// deduped list. An item present in several groups appears once, keeping its
-// highest-priority source; the list is ordered Priorities → Daily Tasks → Do
-// First (and within Priorities by rank, elsewhere by board position).
+// Gather the day's actionable items into one deduped list, grouped by where
+// they come from: Priorities → Do First → Daily Tasks → every other category in
+// board order, with items whose category is gone last under Uncategorised. An
+// item present in several groups appears once, keeping its highest-priority
+// source; Priorities are ordered by rank, everything else by board position.
 export function collectCalendarCandidates(
   items: readonly LocalTdlItem[],
   categories: readonly SectionConfig[],
 ): CalendarCandidate[] {
   const actionable = items.filter((i) => ACTIONABLE.has(i.status));
   const dailyKeys = dailyTaskKeys(categories);
+  const byPosition = (a: LocalTdlItem, b: LocalTdlItem) => a.position - b.position;
 
-  const groups: { source: CalendarSource; list: LocalTdlItem[] }[] = [
-    { source: "priorities", list: selectPriorityItems(actionable) },
+  const groups: { source: CalendarSource; label: string; list: LocalTdlItem[] }[] = [
+    {
+      source: "priorities",
+      label: CALENDAR_SOURCE_LABEL.priorities,
+      list: selectPriorityItems(actionable),
+    },
+    {
+      source: "do_first",
+      label: CALENDAR_SOURCE_LABEL.do_first,
+      list: selectDoFirstItems(actionable),
+    },
     {
       source: "daily_tasks",
-      list: actionable
-        .filter((i) => dailyKeys.has(i.section))
-        .sort((a, b) => a.position - b.position),
+      label: CALENDAR_SOURCE_LABEL.daily_tasks,
+      list: actionable.filter((i) => dailyKeys.has(i.section)).sort(byPosition),
     },
-    { source: "do_first", list: selectDoFirstItems(actionable) },
   ];
+
+  for (const category of categories) {
+    if (dailyKeys.has(category.key)) continue;
+    groups.push({
+      source: "category",
+      label: category.label,
+      list: actionable.filter((i) => i.section === category.key).sort(byPosition),
+    });
+  }
+
+  const liveKeys = new Set(categories.map((c) => c.key));
+  groups.push({
+    source: "category",
+    label: UNCATEGORISED.label,
+    list: actionable.filter((i) => !liveKeys.has(i.section)).sort(byPosition),
+  });
 
   const seen = new Set<string>();
   const out: CalendarCandidate[] = [];
-  for (const { source, list } of groups) {
+  for (const { source, label, list } of groups) {
     for (const item of list) {
       if (seen.has(item.id)) continue;
       seen.add(item.id);
@@ -145,6 +178,7 @@ export function collectCalendarCandidates(
         title: item.title,
         timeEstimateMin: item.time_estimate_min ?? null,
         source,
+        sourceLabel: label,
       });
     }
   }
@@ -152,17 +186,18 @@ export function collectCalendarCandidates(
 }
 
 // Free-text filter for the modal's search box: case-insensitive substring over
-// the title and the source label ("priority", "daily task"), so a long day can
-// be narrowed to the one block you want to move. Empty query matches all.
+// the title and the source label ("priority", "daily task", a category name),
+// so a long day can be narrowed to the one block you want to move. Empty query
+// matches all.
 export function matchesCandidateQuery(
-  candidate: Pick<CalendarCandidate, "title" | "source">,
+  candidate: Pick<CalendarCandidate, "title" | "sourceLabel">,
   query: string,
 ): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return (
     candidate.title.toLowerCase().includes(q) ||
-    CALENDAR_SOURCE_LABEL[candidate.source].toLowerCase().includes(q)
+    candidate.sourceLabel.toLowerCase().includes(q)
   );
 }
 

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GripVertical } from "lucide-react";
 import {
-  CALENDAR_SOURCE_LABEL,
   layoutLanes,
   prettyDuration,
   prettyHourLabel,
@@ -29,8 +28,9 @@ type Block =
 
 const SOURCE_TINT: Record<ScheduledEvent["source"], string> = {
   priorities: "border-accent/70 bg-accent/20 text-text",
-  daily_tasks: "border-success/60 bg-success/15 text-text",
   do_first: "border-warn/60 bg-warn/15 text-text",
+  daily_tasks: "border-success/60 bg-success/15 text-text",
+  category: "border-line bg-surface2 text-text",
 };
 
 interface DragState {
@@ -264,7 +264,7 @@ export function DayTimeline({
         }}
         style={style}
         title={`${e.title} · ${prettyMinutes(labelStart)} · ${prettyDuration(e.durationMin)} · ${
-          CALENDAR_SOURCE_LABEL[e.source]
+          e.sourceLabel
         }${movable ? " — drag to move it, or arrow keys to reorder" : ""}`}
         className={`absolute select-none overflow-hidden rounded-lg border pr-2 text-left ${
           height < 34 ? "py-0.5" : "py-1.5"
@@ -302,7 +302,7 @@ export function DayTimeline({
         )}
         {height > 74 && (
           <span className="mt-1 block truncate text-xs leading-tight opacity-60">
-            {CALENDAR_SOURCE_LABEL[e.source]}
+            {e.sourceLabel}
           </span>
         )}
       </button>
