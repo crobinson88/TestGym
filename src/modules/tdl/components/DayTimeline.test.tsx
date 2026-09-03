@@ -199,3 +199,34 @@ describe("DayTimeline drag", () => {
     expect(block.title).not.toMatch(/drag/);
   });
 });
+
+describe("DayTimeline day-end marker", () => {
+  it("marks where the scheduling window closes", () => {
+    render(
+      <DayTimeline
+        events={events()}
+        busy={[]}
+        fromMinutes={540}
+        untilMinutes={19 * 60}
+        focusedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Day ends 7:00 PM")).toBeTruthy();
+    // Drawn through to the end of the window even though the blocks stop at noon.
+    expect(screen.getByText("7 PM")).toBeTruthy();
+  });
+
+  it("draws no marker without a window end", () => {
+    render(
+      <DayTimeline
+        events={events()}
+        busy={[]}
+        fromMinutes={540}
+        focusedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Day ends/)).toBeNull();
+  });
+});

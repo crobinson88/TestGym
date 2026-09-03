@@ -70,6 +70,7 @@ export function DayTimeline({
   events,
   busy,
   fromMinutes,
+  untilMinutes,
   focusedId,
   onSelect,
   onMove,
@@ -78,6 +79,9 @@ export function DayTimeline({
   events: readonly ScheduledEvent[];
   busy: readonly BusyInterval[];
   fromMinutes: number;
+  // End of the scheduling window: drawn as a "day ends" line with the time
+  // beyond it dimmed, so it's obvious why the blocks stop where they do.
+  untilMinutes?: number | null;
   focusedId: string | null;
   onSelect: (id: string) => void;
   onMove?: (id: string, startMinutes: number) => void;
@@ -134,6 +138,7 @@ export function DayTimeline({
 
   const range = timelineRange(draggedSpan ? [...blocks, draggedSpan] : blocks, {
     from: fromMinutes,
+    to: untilMinutes,
   });
   rangeRef.current = range;
   const hours: number[] = [];
@@ -318,6 +323,22 @@ export function DayTimeline({
       className="relative"
       style={{ height: ((range.end - range.start) / 60) * HOUR_PX + 8 }}
     >
+      {untilMinutes != null && untilMinutes >= range.start && untilMinutes <= range.end && (
+        <div
+          aria-hidden
+          className="absolute inset-x-0 border-t border-dashed border-warn/70 bg-bg/50"
+          style={{
+            top: top(untilMinutes),
+            height: Math.max(0, top(range.end) - top(untilMinutes)),
+          }}
+        >
+          {/* Above the line, so it still reads when nothing runs past the window. */}
+          <span className="absolute -top-4 right-1 text-[11px] text-warn">
+            {`Day ends ${prettyMinutes(untilMinutes)}`}
+          </span>
+        </div>
+      )}
+
       {hours.map((m) => (
         <div key={m} className="absolute inset-x-0 flex items-start" style={{ top: top(m) }}>
           <span className="w-16 shrink-0 pr-2 text-right text-xs leading-none text-muted">

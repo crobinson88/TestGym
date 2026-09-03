@@ -34,8 +34,12 @@ const DAILY_TASKS_LABEL = "daily tasks";
 export const DEFAULT_DURATION_MIN = 30;
 // Where the back-to-back chain starts on the day (24h clock).
 export const DEFAULT_START_HOUR = 9;
-// Same default expressed as minutes-from-midnight, for the time picker.
+// The latest a block may end. Nothing is scheduled past this — anything left
+// over is reported as overflow rather than pushed into the evening.
+export const DEFAULT_END_HOUR = 19;
+// Same defaults expressed as minutes-from-midnight, for the time pickers.
 export const DEFAULT_START_MINUTES = DEFAULT_START_HOUR * 60;
+export const DEFAULT_END_MINUTES = DEFAULT_END_HOUR * 60;
 
 // Bounds for a hand-adjusted block length.
 export const MIN_DURATION_MIN = 5;
@@ -86,6 +90,15 @@ export function prettyDuration(minutes: number): string {
   const m = minutes % 60;
   if (h === 0) return `${m}m`;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+// Deep link to the day the blocks were written to, so the user can jump
+// straight to Google Calendar and see what got booked. No `/u/0/` — Google
+// resolves the signed-in account itself, which is right when several are.
+export function googleCalendarDayUrl(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  if (!y || !m || !d) return "https://calendar.google.com/calendar/r";
+  return `https://calendar.google.com/calendar/r/day/${y}/${m}/${d}`;
 }
 
 export function clampDuration(minutes: number): number {
@@ -248,12 +261,15 @@ export function mergeBusy(intervals: readonly BusyInterval[]): BusyInterval[] {
 
 // Earliest minute >= `from` where a block of `duration` fits without touching
 // any (pre-merged) busy interval. Each overlap bumps the start to that
-// interval's end; repeat until a clear slot is found.
+// interval's end; repeat until a clear slot is found. With a `limit` (the end
+// of the scheduling window) a block that can't finish by then returns null —
+// the caller reports it as overflow rather than booking the evening.
 function nextFreeStart(
   from: number,
   duration: number,
   busy: readonly BusyInterval[],
-): number {
+  limit?: number | null,
+): number | null {
   let start = from;
   let bumped = true;
   while (bumped) {
@@ -264,6 +280,7 @@ function nextFreeStart(
         bumped = true;
       }
     }
+    if (limit != null && start + duration > limit) return null;
   }
   return start;
 }
@@ -291,12 +308,19 @@ function localDateTime(date: string, minutesFromMidnight: number): string {
 // cursor, so nothing clashes with an existing calendar event; with no busy
 // intervals that degrades to a plain back-to-back chain. The result is sorted
 // by start time — the order the day actually happens in.
+//
+// `endMinutes` closes the window: a flowing block that can't finish by then is
+// left out of the result entirely (the caller highlights it as "won't fit"),
+// and the cursor doesn't move, so a shorter task further down the list can
+// still take the tail of the day. A pinned block is explicit intent and is
+// always placed, even if the user pinned it past the end of the window.
 export function scheduleEvents(
   candidates: readonly CalendarCandidate[],
   opts: {
     date: string;
     startHour?: number;
     startMinutes?: number;
+    endMinutes?: number | null;
     defaultDurationMin?: number;
     busy?: readonly BusyInterval[];
     overrides?: Readonly<Record<string, CalendarOverride>>;
@@ -331,16 +355,19 @@ export function scheduleEvents(
   }
 
   const busy = mergeBusy([...(opts.busy ?? []), ...pinnedBusy]);
+  const limit = opts.endMinutes ?? null;
   let cursor = startMinutes;
   for (const c of candidates) {
     if (placed.has(c.id)) continue;
     const duration = durationOf(c);
-    const start = nextFreeStart(cursor, duration, busy);
+    const start = nextFreeStart(cursor, duration, busy, limit);
+    if (start == null) continue;
     placed.set(c.id, { start, duration });
     cursor = start + duration;
   }
 
   return candidates
+    .filter((c) => placed.has(c.id))
     .map((c) => {
       const { start, duration } = placed.get(c.id) as { start: number; duration: number };
       return {
@@ -356,15 +383,17 @@ export function scheduleEvents(
     .sort((a, b) => a.startMinutes - b.startMinutes);
 }
 
-// The window the day view draws: wide enough for every block and the chosen
-// start time, snapped out to whole hours so the gridlines read as a clock.
+// The window the day view draws: wide enough for every block, the chosen start
+// time and (with `to`) the end of the scheduling window, snapped out to whole
+// hours so the gridlines read as a clock. Drawing through to `to` keeps the
+// "day ends here" line visible even when the blocks finish long before it.
 export function timelineRange(
   blocks: readonly { start: number; end: number }[],
-  opts: { from: number; minSpanMin?: number },
+  opts: { from: number; to?: number | null; minSpanMin?: number },
 ): { start: number; end: number } {
   const minSpan = opts.minSpanMin ?? 4 * 60;
   let start = opts.from;
-  let end = opts.from + minSpan;
+  let end = Math.max(opts.from + minSpan, opts.to ?? -Infinity);
   for (const b of blocks) {
     if (b.start < start) start = b.start;
     if (b.end > end) end = b.end;
