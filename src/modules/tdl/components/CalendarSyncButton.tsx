@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, Clock, Minus, Pin, Plus, Search, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarPlus,
+  Check,
+  Clock,
+  ExternalLink,
+  Minus,
+  Pin,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
@@ -8,6 +19,7 @@ import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import {
   DEFAULT_DURATION_MIN,
+  DEFAULT_END_MINUTES,
   DEFAULT_START_MINUTES,
   DURATION_STEP_MIN,
   MAX_DURATION_MIN,
@@ -15,6 +27,7 @@ import {
   applyCandidateOrder,
   clampDuration,
   collectCalendarCandidates,
+  googleCalendarDayUrl,
   matchesCandidateQuery,
   minutesToTime,
   parseTimeToMinutes,
@@ -84,6 +97,7 @@ export function CalendarSyncButton({
   const [open, setOpen] = useState(false);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [startTime, setStartTime] = useState(minutesToTime(DEFAULT_START_MINUTES));
+  const [endTime, setEndTime] = useState(minutesToTime(DEFAULT_END_MINUTES));
   const [overrides, setOverrides] = useState<Record<string, CalendarOverride>>({});
   // Hand-picked block order from dragging the day view; null = the canonical
   // Priorities → Do First → Daily Tasks → other categories order.
@@ -101,6 +115,11 @@ export function CalendarSyncButton({
   const rowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
 
   const startMinutes = parseTimeToMinutes(startTime) ?? DEFAULT_START_MINUTES;
+  // The latest a block may end. Nothing is booked past it — anything left over
+  // is flagged in the list instead of spilling into the evening.
+  const endMinutes = parseTimeToMinutes(endTime) ?? DEFAULT_END_MINUTES;
+  const windowInvalid = endMinutes <= startMinutes;
+  const calendarUrl = googleCalendarDayUrl(snapshot_date);
 
   // Canonical order: Priorities → Do First → Daily Tasks → other categories.
   const candidates = useMemo(
@@ -118,14 +137,21 @@ export function CalendarSyncButton({
     () =>
       scheduleEvents(
         ordered.filter((c) => !excluded.has(c.id)),
-        { date: snapshot_date, startMinutes, busy, overrides },
+        { date: snapshot_date, startMinutes, endMinutes, busy, overrides },
       ),
-    [ordered, excluded, snapshot_date, startMinutes, busy, overrides],
+    [ordered, excluded, snapshot_date, startMinutes, endMinutes, busy, overrides],
   );
 
   const byId = useMemo(
     () => new Map(scheduled.map((e) => [e.id, e])),
     [scheduled],
+  );
+
+  // Picked, but the day ran out before they could be placed. They aren't
+  // created — the list flags them so it's obvious what got left behind.
+  const overflow = useMemo(
+    () => ordered.filter((c) => !excluded.has(c.id) && !byId.has(c.id)),
+    [ordered, excluded, byId],
   );
 
   const visible = useMemo(
@@ -187,6 +213,7 @@ export function CalendarSyncButton({
     // are listed but opt-in, so opening the modal never queues the whole board.
     setExcluded(new Set(candidates.filter((c) => c.source === "category").map((c) => c.id)));
     setStartTime(minutesToTime(DEFAULT_START_MINUTES));
+    setEndTime(minutesToTime(DEFAULT_END_MINUTES));
     setOverrides({});
     setOrder(null);
     setQuery("");
@@ -361,7 +388,20 @@ export function CalendarSyncButton({
           <CalendarPlus className="mr-1 h-4 w-4" />
           Add Calendar
         </Button>
-        {result && !open && <span className="text-xs text-success">{result}</span>}
+        {result && !open && (
+          <span className="flex items-center gap-2 text-xs text-success">
+            {result}
+            <a
+              href={calendarUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Open Calendar
+            </a>
+          </span>
+        )}
         {error && !open && <span className="text-xs text-danger">{error}</span>}
       </div>
 
@@ -377,10 +417,20 @@ export function CalendarSyncButton({
             onClick={(e) => e.stopPropagation()}
           >
             <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
-              <div className="flex items-center gap-2">
-                <CalendarPlus className="h-5 w-5 text-accent" />
-                <h2 className="text-base font-semibold">Add to Google Calendar</h2>
+              <div className="flex min-w-0 items-center gap-2">
+                <CalendarPlus className="h-5 w-5 shrink-0 text-accent" />
+                <h2 className="truncate text-base font-semibold">Add to Google Calendar</h2>
               </div>
+              <a
+                href={calendarUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto flex h-9 shrink-0 items-center gap-1 rounded-xl px-2 text-xs text-muted hover:bg-surface2 hover:text-text"
+                title="Open this day in Google Calendar"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span className="hidden sm:inline">Open Calendar</span>
+              </a>
               <button
                 onClick={() => setOpen(false)}
                 disabled={running}
@@ -392,22 +442,20 @@ export function CalendarSyncButton({
             </header>
 
             <div className="space-y-2 border-b border-line px-4 py-3">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                  <Input
-                    type="search"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search these tasks…"
-                    aria-label="Search tasks to schedule"
-                    disabled={running}
-                    className="h-11 pl-9 text-sm"
-                  />
-                </div>
-                <label htmlFor="cal-start-time" className="sr-only">
-                  Start time
-                </label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search these tasks…"
+                  aria-label="Search tasks to schedule"
+                  disabled={running}
+                  className="h-11 pl-9 text-sm"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <label htmlFor="cal-start-time">Schedule between</label>
                 <input
                   id="cal-start-time"
                   type="time"
@@ -417,11 +465,26 @@ export function CalendarSyncButton({
                   title="When the day's blocks start"
                   className="h-11 rounded-xl border border-line bg-surface2 px-3 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
                 />
+                <label htmlFor="cal-end-time">and</label>
+                <input
+                  id="cal-end-time"
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  disabled={running}
+                  title="The latest a block may end — nothing is booked past this"
+                  className={`h-11 rounded-xl border bg-surface2 px-3 text-sm text-text focus:outline-none disabled:opacity-50 ${
+                    windowInvalid ? "border-danger" : "border-line focus:border-accent"
+                  }`}
+                />
+                {windowInvalid && (
+                  <span className="text-danger">End time must be after the start.</span>
+                )}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
                 <span>
-                  {scheduled.length} of {candidates.length} selected · from{" "}
-                  {prettyMinutes(startMinutes)}, {timelineHint}
+                  {scheduled.length} of {candidates.length} scheduled ·{" "}
+                  {prettyMinutes(startMinutes)}–{prettyMinutes(endMinutes)}, {timelineHint}
                   {searching ? ` · ${visible.length} matching “${query.trim()}”` : ""}
                 </span>
                 <span className="flex items-center gap-1">
@@ -468,6 +531,16 @@ export function CalendarSyncButton({
                   </button>
                 ))}
               </div>
+              {overflow.length > 0 && (
+                <div className="flex items-start gap-2 rounded-xl border border-warn/60 bg-warn/10 px-3 py-2 text-xs text-warn">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    {overflow.length} task{overflow.length === 1 ? "" : "s"} won&rsquo;t fit before{" "}
+                    {prettyMinutes(endMinutes)} — highlighted below, and not added. Extend the day,
+                    shorten some blocks, or untick them.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_26rem]">
@@ -481,7 +554,9 @@ export function CalendarSyncButton({
                 )}
                 {visible.map((c) => {
                   const event = byId.get(c.id);
-                  const on = !!event;
+                  const selected = !excluded.has(c.id);
+                  // Picked but past the end of the day — flagged rather than booked.
+                  const doesNotFit = selected && !event;
                   const expanded = expandedId === c.id;
                   const duration = durationOf(c);
                   return (
@@ -491,19 +566,29 @@ export function CalendarSyncButton({
                         if (el) rowRefs.current.set(c.id, el);
                         else rowRefs.current.delete(c.id);
                       }}
-                      className={`rounded-xl ${focusedId === c.id ? "bg-surface2" : ""}`}
+                      className={`rounded-xl ${
+                        doesNotFit
+                          ? "bg-warn/10 ring-1 ring-warn/60"
+                          : focusedId === c.id
+                            ? "bg-surface2"
+                            : ""
+                      }`}
                     >
                       <div className="flex items-center gap-2 rounded-xl px-1 hover:bg-surface2">
                         <button
                           type="button"
                           onClick={() => toggle(c.id)}
-                          aria-pressed={on}
-                          aria-label={on ? `Skip ${c.title}` : `Include ${c.title}`}
+                          aria-pressed={selected}
+                          aria-label={selected ? `Skip ${c.title}` : `Include ${c.title}`}
                           className="flex h-11 w-9 shrink-0 items-center justify-center"
                         >
                           <span
                             className={`flex h-5 w-5 items-center justify-center rounded border ${
-                              on ? "border-accent bg-accent text-bg" : "border-line text-transparent"
+                              doesNotFit
+                                ? "border-warn bg-warn text-bg"
+                                : selected
+                                  ? "border-accent bg-accent text-bg"
+                                  : "border-line text-transparent"
                             }`}
                             aria-hidden
                           >
@@ -519,15 +604,24 @@ export function CalendarSyncButton({
                           className="min-w-0 flex-1 py-2 text-left"
                         >
                           <span
-                            className={`block truncate text-sm ${on ? "text-text" : "text-muted line-through"}`}
+                            className={`block truncate text-sm ${
+                              selected ? "text-text" : "text-muted line-through"
+                            }`}
                           >
                             {c.title}
                           </span>
-                          <span className="flex items-center gap-1 text-[11px] text-muted">
+                          <span
+                            className={`flex items-center gap-1 text-[11px] ${
+                              doesNotFit ? "text-warn" : "text-muted"
+                            }`}
+                          >
                             {event?.pinned && <Pin className="h-3 w-3 text-accent" />}
+                            {doesNotFit && <AlertTriangle className="h-3 w-3" />}
                             {event
                               ? `${prettyMinutes(event.startMinutes)} · ${prettyDuration(event.durationMin)}`
-                              : "Not scheduled"}
+                              : doesNotFit
+                                ? `Won't fit before ${prettyMinutes(endMinutes)} · ${prettyDuration(duration)}`
+                                : "Not scheduled"}
                             {" · "}
                             {c.sourceLabel}
                           </span>
@@ -650,6 +744,7 @@ export function CalendarSyncButton({
                 </div>
                 <p className="mb-3 text-xs text-muted">
                   Drag a block by its handle to reorder your day — everything else shifts to fit.
+                  Nothing is booked after {prettyMinutes(endMinutes)}.
                 </p>
                 {scheduled.length === 0 && busy.length === 0 ? (
                   <p className="py-8 text-center text-xs text-muted">Nothing scheduled.</p>
@@ -658,6 +753,7 @@ export function CalendarSyncButton({
                     events={scheduled}
                     busy={busy}
                     fromMinutes={startMinutes}
+                    untilMinutes={windowInvalid ? null : endMinutes}
                     focusedId={focusedId}
                     onSelect={focusFromTimeline}
                     onMove={moveBlock}
@@ -669,7 +765,20 @@ export function CalendarSyncButton({
 
             <footer className="space-y-2 border-t border-line px-4 py-3">
               {error && <div className="text-xs text-danger">{error}</div>}
-              {result && <div className="text-xs text-success">{result}</div>}
+              {result && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-success">
+                  <span>{result}</span>
+                  <a
+                    href={calendarUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    See it in Google Calendar
+                  </a>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={running}>
                   Cancel

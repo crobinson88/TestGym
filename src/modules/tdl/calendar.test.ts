@@ -12,6 +12,7 @@ import {
   MIN_DURATION_MIN,
   clampDuration,
   collectCalendarCandidates,
+  googleCalendarDayUrl,
   layoutLanes,
   matchesCandidateQuery,
   mergeBusy,
@@ -723,5 +724,111 @@ describe("reorderByStep", () => {
   it("ignores an id or delta it can't act on", () => {
     expect(reorderByStep(order, sequence, "zz", -1)).toEqual(["a", "b", "c"]);
     expect(reorderByStep(order, sequence, "a", 0)).toEqual(["a", "b", "c"]);
+  });
+});
+
+
+describe("scheduleEvents within a start/end window", () => {
+  const c = (id: string, minutes: number) => ({
+    id,
+    title: id,
+    timeEstimateMin: minutes,
+    source: "priorities" as const,
+    sourceLabel: "Priority",
+  });
+
+  it("leaves out a block that can't finish by the end time", () => {
+    const events = scheduleEvents([c("a", 60), c("b", 60)], {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      endMinutes: 10 * 60 + 30,
+    });
+    expect(events.map((e) => e.id)).toEqual(["a"]);
+  });
+
+  it("keeps filling the tail of the day with tasks that still fit", () => {
+    // "b" needs 3h and doesn't fit before 11:00, but the 30m "c" does.
+    const events = scheduleEvents([c("a", 60), c("b", 180), c("c", 30)], {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+    });
+    expect(events.map((e) => e.id)).toEqual(["a", "c"]);
+    expect(events[1].startDateTime).toBe("2026-07-27T10:00:00");
+  });
+
+  it("drops a block whose only free slot starts too late", () => {
+    const events = scheduleEvents([c("a", 60)], {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+      busy: [{ start: 9 * 60, end: 11 * 60 + 30 }],
+    });
+    expect(events).toEqual([]);
+  });
+
+  it("still places a block that the busy hop leaves room for", () => {
+    const events = scheduleEvents([c("a", 30)], {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+      busy: [{ start: 9 * 60, end: 11 * 60 + 30 }],
+    });
+    expect(events[0].startDateTime).toBe("2026-07-27T11:30:00");
+  });
+
+  it("places a pinned block even when the user pins it past the window", () => {
+    const events = scheduleEvents([c("a", 60)], {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+      endMinutes: 10 * 60,
+      overrides: { a: { startMinutes: 21 * 60 } },
+    });
+    expect(events[0]).toMatchObject({ pinned: true, startDateTime: "2026-07-27T21:00:00" });
+  });
+
+  it("schedules nothing when the end is at or before the start", () => {
+    expect(
+      scheduleEvents([c("a", 30)], {
+        date: "2026-07-27",
+        startMinutes: 9 * 60,
+        endMinutes: 9 * 60,
+      }),
+    ).toEqual([]);
+  });
+
+  it("is unbounded when no end time is given", () => {
+    const events = scheduleEvents([c("a", 600), c("b", 600)], {
+      date: "2026-07-27",
+      startMinutes: 9 * 60,
+    });
+    expect(events.map((e) => e.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("timelineRange with a window end", () => {
+  it("draws through to the end of the scheduling window", () => {
+    expect(timelineRange([{ start: 9 * 60, end: 10 * 60 }], { from: 9 * 60, to: 19 * 60 })).toEqual({
+      start: 9 * 60,
+      end: 19 * 60,
+    });
+  });
+
+  it("still stretches past the window for a block that overruns it", () => {
+    expect(
+      timelineRange([{ start: 9 * 60, end: 20 * 60 + 10 }], { from: 9 * 60, to: 19 * 60 }),
+    ).toEqual({ start: 9 * 60, end: 21 * 60 });
+  });
+});
+
+describe("googleCalendarDayUrl", () => {
+  it("links to the day view without a zero-padded month or day", () => {
+    expect(googleCalendarDayUrl("2026-07-05")).toBe(
+      "https://calendar.google.com/calendar/r/day/2026/7/5",
+    );
+  });
+
+  it("falls back to the calendar root for an unparseable date", () => {
+    expect(googleCalendarDayUrl("not-a-date")).toBe("https://calendar.google.com/calendar/r");
   });
 });
