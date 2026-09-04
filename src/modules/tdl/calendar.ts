@@ -214,6 +214,35 @@ export function matchesCandidateQuery(
   );
 }
 
+// One heading's worth of rows in the modal's task list. Groups follow the order
+// the candidates already carry (Priorities → Do First → Daily Tasks → each
+// category), so a hand-dragged day still reads under the right heading.
+export interface CandidateGroup {
+  source: CalendarSource;
+  label: string;
+  candidates: CalendarCandidate[];
+}
+
+// Split a candidate list into its source groups, keeping each group in the
+// order its first member appears and each member in its incoming order. Empty
+// groups never exist — a group is created by its first candidate.
+export function groupCandidates(
+  candidates: readonly CalendarCandidate[],
+): CandidateGroup[] {
+  const out: CandidateGroup[] = [];
+  const byLabel = new Map<string, CandidateGroup>();
+  for (const candidate of candidates) {
+    let group = byLabel.get(candidate.sourceLabel);
+    if (!group) {
+      group = { source: candidate.source, label: candidate.sourceLabel, candidates: [] };
+      byLabel.set(candidate.sourceLabel, group);
+      out.push(group);
+    }
+    group.candidates.push(candidate);
+  }
+  return out;
+}
+
 // Per-item adjustments made in the modal. A duration replaces the item's time
 // estimate; a start pins the block to that minute-of-day instead of letting it
 // flow in the back-to-back chain.

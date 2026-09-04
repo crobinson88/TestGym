@@ -13,6 +13,7 @@ import {
   clampDuration,
   collectCalendarCandidates,
   googleCalendarDayUrl,
+  groupCandidates,
   layoutLanes,
   matchesCandidateQuery,
   mergeBusy,
@@ -400,6 +401,47 @@ describe("matchesCandidateQuery", () => {
     expect(
       matchesCandidateQuery({ title: "x", sourceLabel: "TGM Tasks" }, "tgm"),
     ).toBe(true);
+  });
+});
+
+describe("groupCandidates", () => {
+  const candidates = [
+    { id: "a", title: "A", timeEstimateMin: null, source: "priorities" as const, sourceLabel: "Priority" },
+    { id: "b", title: "B", timeEstimateMin: null, source: "do_first" as const, sourceLabel: "Do First" },
+    { id: "c", title: "C", timeEstimateMin: null, source: "priorities" as const, sourceLabel: "Priority" },
+    { id: "d", title: "D", timeEstimateMin: null, source: "category" as const, sourceLabel: "TGM Tasks" },
+  ];
+
+  it("splits the list into one group per source label", () => {
+    expect(groupCandidates(candidates).map((g) => [g.label, g.candidates.map((c) => c.id)])).toEqual([
+      ["Priority", ["a", "c"]],
+      ["Do First", ["b"]],
+      ["TGM Tasks", ["d"]],
+    ]);
+  });
+
+  it("keeps the group's source and orders groups by first appearance", () => {
+    const groups = groupCandidates([candidates[3], candidates[0]]);
+    expect(groups.map((g) => g.label)).toEqual(["TGM Tasks", "Priority"]);
+    expect(groups.map((g) => g.source)).toEqual(["category", "priorities"]);
+  });
+
+  it("returns nothing for an empty list", () => {
+    expect(groupCandidates([])).toEqual([]);
+  });
+
+  it("groups a day's real candidates under their headings", () => {
+    const cats = [cat("k1", "Daily Tasks"), cat("k2", "TGM Tasks")];
+    const items = [
+      item({ id: "p", title: "Ranked", section: "k2", priority_rank: 1 }),
+      item({ id: "daily", title: "Stretch", section: "k1", position: 0 }),
+      item({ id: "tgm", title: "Email", section: "k2", position: 1 }),
+    ];
+    expect(groupCandidates(collectCalendarCandidates(items, cats)).map((g) => g.label)).toEqual([
+      "Priority",
+      "Daily Task",
+      "TGM Tasks",
+    ]);
   });
 });
 
