@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   CalendarPlus,
   Check,
+  ChevronDown,
+  ChevronRight,
   Clock,
   ExternalLink,
   Minus,
@@ -28,6 +30,7 @@ import {
   clampDuration,
   collectCalendarCandidates,
   googleCalendarDayUrl,
+  groupCandidates,
   matchesCandidateQuery,
   minutesToTime,
   parseTimeToMinutes,
@@ -39,6 +42,7 @@ import {
   type BusyInterval,
   type CalendarCandidate,
   type CalendarOverride,
+  type CandidateGroup,
   type ScheduledEvent,
 } from "../calendar";
 import { DayTimeline } from "./DayTimeline";
@@ -106,6 +110,8 @@ export function CalendarSyncButton({
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pane, setPane] = useState<"list" | "day">("list");
+  // Category headings the user has folded away, by label.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<BusyInterval[]>([]);
   const [busyLoading, setBusyLoading] = useState(false);
   const [busyError, setBusyError] = useState<string | null>(null);
@@ -159,6 +165,10 @@ export function CalendarSyncButton({
     [ordered, query],
   );
   const searching = query.trim().length > 0;
+
+  // The list reads under a heading per source group rather than as one long run
+  // of rows, so a 130-task day is scannable.
+  const groups = useMemo(() => groupCandidates(visible), [visible]);
 
   // Keep the list row for a block picked on the timeline in view.
   useEffect(() => {
@@ -220,6 +230,7 @@ export function CalendarSyncButton({
     setFocusedId(null);
     setExpandedId(null);
     setPane("list");
+    setCollapsed(new Set());
     setBusy([]);
     setBusyError(null);
     setResult(null);
@@ -244,6 +255,28 @@ export function CalendarSyncButton({
         if (on) next.delete(c.id);
         else next.add(c.id);
       }
+      return next;
+    });
+  }
+
+  // Tick or untick a whole heading. All on → clear it; anything else → fill it.
+  function toggleGroup(group: CandidateGroup) {
+    const allOn = group.candidates.every((c) => !excluded.has(c.id));
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      for (const c of group.candidates) {
+        if (allOn) next.add(c.id);
+        else next.delete(c.id);
+      }
+      return next;
+    });
+  }
+
+  function toggleCollapsed(label: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
       return next;
     });
   }
@@ -279,6 +312,15 @@ export function CalendarSyncButton({
   // editing — the "find it and adjust it" path from the drawn day.
   function focusFromTimeline(id: string) {
     setQuery("");
+    const label = candidates.find((c) => c.id === id)?.sourceLabel;
+    if (label) {
+      setCollapsed((prev) => {
+        if (!prev.has(label)) return prev;
+        const next = new Set(prev);
+        next.delete(label);
+        return next;
+      });
+    }
     setFocusedId(id);
     setExpandedId(id);
     setPane("list");
@@ -544,194 +586,252 @@ export function CalendarSyncButton({
             </div>
 
             <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_26rem]">
-              <ul
-                className={`min-h-0 space-y-1 overflow-y-auto p-2 ${pane === "list" ? "" : "hidden"} lg:block`}
+              <div
+                className={`min-h-0 space-y-2 overflow-y-auto p-2 ${pane === "list" ? "" : "hidden"} lg:block`}
               >
                 {visible.length === 0 && (
-                  <li className="py-8 text-center text-sm text-muted">
+                  <p className="py-8 text-center text-sm text-muted">
                     No tasks match “{query.trim()}”.
-                  </li>
+                  </p>
                 )}
-                {visible.map((c) => {
-                  const event = byId.get(c.id);
-                  const selected = !excluded.has(c.id);
-                  // Picked but past the end of the day — flagged rather than booked.
-                  const doesNotFit = selected && !event;
-                  const expanded = expandedId === c.id;
-                  const duration = durationOf(c);
+                {groups.map((group) => {
+                  const selectedCount = group.candidates.filter((c) => !excluded.has(c.id)).length;
+                  const allOn = selectedCount === group.candidates.length;
+                  // A search shows every match, folded heading or not.
+                  const shut = !searching && collapsed.has(group.label);
                   return (
-                    <li
-                      key={c.id}
-                      ref={(el) => {
-                        if (el) rowRefs.current.set(c.id, el);
-                        else rowRefs.current.delete(c.id);
-                      }}
-                      className={`rounded-xl ${
-                        doesNotFit
-                          ? "bg-warn/10 ring-1 ring-warn/60"
-                          : focusedId === c.id
-                            ? "bg-surface2"
-                            : ""
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 rounded-xl px-1 hover:bg-surface2">
+                    <section key={group.label}>
+                      <header className="sticky top-0 z-10 flex items-center gap-1 bg-surface/95 pb-1 backdrop-blur">
                         <button
                           type="button"
-                          onClick={() => toggle(c.id)}
-                          aria-pressed={selected}
-                          aria-label={selected ? `Skip ${c.title}` : `Include ${c.title}`}
+                          onClick={() => toggleGroup(group)}
+                          aria-pressed={allOn}
+                          aria-label={
+                            allOn ? `Skip every ${group.label}` : `Include every ${group.label}`
+                          }
                           className="flex h-11 w-9 shrink-0 items-center justify-center"
                         >
                           <span
                             className={`flex h-5 w-5 items-center justify-center rounded border ${
-                              doesNotFit
-                                ? "border-warn bg-warn text-bg"
-                                : selected
-                                  ? "border-accent bg-accent text-bg"
+                              allOn
+                                ? "border-accent bg-accent text-bg"
+                                : selectedCount > 0
+                                  ? "border-accent text-accent"
                                   : "border-line text-transparent"
                             }`}
                             aria-hidden
                           >
-                            <Check className="h-3.5 w-3.5" />
+                            {allOn ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Minus className="h-3.5 w-3.5" />
+                            )}
                           </span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setFocusedId(c.id);
-                            setExpandedId(expanded ? null : c.id);
-                          }}
-                          className="min-w-0 flex-1 py-2 text-left"
+                          onClick={() => toggleCollapsed(group.label)}
+                          aria-expanded={!shut}
+                          className="flex min-w-0 flex-1 items-center gap-1 py-2 text-left"
                         >
-                          <span
-                            className={`block truncate text-sm ${
-                              selected ? "text-text" : "text-muted line-through"
-                            }`}
-                          >
-                            {c.title}
+                          {shut ? (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted" />
+                          )}
+                          <span className="truncate text-xs font-semibold uppercase tracking-wide text-text">
+                            {group.label}
                           </span>
-                          <span
-                            className={`flex items-center gap-1 text-[11px] ${
-                              doesNotFit ? "text-warn" : "text-muted"
-                            }`}
-                          >
-                            {event?.pinned && <Pin className="h-3 w-3 text-accent" />}
-                            {doesNotFit && <AlertTriangle className="h-3 w-3" />}
-                            {event
-                              ? `${prettyMinutes(event.startMinutes)} · ${prettyDuration(event.durationMin)}`
-                              : doesNotFit
-                                ? `Won't fit before ${prettyMinutes(endMinutes)} · ${prettyDuration(duration)}`
-                                : "Not scheduled"}
-                            {" · "}
-                            {c.sourceLabel}
+                          <span className="shrink-0 text-[11px] text-muted">
+                            {selectedCount}/{group.candidates.length}
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFocusedId(c.id);
-                            setExpandedId(expanded ? null : c.id);
-                          }}
-                          aria-label={`Adjust time for ${c.title}`}
-                          aria-expanded={expanded}
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                            expanded ? "bg-surface2 text-accent" : "text-muted hover:text-text"
-                          }`}
-                        >
-                          <Clock className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {expanded && (
-                        <div className="mb-1 ml-9 mr-1 space-y-3 rounded-xl border border-line bg-surface2/60 p-3">
-                          <div className="flex items-center gap-2">
-                            <span className="w-14 shrink-0 text-xs text-muted">Start</span>
-                            <input
-                              type="time"
-                              value={minutesToTime(
-                                overrides[c.id]?.startMinutes ?? event?.startMinutes ?? startMinutes,
-                              )}
-                              onChange={(e) => {
-                                const mins = parseTimeToMinutes(e.target.value);
-                                if (mins != null) patchOverride(c.id, { startMinutes: mins });
-                              }}
-                              disabled={running}
-                              aria-label={`Start time for ${c.title}`}
-                              className="h-11 rounded-xl border border-line bg-surface px-3 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={running || overrides[c.id]?.startMinutes == null}
-                              onClick={() => patchOverride(c.id, { startMinutes: null })}
-                              title="Let this block flow with the rest of the day"
-                            >
-                              Auto
-                            </Button>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="w-14 shrink-0 text-xs text-muted">Length</span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => bumpDuration(c, -DURATION_STEP_MIN)}
-                                disabled={running || duration <= MIN_DURATION_MIN}
-                                aria-label="Shorten by 5 minutes"
-                                className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-muted hover:text-text disabled:opacity-40"
-                              >
-                                <Minus className="h-4 w-4" />
-                              </button>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                min={MIN_DURATION_MIN}
-                                max={MAX_DURATION_MIN}
-                                step={DURATION_STEP_MIN}
-                                value={duration}
-                                onChange={(e) => {
-                                  const n = Number(e.target.value);
-                                  if (Number.isFinite(n) && n > 0)
-                                    patchOverride(c.id, { durationMin: clampDuration(n) });
+                      </header>
+                      {!shut && (
+                        <ul className="space-y-1">
+                          {group.candidates.map((c) => {
+                            const event = byId.get(c.id);
+                            const selected = !excluded.has(c.id);
+                            // Picked but past the end of the day — flagged rather than booked.
+                            const doesNotFit = selected && !event;
+                            const expanded = expandedId === c.id;
+                            const duration = durationOf(c);
+                            return (
+                              <li
+                                key={c.id}
+                                ref={(el) => {
+                                  if (el) rowRefs.current.set(c.id, el);
+                                  else rowRefs.current.delete(c.id);
                                 }}
-                                disabled={running}
-                                aria-label={`Minutes for ${c.title}`}
-                                className="h-11 w-20 rounded-xl border border-line bg-surface px-3 text-center text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => bumpDuration(c, DURATION_STEP_MIN)}
-                                disabled={running || duration >= MAX_DURATION_MIN}
-                                aria-label="Lengthen by 5 minutes"
-                                className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-muted hover:text-text disabled:opacity-40"
+                                className={`rounded-xl ${
+                                  doesNotFit
+                                    ? "bg-warn/10 ring-1 ring-warn/60"
+                                    : focusedId === c.id
+                                      ? "bg-surface2"
+                                      : ""
+                                }`}
                               >
-                                <Plus className="h-4 w-4" />
-                              </button>
-                              <span className="text-xs text-muted">min</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {DURATION_PRESETS.map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => patchOverride(c.id, { durationMin: p })}
-                                  disabled={running}
-                                  className={`rounded-lg border px-2 py-1 text-[11px] ${
-                                    duration === p
-                                      ? "border-accent text-accent"
-                                      : "border-line text-muted hover:text-text"
-                                  }`}
-                                >
-                                  {prettyDuration(p)}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
+                                <div className="flex items-center gap-2 rounded-xl px-1 hover:bg-surface2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(c.id)}
+                                    aria-pressed={selected}
+                                    aria-label={selected ? `Skip ${c.title}` : `Include ${c.title}`}
+                                    className="flex h-11 w-9 shrink-0 items-center justify-center"
+                                  >
+                                    <span
+                                      className={`flex h-5 w-5 items-center justify-center rounded border ${
+                                        doesNotFit
+                                          ? "border-warn bg-warn text-bg"
+                                          : selected
+                                            ? "border-accent bg-accent text-bg"
+                                            : "border-line text-transparent"
+                                      }`}
+                                      aria-hidden
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFocusedId(c.id);
+                                      setExpandedId(expanded ? null : c.id);
+                                    }}
+                                    className="min-w-0 flex-1 py-2 text-left"
+                                  >
+                                    <span
+                                      className={`block truncate text-sm ${
+                                        selected ? "text-text" : "text-muted line-through"
+                                      }`}
+                                    >
+                                      {c.title}
+                                    </span>
+                                    <span
+                                      className={`flex items-center gap-1 text-[11px] ${
+                                        doesNotFit ? "text-warn" : "text-muted"
+                                      }`}
+                                    >
+                                      {event?.pinned && <Pin className="h-3 w-3 text-accent" />}
+                                      {doesNotFit && <AlertTriangle className="h-3 w-3" />}
+                                      {event
+                                        ? `${prettyMinutes(event.startMinutes)} · ${prettyDuration(event.durationMin)}`
+                                        : doesNotFit
+                                          ? `Won't fit before ${prettyMinutes(endMinutes)} · ${prettyDuration(duration)}`
+                                          : "Not scheduled"}
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFocusedId(c.id);
+                                      setExpandedId(expanded ? null : c.id);
+                                    }}
+                                    aria-label={`Adjust time for ${c.title}`}
+                                    aria-expanded={expanded}
+                                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                                      expanded ? "bg-surface2 text-accent" : "text-muted hover:text-text"
+                                    }`}
+                                  >
+                                    <Clock className="h-4 w-4" />
+                                  </button>
+                                </div>
+
+                                {expanded && (
+                                  <div className="mb-1 ml-9 mr-1 space-y-3 rounded-xl border border-line bg-surface2/60 p-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-14 shrink-0 text-xs text-muted">Start</span>
+                                      <input
+                                        type="time"
+                                        value={minutesToTime(
+                                          overrides[c.id]?.startMinutes ?? event?.startMinutes ?? startMinutes,
+                                        )}
+                                        onChange={(e) => {
+                                          const mins = parseTimeToMinutes(e.target.value);
+                                          if (mins != null) patchOverride(c.id, { startMinutes: mins });
+                                        }}
+                                        disabled={running}
+                                        aria-label={`Start time for ${c.title}`}
+                                        className="h-11 rounded-xl border border-line bg-surface px-3 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                      />
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={running || overrides[c.id]?.startMinutes == null}
+                                        onClick={() => patchOverride(c.id, { startMinutes: null })}
+                                        title="Let this block flow with the rest of the day"
+                                      >
+                                        Auto
+                                      </Button>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="w-14 shrink-0 text-xs text-muted">Length</span>
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => bumpDuration(c, -DURATION_STEP_MIN)}
+                                          disabled={running || duration <= MIN_DURATION_MIN}
+                                          aria-label="Shorten by 5 minutes"
+                                          className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-muted hover:text-text disabled:opacity-40"
+                                        >
+                                          <Minus className="h-4 w-4" />
+                                        </button>
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={MIN_DURATION_MIN}
+                                          max={MAX_DURATION_MIN}
+                                          step={DURATION_STEP_MIN}
+                                          value={duration}
+                                          onChange={(e) => {
+                                            const n = Number(e.target.value);
+                                            if (Number.isFinite(n) && n > 0)
+                                              patchOverride(c.id, { durationMin: clampDuration(n) });
+                                          }}
+                                          disabled={running}
+                                          aria-label={`Minutes for ${c.title}`}
+                                          className="h-11 w-20 rounded-xl border border-line bg-surface px-3 text-center text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => bumpDuration(c, DURATION_STEP_MIN)}
+                                          disabled={running || duration >= MAX_DURATION_MIN}
+                                          aria-label="Lengthen by 5 minutes"
+                                          className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-muted hover:text-text disabled:opacity-40"
+                                        >
+                                          <Plus className="h-4 w-4" />
+                                        </button>
+                                        <span className="text-xs text-muted">min</span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {DURATION_PRESETS.map((p) => (
+                                          <button
+                                            key={p}
+                                            type="button"
+                                            onClick={() => patchOverride(c.id, { durationMin: p })}
+                                            disabled={running}
+                                            className={`rounded-lg border px-2 py-1 text-[11px] ${
+                                              duration === p
+                                                ? "border-accent text-accent"
+                                                : "border-line text-muted hover:text-text"
+                                            }`}
+                                          >
+                                            {prettyDuration(p)}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
                       )}
-                    </li>
+                    </section>
                   );
                 })}
-              </ul>
+              </div>
 
               <div
                 className={`min-h-0 overflow-y-auto border-line p-3 lg:block lg:border-l ${
