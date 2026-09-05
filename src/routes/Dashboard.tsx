@@ -31,6 +31,7 @@ import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
 import { addDays, cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
 import { HabitGrid } from "@/modules/habits";
+import { StreakBoard } from "@/modules/streaks";
 import {
   useFrenchWeeklyAccuracy,
   useVocabMastery,
@@ -154,6 +155,11 @@ export default function Dashboard() {
       <section>
         <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Today's goals</h2>
         <DailyGoals date={todayIsoDate()} />
+      </section>
+
+      <section>
+        <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Streaks &amp; badges</h2>
+        <StreakBoard />
       </section>
 
       <section>
