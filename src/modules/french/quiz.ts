@@ -9,14 +9,30 @@ import type { VocabSchedule } from "./stats";
 
 export const TEST_SIZE = 10;
 
-// Selectable question counts offered on the French home screen.
+// Selectable question counts offered on the French home screen. Any other length
+// can be typed in alongside these presets.
 export const TEST_SIZES = [5, 10, 15, 20] as const;
 
-// Coerce a (possibly user-supplied) count into a sane test length. Generators
-// cap at their pool size, so the upper bound here is just a guard rail.
+// Bounds on a test length, whether preset or typed in. Generators cap at their
+// pool size, so the upper bound here is just a guard rail.
+export const MIN_TEST_SIZE = 1;
+export const MAX_TEST_SIZE = 50;
+
+// Coerce a (possibly user-supplied) count into a sane test length.
 export function clampCount(n: number | null | undefined): number {
   if (!n || !Number.isFinite(n)) return TEST_SIZE;
-  return Math.min(50, Math.max(1, Math.floor(n)));
+  return Math.min(MAX_TEST_SIZE, Math.max(MIN_TEST_SIZE, Math.floor(n)));
+}
+
+// Parse a typed question count into a clamped test length, or null while the
+// field holds nothing usable yet (empty, or mid-edit junk) so the last valid
+// count stands rather than snapping the input back under the learner's fingers.
+export function parseCountInput(raw: string): number | null {
+  const digits = raw.trim();
+  if (!/^\d+$/.test(digits)) return null;
+  const n = Number(digits);
+  if (n === 0) return null;
+  return clampCount(n);
 }
 
 // Human label per test kind, for headings and the recent-tests list.
