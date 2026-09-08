@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { v4 as uuidv4 } from "uuid";
 import { db, type LocalTimeAllocation, type LocalTimeTask } from "./db";
 import { syncEngine } from "./sync";
+import { dayOffMap } from "./dayOff";
 import {
   dailyHours,
   hoursPerDay,
@@ -66,22 +67,24 @@ export function useTimeDashboardStats(
       a > b ? a : b,
     );
 
-    const allocs = (
-      await db.timeAllocations.where("date").between(earliest, latest, true, true).toArray()
-    ).filter(live);
-    const perDay = hoursPerDay(allocs);
+    const [allocRows, habitRows] = await Promise.all([
+      db.timeAllocations.where("date").between(earliest, latest, true, true).toArray(),
+      db.daily_habits.where("habit_date").between(earliest, latest, true, true).toArray(),
+    ]);
+    const perDay = hoursPerDay(allocRows.filter(live));
+    const daysOff = dayOffMap(habitRows);
 
     const weekStarts: string[] = [];
     for (let i = WEEKS_BACK - 1; i >= 0; i--) weekStarts.push(addDays(anchorWeekStart, -i * 7));
-    const weekly = weeklyHours(perDay, weekStarts);
+    const weekly = weeklyHours(perDay, weekStarts, daysOff);
 
     const rollingDates: string[] = [];
     for (let i = ROLLING_SPAN_DAYS - 1; i >= 0; i--) rollingDates.push(addDays(rollingAnchor, -i));
-    const rolling = rollingHours(perDay, rollingDates, ROLLING_WINDOW_DAYS);
+    const rolling = rollingHours(perDay, rollingDates, ROLLING_WINDOW_DAYS, daysOff);
 
     const dailyDates: string[] = [];
     for (let i = DAILY_SPAN_DAYS - 1; i >= 0; i--) dailyDates.push(addDays(dailyAnchor, -i));
-    const daily = dailyHours(perDay, dailyDates);
+    const daily = dailyHours(perDay, dailyDates, daysOff);
 
     return { weekly, rolling, daily };
   }, [dailyOffset, weeklyOffset, rollingOffset]);

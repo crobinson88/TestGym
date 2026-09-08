@@ -18,6 +18,7 @@ const empty: HabitSources = {
   firstBedSlot: new Map(),
   tdl: new Map(),
   gymVolume: new Map(),
+  daysOff: new Map(),
   today: "2026-09-01",
 };
 
@@ -225,5 +226,142 @@ describe("nextMarkValue", () => {
     expect(nextMarkValue(null)).toBe(true);
     expect(nextMarkValue(true)).toBe(false);
     expect(nextMarkValue(false)).toBe(null);
+  });
+});
+
+describe("US public holidays on the work columns", () => {
+  // Thanksgiving 2026 is Thursday the 26th.
+  const THANKSGIVING = "2026-11-26";
+  const today = { today: "2026-11-30" };
+  const busyDay = { total: 5, done: 3, active: 4, priorityTotal: 2, priorityActive: 1 };
+  const idleDay = { total: 5, done: 0, active: 0, priorityTotal: 0, priorityActive: 0 };
+
+  it("blanks the to-do columns on an empty holiday", () => {
+    const rows = buildHabitRows(
+      [THANKSGIVING],
+      src({ ...today, tdl: new Map([[THANKSGIVING, idleDay]]) }),
+    );
+    expect(rows[0].holiday).toBe("Thanksgiving Day");
+    expect(rows[0].cells.priority_task.state).toBe("none");
+    expect(rows[0].cells.task_completion.state).toBe("none");
+    expect(rows[0].cells.priority_task.title).toContain("Thanksgiving Day");
+  });
+
+  it("grades the to-do columns normally on a holiday you worked", () => {
+    const rows = buildHabitRows(
+      [THANKSGIVING],
+      src({ ...today, tdl: new Map([[THANKSGIVING, busyDay]]) }),
+    );
+    expect(rows[0].holiday).toBeNull();
+    expect(rows[0].cells.priority_task.state).toBe("hit");
+  });
+
+  it("extends the rolling window past an empty holiday", () => {
+    // Seven 12h days ending the 25th, nothing on Thanksgiving. The window
+    // ending the 26th steps over the holiday and still finds seven logged days.
+    const hours = new Map<string, number>();
+    for (let d = 19; d <= 25; d++) hours.set(`2026-11-${d}`, 12);
+    const rows = buildHabitRows([THANKSGIVING], src({ ...today, hours }));
+    expect(rows[0].cells.rolling_hours).toMatchObject({ state: "hit", text: "84" });
+  });
+
+  it("still counts hours logged on a holiday", () => {
+    const hours = new Map([[THANKSGIVING, 6]]);
+    const rows = buildHabitRows([THANKSGIVING], src({ ...today, hours }));
+    expect(rows[0].cells.rolling_hours).toMatchObject({ state: "miss", text: "6" });
+  });
+
+  it("leaves the personal columns counting the holiday", () => {
+    const rows = buildHabitRows(
+      [THANKSGIVING],
+      src({ ...today, firstSlot: new Map([[THANKSGIVING, slotAt(8)]]) }),
+    );
+    expect(rows[0].cells.early_start.state).toBe("miss");
+  });
+
+  it("steps the streak over a holiday instead of breaking it", () => {
+    const tdl = new Map([
+      ["2026-11-25", busyDay],
+      [THANKSGIVING, idleDay],
+      ["2026-11-27", busyDay],
+    ]);
+    const rows = buildHabitRows(["2026-11-25", THANKSGIVING, "2026-11-27"], src({ ...today, tdl }));
+    expect(currentStreak(rows, "priority_task")).toBe(2);
+  });
+
+  it("keeps the holiday out of the column tally", () => {
+    const tdl = new Map([
+      ["2026-11-25", busyDay],
+      [THANKSGIVING, idleDay],
+    ]);
+    const rows = buildHabitRows(["2026-11-25", THANKSGIVING], src({ ...today, tdl }));
+    expect(tallyColumns(rows).find((t) => t.key === "priority_task")).toMatchObject({
+      hit: 1,
+      marked: 1,
+    });
+  });
+});
+
+describe("hand-marked days off", () => {
+  const today = { today: "2026-09-04" };
+  const SICK = "2026-09-02";
+  const idleDay = { total: 5, done: 0, active: 0, priorityTotal: 0, priorityActive: 0 };
+  const busyDay = { total: 5, done: 3, active: 4, priorityTotal: 2, priorityActive: 1 };
+  const off = (reason: string | null = null) => new Map([[SICK, reason]]);
+
+  it("blanks every column on an empty day off, not just the work three", () => {
+    const rows = buildHabitRows(
+      [SICK],
+      src({
+        ...today,
+        daysOff: off("Sick"),
+        firstSlot: new Map([[SICK, slotAt(8)]]),
+        gymVolume: new Map([["2026-08-30", 1000]]),
+        tdl: new Map([[SICK, idleDay]]),
+      }),
+    );
+    const cells = rows[0].cells;
+    expect(cells.early_start.state).toBe("none");
+    expect(cells.early_bed.state).toBe("none");
+    expect(cells.gym_growth.state).toBe("none");
+    expect(cells.priority_task.state).toBe("none");
+    expect(cells.task_completion.state).toBe("none");
+    expect(cells.early_start.title).toContain("Sick");
+  });
+
+  it("falls back to a plain label when no reason was typed", () => {
+    const rows = buildHabitRows([SICK], src({ ...today, daysOff: off() }));
+    expect(rows[0].dayOff).toBe("Day off");
+  });
+
+  it("grades the day normally when you worked anyway", () => {
+    const rows = buildHabitRows(
+      [SICK],
+      src({ ...today, daysOff: off("Sick"), tdl: new Map([[SICK, busyDay]]) }),
+    );
+    expect(rows[0].dayOff).toBeNull();
+    expect(rows[0].cells.priority_task.state).toBe("hit");
+    // Still marked off, so the row's toggle reads as set.
+    expect(rows[0].isDayOff).toBe(true);
+  });
+
+  it("extends the rolling window past an empty day off", () => {
+    const hours = new Map<string, number>();
+    for (let d = 26; d <= 31; d++) hours.set(`2026-08-${d}`, 12);
+    hours.set("2026-09-01", 12);
+    const rows = buildHabitRows([SICK], src({ ...today, daysOff: off("Sick"), hours }));
+    expect(rows[0].cells.rolling_hours).toMatchObject({ state: "hit", text: "84" });
+  });
+
+  it("steps the streak over a day off on every column", () => {
+    const firstSlot = new Map([
+      ["2026-09-01", slotAt(5, 30)],
+      ["2026-09-03", slotAt(5, 15)],
+    ]);
+    const rows = buildHabitRows(
+      ["2026-09-01", SICK, "2026-09-03"],
+      src({ ...today, daysOff: off("Sick"), firstSlot }),
+    );
+    expect(currentStreak(rows, "early_start")).toBe(2);
   });
 });

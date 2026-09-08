@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import { dayCompletion } from "@/modules/tdl";
 import { HOURS_PER_SLOT } from "@/lib/time";
+import { dayOffMap } from "@/lib/dayOff";
 import { addDays, todayIsoDate } from "@/lib/utils";
 import {
   BED_TASK_NAME,
@@ -26,7 +27,9 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
     const fetchStart = addDays(windowStart, -LOOKBACK_DAYS);
 
     const [habitRows, allocs, timeTasks, tdlItems, sets] = await Promise.all([
-      db.daily_habits.where("habit_date").between(windowStart, endDate, true, true).toArray(),
+      // The rolling window reaches before the visible days, so days off are
+      // needed across the lookback too, not just the rows on screen.
+      db.daily_habits.where("habit_date").between(fetchStart, endDate, true, true).toArray(),
       db.timeAllocations.where("date").between(fetchStart, endDate, true, true).toArray(),
       db.timeTasks.toArray(),
       db.tdl_items.where("snapshot_date").between(windowStart, endDate, true, true).toArray(),
@@ -92,6 +95,7 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
     }
 
     return buildHabitRows(dates, {
+      daysOff: dayOffMap(habitRows),
       marks,
       hours,
       firstSlot,
@@ -105,4 +109,8 @@ export function useHabitRows(endDate: string, days: number): HabitDayRow[] | und
 
 export async function setHabitMark(date: string, habit: ManualHabitKey, value: boolean | null) {
   await syncEngine.mutations.setDailyHabit(date, habit, value);
+}
+
+export async function setDayOff(date: string, off: boolean, reason: string | null = null) {
+  await syncEngine.mutations.setDayOff(date, off, reason);
 }

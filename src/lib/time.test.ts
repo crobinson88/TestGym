@@ -121,9 +121,11 @@ describe("hours aggregation (all logged hours)", () => {
     // Week of 2026-05-25 (Mon) covers 25..31 -> 0.5 + 0.5 = 1.0
     // Week of 2026-05-18 (Mon) covers 18..24 -> 0.25 (the 18th) + 0.25 (the 20th) = 0.5
     const weeks = weeklyHours(perDay, ["2026-05-18", "2026-05-25"]);
+    // Memorial Day (the 25th) has hours logged against it, so it counts like
+    // any other day and the week isn't flagged as holiday-shortened.
     expect(weeks).toEqual([
-      { week_start: "2026-05-18", hours: 0.5 },
-      { week_start: "2026-05-25", hours: 1.0 },
+      { week_start: "2026-05-18", hours: 0.5, holidays: 0 },
+      { week_start: "2026-05-25", hours: 1.0, holidays: 0 },
     ]);
   });
 
@@ -131,9 +133,9 @@ describe("hours aggregation (all logged hours)", () => {
     const perDay = hoursPerDay(allocs);
     const points = dailyHours(perDay, ["2026-05-24", "2026-05-25", "2026-05-26"]);
     expect(points).toEqual([
-      { date: "2026-05-24", hours: 0 },
-      { date: "2026-05-25", hours: 0.5 },
-      { date: "2026-05-26", hours: 0.5 },
+      { date: "2026-05-24", hours: 0, holiday: null },
+      { date: "2026-05-25", hours: 0.5, holiday: null },
+      { date: "2026-05-26", hours: 0.5, holiday: null },
     ]);
   });
 
@@ -143,8 +145,37 @@ describe("hours aggregation (all logged hours)", () => {
     // 25th: window 19..25 -> 0.25 (20th) + 0.5 (25th) = 0.75
     // 26th: window 20..26 -> 0.25 (20th) + 0.5 (25th) + 0.5 (26th) = 1.25
     expect(points).toEqual([
-      { date: "2026-05-25", hours: 0.75 },
-      { date: "2026-05-26", hours: 1.25 },
+      { date: "2026-05-25", hours: 0.75, holiday: null },
+      { date: "2026-05-26", hours: 1.25, holiday: null },
     ]);
+  });
+});
+
+describe("US public holidays in the hours stats", () => {
+  // Thanksgiving 2026 is Thursday the 26th.
+  const THANKSGIVING = "2026-11-26";
+
+  it("extends the rolling window past an empty holiday", () => {
+    const perDay = new Map<string, number>();
+    for (let d = 20; d <= 25; d++) perDay.set(`2026-11-${d}`, 10);
+    const [point] = rollingHours(perDay, [THANKSGIVING], 6);
+    // Without the skip the window would be 21..26 and miss the 20th.
+    expect(point).toEqual({ date: THANKSGIVING, hours: 60, holiday: "Thanksgiving Day" });
+  });
+
+  it("counts a holiday you logged hours on", () => {
+    const perDay = new Map([[THANKSGIVING, 8]]);
+    const [point] = rollingHours(perDay, [THANKSGIVING], 7);
+    expect(point).toEqual({ date: THANKSGIVING, hours: 8, holiday: null });
+  });
+
+  it("flags an empty holiday on the daily series", () => {
+    const points = dailyHours(new Map(), [THANKSGIVING, "2026-11-27"]);
+    expect(points.map((p) => p.holiday)).toEqual(["Thanksgiving Day", null]);
+  });
+
+  it("counts the empty holidays in a week", () => {
+    const [week] = weeklyHours(new Map([["2026-11-27", 8]]), ["2026-11-23"]);
+    expect(week).toEqual({ week_start: "2026-11-23", hours: 8, holidays: 1 });
   });
 });

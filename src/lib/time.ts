@@ -1,3 +1,11 @@
+import {
+  NO_DAYS_OFF,
+  countingDaysBack,
+  pauseReason,
+  skipEmptyPauses,
+  type DayOffMap,
+  type SkipDay,
+} from "./holidays";
 import { addDays } from "./utils";
 
 export const SLOT_MINUTES = 15;
@@ -104,11 +112,17 @@ export function workHoursInRange(
 export interface WeekHoursPoint {
   week_start: string;
   hours: number;
+  // Days in the week that didn't count — an empty US public holiday or a day
+  // marked off. The tooltip says so, since a short week isn't a slack one.
+  holidays: number;
 }
 
 export interface HoursPoint {
   date: string;
   hours: number;
+  // Why this date didn't count — the US public holiday or the day-off reason —
+  // when nothing was logged against it, else null.
+  holiday: string | null;
 }
 
 export function hoursPerDay(allocs: readonly AllocationLike[]): Map<string, number> {
@@ -119,32 +133,60 @@ export function hoursPerDay(allocs: readonly AllocationLike[]): Map<string, numb
   return out;
 }
 
+// A day is skipped only when it's a US public holiday or a hand-marked day off
+// with nothing logged — hours worked on either are hours you worked, and count
+// normally.
+export function holidaySkip(
+  perDay: ReadonlyMap<string, number>,
+  daysOff: DayOffMap = NO_DAYS_OFF,
+): SkipDay {
+  return skipEmptyPauses((date) => (perDay.get(date) ?? 0) > 0, daysOff, true);
+}
+
 export function weeklyHours(
   perDay: ReadonlyMap<string, number>,
   weekStarts: readonly string[],
+  daysOff: DayOffMap = NO_DAYS_OFF,
 ): WeekHoursPoint[] {
+  const skip = holidaySkip(perDay, daysOff);
   return weekStarts.map((ws) => {
     let hours = 0;
-    for (let i = 0; i < 7; i++) hours += perDay.get(addDays(ws, i)) ?? 0;
-    return { week_start: ws, hours };
+    let holidays = 0;
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(ws, i);
+      hours += perDay.get(date) ?? 0;
+      if (skip(date)) holidays++;
+    }
+    return { week_start: ws, hours, holidays };
   });
 }
 
+// The trailing window covers `windowDays` days that counted: an empty public
+// holiday or day off extends it a day further back instead of dragging the
+// total down.
 export function rollingHours(
   perDay: ReadonlyMap<string, number>,
   endDates: readonly string[],
   windowDays: number,
+  daysOff: DayOffMap = NO_DAYS_OFF,
 ): HoursPoint[] {
+  const skip = holidaySkip(perDay, daysOff);
   return endDates.map((d) => {
     let hours = 0;
-    for (let i = 0; i < windowDays; i++) hours += perDay.get(addDays(d, -i)) ?? 0;
-    return { date: d, hours };
+    for (const date of countingDaysBack(d, windowDays, skip)) hours += perDay.get(date) ?? 0;
+    return { date: d, hours, holiday: skip(d) ? pauseReason(d, daysOff, true) : null };
   });
 }
 
 export function dailyHours(
   perDay: ReadonlyMap<string, number>,
   dates: readonly string[],
+  daysOff: DayOffMap = NO_DAYS_OFF,
 ): HoursPoint[] {
-  return dates.map((d) => ({ date: d, hours: perDay.get(d) ?? 0 }));
+  const skip = holidaySkip(perDay, daysOff);
+  return dates.map((d) => ({
+    date: d,
+    hours: perDay.get(d) ?? 0,
+    holiday: skip(d) ? pauseReason(d, daysOff, true) : null,
+  }));
 }

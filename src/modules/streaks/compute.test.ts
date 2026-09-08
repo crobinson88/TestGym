@@ -119,3 +119,111 @@ describe("buildStreaks", () => {
     expect(totalBadgesEarned(out)).toBe(4);
   });
 });
+
+describe("US public holidays on the work streaks", () => {
+  // Thanksgiving 2026 is Thursday the 26th; the 27th is an ordinary Friday.
+  const THANKSGIVING = "2026-11-26";
+  const FRIDAY = "2026-11-27";
+
+  const workStreak = (days: Iterable<string>, today: string) =>
+    buildStreaks({
+      today,
+      french: new Set(),
+      gym: new Set(),
+      tgm: new Set(days),
+      getbuddy: new Set(),
+      smoke_free: new Set(),
+    }).find((s) => s.key === "tgm")!;
+
+  it("bridges a holiday nothing was logged on", () => {
+    // Worked the three days before Thanksgiving and again on the Friday.
+    const days = [...run("2026-11-25", 3), FRIDAY];
+    expect(workStreak(days, FRIDAY).current).toBe(4);
+  });
+
+  it("pauses rather than breaking when today is the holiday", () => {
+    const s = workStreak(run("2026-11-25", 3), THANKSGIVING);
+    expect(s.current).toBe(3);
+    expect(s.pausedToday).toBe("Thanksgiving Day");
+    expect(s.pendingToday).toBe(false);
+  });
+
+  it("counts a holiday you actually worked", () => {
+    const s = workStreak(run(THANKSGIVING, 3), THANKSGIVING);
+    expect(s.current).toBe(3);
+    expect(s.pausedToday).toBeNull();
+  });
+
+  it("still breaks on an ordinary missed day", () => {
+    // Nothing on Friday the 27th, so by Saturday the run is over.
+    expect(workStreak(run("2026-11-25", 3), "2026-11-28").current).toBe(0);
+  });
+
+  it("bridges a holiday in the all-time best run too", () => {
+    const days = [...run("2026-11-25", 3), FRIDAY];
+    expect(workStreak(days, "2027-03-01").best).toBe(4);
+  });
+
+  it("leaves the personal streaks counting holidays", () => {
+    const s = buildStreaks({
+      today: THANKSGIVING,
+      french: new Set(),
+      gym: new Set(run("2026-11-25", 3)),
+      tgm: new Set(),
+      getbuddy: new Set(),
+      smoke_free: new Set(),
+    }).find((x) => x.key === "gym")!;
+    // A public holiday is no excuse for skipping the gym: still just pending.
+    expect(s.pausedToday).toBeNull();
+    expect(s.pendingToday).toBe(true);
+  });
+});
+
+describe("hand-marked days off on the streaks", () => {
+  const SICK = "2026-09-02";
+  const daysOff = new Map([[SICK, "Sick"]]);
+
+  const build = (key: "tgm" | "gym" | "smoke_free", days: Iterable<string>, today: string) =>
+    buildStreaks({
+      today,
+      french: new Set(),
+      gym: new Set(key === "gym" ? days : []),
+      tgm: new Set(key === "tgm" ? days : []),
+      getbuddy: new Set(),
+      smoke_free: new Set(key === "smoke_free" ? days : []),
+      daysOff,
+    }).find((s) => s.key === key)!;
+
+  it("bridges a day off on a work streak", () => {
+    const days = [...run("2026-09-01", 3), "2026-09-03"];
+    expect(build("tgm", days, "2026-09-03").current).toBe(4);
+  });
+
+  it("bridges a day off on a personal streak too", () => {
+    const days = [...run("2026-09-01", 3), "2026-09-03"];
+    expect(build("gym", days, "2026-09-03").current).toBe(4);
+  });
+
+  it("names the reason when today is the day off", () => {
+    const s = build("gym", run("2026-09-01", 3), SICK);
+    expect(s.current).toBe(3);
+    expect(s.pausedToday).toBe("Sick");
+  });
+
+  it("keeps Smoke-free counting through a day off", () => {
+    const s = build("smoke_free", run("2026-09-01", 3), SICK);
+    // Being ill is no reason to smoke, so the day still has to be marked.
+    expect(s.pausedToday).toBeNull();
+    expect(s.pendingToday).toBe(true);
+  });
+
+  it("breaks Smoke-free when a day off goes unmarked", () => {
+    expect(build("smoke_free", run("2026-09-01", 3), "2026-09-03").current).toBe(0);
+  });
+
+  it("counts a day off you logged against", () => {
+    const s = build("gym", run(SICK, 3), SICK);
+    expect(s.current).toBe(3);
+    expect(s.pausedToday).toBeNull();
+  });
+});

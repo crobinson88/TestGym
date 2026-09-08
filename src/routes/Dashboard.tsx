@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
@@ -41,6 +42,8 @@ import {
 } from "@/modules/french";
 
 const HOURS_COLOR = "#22d3ee";
+// Muted bar for a US public holiday nothing was logged on.
+const HOLIDAY_COLOR = "#3f4a52";
 const ROLLING_TARGET_LOW = 70;
 const ROLLING_TARGET_HIGH = 80;
 const ROLLING_EXCESSIVE = 90;
@@ -670,10 +673,17 @@ function DailyHoursChart({ data }: { data: HoursPoint[] }) {
         <Tooltip
           contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
           labelStyle={{ color: "#8a8a8a" }}
-          formatter={(value) => [`${formatHours(value as number)} h`, "Hours"]}
+          formatter={(value, _name, item) => {
+            const holiday = (item?.payload as HoursPoint).holiday;
+            return [`${formatHours(value as number)} h`, holiday ?? "Hours"];
+          }}
           labelFormatter={(label) => prettyDate(label as string)}
         />
-        <Bar dataKey="hours" fill={HOURS_COLOR} radius={[4, 4, 0, 0]} />
+        <Bar dataKey="hours" radius={[4, 4, 0, 0]}>
+          {data.map((d) => (
+            <Cell key={d.date} fill={d.holiday ? HOLIDAY_COLOR : HOURS_COLOR} />
+          ))}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -697,7 +707,13 @@ function WeeklyHoursChart({ data }: { data: WeekHoursPoint[] }) {
         <Tooltip
           contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
           labelStyle={{ color: "#8a8a8a" }}
-          formatter={(value) => [`${formatHours(value as number)} h`, "Hours"]}
+          formatter={(value, _name, item) => {
+            const n = (item?.payload as WeekHoursPoint).holidays;
+            return [
+              `${formatHours(value as number)} h`,
+              n > 0 ? `Hours · ${n} US ${n === 1 ? "holiday" : "holidays"}` : "Hours",
+            ];
+          }}
           labelFormatter={(label) => `Week of ${prettyDate(label as string)}`}
         />
         <Bar dataKey="hours" fill={HOURS_COLOR} radius={[4, 4, 0, 0]} />
@@ -897,7 +913,13 @@ function RollingHoursChart({ data }: { data: HoursPoint[] }) {
         <Tooltip
           contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
           labelStyle={{ color: "#8a8a8a" }}
-          formatter={(value) => [`${formatHours(value as number)} h`, "7-day total"]}
+          formatter={(value, _name, item) => {
+            const holiday = (item?.payload as HoursPoint).holiday;
+            return [
+              `${formatHours(value as number)} h`,
+              holiday ? `7-day total · ${holiday} skipped` : "7-day total",
+            ];
+          }}
           labelFormatter={(label) => prettyDate(label as string)}
         />
         <Area
