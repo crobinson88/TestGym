@@ -13,62 +13,58 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from "@dnd-kit/sortable";
-import { Flame, ListChecks, Plus, X } from "lucide-react";
+import { LayoutList, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { createCategory, reorderCategories } from "../categories";
-import { moveItem, reorderSection } from "../repo";
-import { laneKeyFromDroppableId, resolveDrop, type DropLane } from "../board";
-import { PRIORITIES_KEY, type SectionConfig } from "../sections";
+import type { LocalTdlBoardList } from "@/lib/db";
+import { createBoardList, reorderBoardLists, seedDefaultLists } from "../boardLists";
+import { applyCardPositions, moveItemToBoardList } from "../repo";
+import {
+  groupCardsByList,
+  laneKeyFromDroppableId,
+  listDropAssignments,
+  resolveListDrop,
+} from "../board";
+import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import { BoardCardPreview } from "./BoardCard";
 import { BoardList, LANE_SORTABLE_PREFIX } from "./BoardList";
 
-export const DO_FIRST_LANE_KEY = "__do_first__";
-
-export interface BoardLane {
-  cfg: SectionConfig;
-  cards: LocalTdlItem[];
-  // Real section keys the lane's bulk actions target.
-  sections?: string[];
-  // Read-only lanes mirroring cards that live in a real lane.
-  mirror?: "priority" | "do_first";
-}
-
-// The Trello-style board for a day: one lane per category, cards dragged
-// between them to change category. Ranked and Do First cards also mirror into
-// two read-only lanes at the head of the board, the same way the list view
-// shows them as pinned columns.
+// The Trello board for ONE category: every lane is one of that category's
+// lists (Backlog, In progress, Done, …) and dragging a card between lanes
+// changes which list it sits in. The category itself is chosen above the board
+// (see BoardCategoryPicker in DayView).
 export function BoardCanvas({
-  lanes,
+  cfg,
   categories,
+  lists,
+  cards,
   snapshot_date,
-  keyToRowId,
   focusedId,
   selecting,
   selectedIds,
   onToggleSelect,
   onBulkActed,
-  reorderableKeys,
 }: {
-  lanes: BoardLane[];
+  cfg: SectionConfig;
   categories: SectionConfig[];
+  lists: LocalTdlBoardList[];
+  // Every live card in this category on this day (already filtered by search).
+  cards: LocalTdlItem[];
   snapshot_date: string;
-  keyToRowId: Map<string, string>;
   focusedId?: string;
   selecting?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onBulkActed?: () => void;
-  // Category keys whose lanes can be dragged to reorder the board.
-  reorderableKeys: string[];
 }) {
   const [activeCard, setActiveCard] = useState<LocalTdlItem | null>(null);
-  // What the dragged card is currently over, so the target lane can light up
-  // and the landing slot can show an insertion line.
+  // What the dragged card is over, so the target lane lights up and the landing
+  // slot shows an insertion line.
   const [overId, setOverId] = useState<string | null>(null);
   const [addingList, setAddingList] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  const [seeding, setSeeding] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -87,23 +83,13 @@ export function BoardCanvas({
     return onCard.length > 0 ? onCard : collisions;
   }, []);
 
-  // Only real category lanes take part in card drops; the mirrors hold copies.
-  const dropLanes: DropLane[] = lanes
-    .filter((l) => !l.mirror)
-    .map((l) => ({
-      key: l.cfg.key,
-      cards: l.cards.map((c) => ({
-        id: c.id,
-        section: c.section,
-        is_recurring: c.is_recurring,
-      })),
-    }));
+  const lanes = groupCardsByList(cards, lists);
+  const laneById = new Map(lanes.map((l) => [l.list.id, l]));
 
   function onDragStart(e: DragStartEvent) {
     const id = String(e.active.id);
     if (id.startsWith(LANE_SORTABLE_PREFIX)) return;
-    const card = lanes.flatMap((l) => (l.mirror ? [] : l.cards)).find((c) => c.id === id);
-    setActiveCard(card ?? null);
+    setActiveCard(cards.find((c) => c.id === id) ?? null);
   }
 
   function onDragOver(e: DragOverEvent) {
@@ -115,27 +101,25 @@ export function BoardCanvas({
     setActiveCard(null);
     setOverId(null);
     const activeId = String(e.active.id);
-    const overId = e.over ? String(e.over.id) : null;
-    if (!overId) return;
+    const overTarget = e.over ? String(e.over.id) : null;
+    if (!overTarget) return;
 
     if (activeId.startsWith(LANE_SORTABLE_PREFIX)) {
-      if (!overId.startsWith(LANE_SORTABLE_PREFIX)) return;
-      const from = reorderableKeys.indexOf(activeId.slice(LANE_SORTABLE_PREFIX.length));
-      const to = reorderableKeys.indexOf(overId.slice(LANE_SORTABLE_PREFIX.length));
+      if (!overTarget.startsWith(LANE_SORTABLE_PREFIX)) return;
+      const ids = lists.map((l) => l.id);
+      const from = ids.indexOf(activeId.slice(LANE_SORTABLE_PREFIX.length));
+      const to = ids.indexOf(overTarget.slice(LANE_SORTABLE_PREFIX.length));
       if (from === -1 || to === -1) return;
-      const nextIds = arrayMove(reorderableKeys, from, to)
-        .map((k) => keyToRowId.get(k))
-        .filter((v): v is string => !!v);
-      void reorderCategories(nextIds);
+      void reorderBoardLists(arrayMove(ids, from, to));
       return;
     }
 
-    const drop = resolveDrop(activeId, overId, dropLanes);
+    const drop = resolveListDrop(activeId, overTarget, lanes);
     if (!drop) return;
-    // Unlike the list view, a board drop only moves the card between lanes —
-    // the Eisenhower quadrant is a property of the task, not of where it sits.
-    if (drop.moved) void moveItem(activeId, drop.section, drop.index);
-    void reorderSection(snapshot_date, drop.section, drop.isRecurring, drop.orderedIds);
+    // A lane move changes the card's list, never its category — lists live
+    // inside one category — and never its status: the pill stays the card's own.
+    if (drop.moved) void moveItemToBoardList(activeId, drop.listId);
+    void applyCardPositions(listDropAssignments(drop.orderedCards));
   }
 
   async function commitAddList() {
@@ -144,25 +128,71 @@ export function BoardCanvas({
       setAddingList(false);
       return;
     }
-    await createCategory(label);
+    await createBoardList(cfg.key, label);
     setNewLabel("");
   }
 
-  const sortableLaneIds = reorderableKeys.map((k) => LANE_SORTABLE_PREFIX + k);
-  const reorderableSet = new Set(reorderableKeys);
+  async function onSeedDefaults() {
+    setSeeding(true);
+    try {
+      await seedDefaultLists(cfg.key);
+    } finally {
+      setSeeding(false);
+    }
+  }
 
-  // The lane a drop would land in right now — either the lane body under the
-  // pointer or the lane owning the card under it.
-  const overLaneKey =
+  const sortableLaneIds = lists.map((l) => LANE_SORTABLE_PREFIX + l.id);
+
+  // The lane a drop would land in right now — the lane body under the pointer,
+  // or the lane owning the card under it.
+  const overLaneId =
     activeCard && overId
       ? (laneKeyFromDroppableId(overId) ??
-        dropLanes.find((l) => l.cards.some((c) => c.id === overId))?.key ??
+        lanes.find((l) => l.cards.some((c) => c.id === overId))?.list.id ??
         null)
       : null;
   const indicateCardId =
     activeCard && overId && laneKeyFromDroppableId(overId) == null && overId !== activeCard.id
       ? overId
       : null;
+
+  if (lists.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-line bg-surface/50 p-8 text-center">
+        <LayoutList className="mx-auto mb-3 h-8 w-8 text-muted" />
+        <p className="text-sm text-muted">
+          “{cfg.label}” has no lists yet. Lists are the board’s lanes — cards move between them.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <Button size="sm" onClick={() => void onSeedDefaults()} disabled={seeding}>
+            Use Backlog · In progress · Done
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setAddingList(true)}>
+            <Plus className="mr-1 h-4 w-4" /> Add a list
+          </Button>
+        </div>
+        {addingList && (
+          <div className="mx-auto mt-3 flex max-w-xs items-center gap-2">
+            <Input
+              autoFocus
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder="List name"
+              aria-label="New list name"
+              className="h-10 text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commitAddList();
+                if (e.key === "Escape") setAddingList(false);
+              }}
+            />
+            <Button size="sm" onClick={() => void commitAddList()} disabled={!newLabel.trim()}>
+              Add
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <DndContext
@@ -178,37 +208,21 @@ export function BoardCanvas({
     >
       <SortableContext items={sortableLaneIds} strategy={horizontalListSortingStrategy}>
         <div className="flex items-start gap-3 overflow-x-auto pb-3">
-          {lanes.map((lane) => (
+          {lists.map((list) => (
             <BoardList
-              key={lane.cfg.key}
-              cfg={lane.cfg}
+              key={list.id}
+              list={list}
+              cfg={cfg}
               categories={categories}
               snapshot_date={snapshot_date}
-              cards={lane.cards}
-              rowId={lane.mirror ? undefined : keyToRowId.get(lane.cfg.key)}
-              bulkSections={lane.sections}
-              mirror={lane.mirror}
-              accent={
-                lane.mirror === "priority"
-                  ? "border-warn/40"
-                  : lane.mirror === "do_first"
-                    ? "border-danger/40"
-                    : undefined
-              }
-              icon={
-                lane.mirror === "priority" ? (
-                  <ListChecks className="h-4 w-4 shrink-0 text-warn" />
-                ) : lane.mirror === "do_first" ? (
-                  <Flame className="h-4 w-4 shrink-0 text-danger" />
-                ) : undefined
-              }
+              cards={laneById.get(list.id)?.cards ?? []}
               focusedId={focusedId}
               selecting={selecting}
               selectedIds={selectedIds}
               onToggleSelect={onToggleSelect}
               onBulkActed={onBulkActed}
-              reorderable={reorderableSet.has(lane.cfg.key)}
-              highlighted={overLaneKey === lane.cfg.key}
+              reorderable={lists.length > 1}
+              highlighted={overLaneId === list.id}
               indicateCardId={indicateCardId}
             />
           ))}
@@ -267,20 +281,3 @@ export function BoardCanvas({
     </DndContext>
   );
 }
-
-// Config for the two mirror lanes, so DayView doesn't hand-roll them.
-export const PRIORITY_LANE: SectionConfig = {
-  key: PRIORITIES_KEY,
-  label: "Priorities",
-  hasDueDate: true,
-  hasTimeEstimate: true,
-  recurringSeeds: [],
-};
-
-export const DO_FIRST_LANE: SectionConfig = {
-  key: DO_FIRST_LANE_KEY,
-  label: "Do First",
-  hasDueDate: true,
-  hasTimeEstimate: true,
-  recurringSeeds: [],
-};

@@ -26,11 +26,13 @@ import {
 } from "../hooks";
 import { matchesQuery as matchesTdlQuery } from "../search";
 import {
+  BOARD_CATEGORY_STORAGE_KEY,
   VIEW_MODE_STORAGE_KEY,
   clampViewMode,
-  orderLaneCards,
+  resolveBoardCategory,
   type TdlViewMode,
 } from "../board";
+import { useBoardLists } from "../boardLists";
 import {
   EMPTY_CREATED_RANGE,
   describeCreatedRange,
@@ -73,12 +75,8 @@ import { OffBoardResults } from "../components/OffBoardResults";
 import { QuickAdd } from "../components/QuickAdd";
 import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
 import { ViewToggle } from "../components/ViewToggle";
-import {
-  BoardCanvas,
-  DO_FIRST_LANE,
-  PRIORITY_LANE,
-  type BoardLane,
-} from "../components/BoardCanvas";
+import { BoardCanvas } from "../components/BoardCanvas";
+import { BoardCategoryPicker } from "../components/BoardCategoryPicker";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -95,6 +93,14 @@ function loadCollapsed(): Set<string> {
     // ignore malformed/unavailable storage — start with nothing collapsed
   }
   return new Set();
+}
+
+function loadBoardCategory(): string | null {
+  try {
+    return localStorage.getItem(BOARD_CATEGORY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function loadViewMode(): TdlViewMode {
@@ -141,14 +147,22 @@ export default function DayView() {
 
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(loadCollapsed);
   const [viewMode, setViewMode] = useState<TdlViewMode>(loadViewMode);
+  // Board View shows one category at a time; the pick is remembered per device.
+  const [boardCategoryKey, setBoardCategoryKey] = useState<string | null>(loadBoardCategory);
+  const boardCategory = resolveBoardCategory(
+    boardCategoryKey,
+    categories.map((c) => c.key),
+  );
+  const boardLists = useBoardLists(viewMode === "board" ? boardCategory : null);
 
   useEffect(() => {
     try {
       localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+      if (boardCategory) localStorage.setItem(BOARD_CATEGORY_STORAGE_KEY, boardCategory);
     } catch {
-      // ignore storage failures — the choice still holds for the session
+      // ignore storage failures — the choices still hold for the session
     }
-  }, [viewMode]);
+  }, [viewMode, boardCategory]);
 
   useEffect(() => {
     try {
@@ -429,24 +443,20 @@ export default function DayView() {
   const reorderableKeySet = new Set(reorderableKeys);
   const sortableColumnIds = reorderableKeys.map((k) => SECTION_SORTABLE_PREFIX + k);
 
-  // Board view stacks the same items as cards: the two mirrors first (read-only,
-  // exactly as in the list layout), then one lane per category.
-  const boardLanes: BoardLane[] = [
-    ...(showPriorityColumn
-      ? [{ cfg: PRIORITY_LANE, cards: priorityItems, mirror: "priority" as const }]
-      : []),
-    ...(showDoFirstColumn
-      ? [{ cfg: DO_FIRST_LANE, cards: doFirstItems, mirror: "do_first" as const }]
-      : []),
-    ...visibleColumns.map((cfg) => {
-      const lists = listsFor(cfg.key);
-      return {
-        cfg,
-        cards: orderLaneCards(lists.recurring, lists.dated),
-        sections: cfg.key === UNCATEGORISED_KEY ? orphanSections : [cfg.key],
-      };
-    }),
-  ];
+  // Board View works on one category: its cards for the day (search-filtered
+  // like everywhere else) and a count per category for the picker.
+  const boardCounts = new Map<string, number>();
+  for (const cfg of columns) {
+    const lists = listsFor(cfg.key);
+    boardCounts.set(cfg.key, lists.recurring.length + lists.dated.length);
+  }
+  const boardCfg = columns.find((c) => c.key === boardCategory) ?? null;
+  const boardCards = boardCfg
+    ? (() => {
+        const lists = listsFor(boardCfg.key);
+        return [...lists.recurring, ...lists.dated];
+      })()
+    : [];
 
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
@@ -517,25 +527,39 @@ export default function DayView() {
             <RollForwardButton fromDate={prev} toDate={date} />
           </div>
         )}
-        {nothingMatches && (
+        {nothingMatches && viewMode === "list" && (
           <div className="py-8 text-center text-sm text-muted">
             No tasks match {q ? `“${query.trim()}”` : "this filter"}
             {rangeActive && ` · added ${describeCreatedRange(createdRange)}`}.
           </div>
         )}
-        {showBoard && viewMode === "board" && (
-          <BoardCanvas
-            lanes={boardLanes}
-            categories={categories}
-            snapshot_date={date}
-            keyToRowId={keyToRowId}
-            focusedId={focusedId}
-            selecting={selecting}
-            selectedIds={selected}
-            onToggleSelect={toggleSelect}
-            onBulkActed={() => setSelected(new Set())}
-            reorderableKeys={reorderableKeys}
-          />
+        {viewMode === "board" && (
+          <>
+            <BoardCategoryPicker
+              categories={columns}
+              value={boardCategory}
+              counts={boardCounts}
+              onChange={setBoardCategoryKey}
+            />
+            {boardCfg && boardLists ? (
+              <BoardCanvas
+                cfg={boardCfg}
+                categories={categories}
+                lists={boardLists}
+                cards={boardCards}
+                snapshot_date={date}
+                focusedId={focusedId}
+                selecting={selecting}
+                selectedIds={selected}
+                onToggleSelect={toggleSelect}
+                onBulkActed={() => setSelected(new Set())}
+              />
+            ) : (
+              <div className="py-8 text-center text-sm text-muted">
+                {boardCfg ? "Loading lists…" : "Add a category to start a board."}
+              </div>
+            )}
+          </>
         )}
         {showBoard && viewMode === "list" && (
           <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}>

@@ -34,6 +34,7 @@ function makeItem(over: Partial<TdlItemRow> = {}): LocalTdlItem {
     last_worked_at: null,
     notes: null,
     images: [],
+    board_list_id: null,
     origin_item_id: null,
     origin_snapshot_date: null,
     created_at: ts,

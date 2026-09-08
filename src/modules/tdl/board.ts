@@ -1,26 +1,36 @@
-// Pure helpers for the Trello-style board view of a day. Kept free of the
-// sync/db layer so they stay import-safe in tests: the board's drag semantics
-// are all decided here, and the components only apply the result.
-
-import { UNCATEGORISED_KEY } from "./sections";
+// Pure helpers for the Board View — the Trello board for ONE category, whose
+// lanes are that category's lists (Backlog, In progress, Done, …). Kept free of
+// the sync/db layer so the drag semantics stay import-safe in tests: everything
+// the board decides is decided here, and the components only apply the result.
 
 export type TdlViewMode = "list" | "board";
 
-// The list/board choice is a per-device UI preference (like column collapse),
-// not synced domain data.
+// Both the layout choice and the category the board is showing are per-device
+// UI preferences (like column collapse), not synced domain data.
 export const VIEW_MODE_STORAGE_KEY = "tdl:viewMode";
+export const BOARD_CATEGORY_STORAGE_KEY = "tdl:boardCategory";
 export const DEFAULT_VIEW_MODE: TdlViewMode = "list";
 
 export function clampViewMode(raw: unknown): TdlViewMode {
   return raw === "board" || raw === "list" ? raw : DEFAULT_VIEW_MODE;
 }
 
-// A lane's own droppable id, so an empty lane (or the gap under its last card)
+// The category the board opens on: the remembered one while it is still a live
+// category, else the first one. Null when there are no categories at all.
+export function resolveBoardCategory(
+  remembered: string | null | undefined,
+  categoryKeys: readonly string[],
+): string | null {
+  if (remembered && categoryKeys.includes(remembered)) return remembered;
+  return categoryKeys[0] ?? null;
+}
+
+// A lane's own droppable id, so an empty list (or the gap under its last card)
 // still accepts a drop. Cards keep raw uuids as their sortable ids.
 export const LANE_DROPPABLE_PREFIX = "lane:";
 
-export function laneDroppableId(key: string): string {
-  return LANE_DROPPABLE_PREFIX + key;
+export function laneDroppableId(listId: string): string {
+  return LANE_DROPPABLE_PREFIX + listId;
 }
 
 export function laneKeyFromDroppableId(id: string): string | null {
@@ -29,54 +39,79 @@ export function laneKeyFromDroppableId(id: string): string | null {
     : null;
 }
 
-// Cards as a lane stacks them: recurring first (they're the day's fixtures),
-// then the dated ones, each in board position order.
-export function orderLaneCards<T extends { position: number }>(
-  recurring: readonly T[],
-  dated: readonly T[],
-): T[] {
-  const byPosition = (a: T, b: T) => a.position - b.position;
-  return [...[...recurring].sort(byPosition), ...[...dated].sort(byPosition)];
-}
-
-export interface DropCard {
+export interface BoardListLike {
   id: string;
-  section: string;
+  label: string;
+}
+
+export interface BoardCardLike {
+  id: string;
   is_recurring: boolean;
+  position: number;
+  board_list_id: string | null;
 }
 
-export interface DropLane {
-  key: string;
-  cards: DropCard[];
+// The list a card shows in: the one it was placed in while that list is live,
+// else the leftmost list. A card that has never been placed — or whose list was
+// deleted — reads as the first list rather than disappearing.
+export function resolveListId(
+  card: Pick<BoardCardLike, "board_list_id">,
+  lists: readonly BoardListLike[],
+): string | null {
+  if (lists.length === 0) return null;
+  if (card.board_list_id && lists.some((l) => l.id === card.board_list_id)) {
+    return card.board_list_id;
+  }
+  return lists[0].id;
 }
 
-export interface BoardDrop {
-  // The category the card ends up in (a real section key, never the virtual
-  // Uncategorised one).
-  section: string;
-  isRecurring: boolean;
-  // The target bucket's new order, including the dragged card.
-  orderedIds: string[];
-  // Where the dragged card lands within that bucket.
-  index: number;
-  // True when the drop crosses lanes, so the caller also rewrites `section`.
+export interface BoardLane<T extends BoardCardLike = BoardCardLike> {
+  list: BoardListLike;
+  cards: T[];
+}
+
+// Bucket a category's cards into its lists, in list order. Within a lane the
+// recurring cards lead (the day's fixtures), then the dated ones, each by board
+// position — the same reading order as the list layout's column.
+export function groupCardsByList<T extends BoardCardLike>(
+  cards: readonly T[],
+  lists: readonly BoardListLike[],
+): BoardLane<T>[] {
+  const byList = new Map<string, T[]>(lists.map((l) => [l.id, []]));
+  for (const card of cards) {
+    const id = resolveListId(card, lists);
+    if (id == null) continue;
+    byList.get(id)?.push(card);
+  }
+  const byPosition = (a: T, b: T) =>
+    Number(b.is_recurring) - Number(a.is_recurring) || a.position - b.position;
+  return lists.map((list) => ({ list, cards: (byList.get(list.id) ?? []).sort(byPosition) }));
+}
+
+export interface ListDrop {
+  // The list the card lands in.
+  listId: string;
+  // True when that isn't the list it came from.
   moved: boolean;
+  // The target lane's matching bucket in its new order, including the card.
+  orderedCards: BoardCardLike[];
 }
 
-// Where a card drag lands: which category it joins and the new order of that
-// lane's matching bucket. Returns null when the drop is a no-op or illegal.
+// Where a card drag lands: which list it joins and that lane's new order.
+// Returns null when the drop changes nothing.
 //
-// Positions are stored per (day, section, is_recurring), so a drop only ever
-// re-sequences the bucket the dragged card belongs to — a recurring card
-// dropped among dated ones still lands in the lane's recurring bucket.
-export function resolveDrop(
+// Board positions are stored per (day, category, is_recurring), so a drop only
+// ever re-sequences the bucket the dragged card belongs to — a recurring card
+// dropped among dated ones still lands among the lane's recurring cards.
+export function resolveListDrop(
   activeId: string,
   overId: string,
-  lanes: readonly DropLane[],
-): BoardDrop | null {
+  lanes: readonly BoardLane[],
+): ListDrop | null {
   if (activeId === overId) return null;
-  let active: DropCard | undefined;
-  let sourceLane: DropLane | undefined;
+
+  let active: BoardCardLike | undefined;
+  let sourceLane: BoardLane | undefined;
   for (const lane of lanes) {
     const found = lane.cards.find((c) => c.id === activeId);
     if (found) {
@@ -87,40 +122,49 @@ export function resolveDrop(
   }
   if (!active || !sourceLane) return null;
 
-  const overLaneKey = laneKeyFromDroppableId(overId);
+  const overListId = laneKeyFromDroppableId(overId);
   const targetLane =
-    overLaneKey != null
-      ? lanes.find((l) => l.key === overLaneKey)
+    overListId != null
+      ? lanes.find((l) => l.list.id === overListId)
       : lanes.find((l) => l.cards.some((c) => c.id === overId));
   if (!targetLane) return null;
 
-  // The Uncategorised lane is a bucket for orphaned section keys, not a real
-  // category, so nothing can be moved *into* it — cards already there can only
-  // be reordered against their own (orphaned) section.
-  if (targetLane.key === UNCATEGORISED_KEY && targetLane !== sourceLane) return null;
-  const section = targetLane.key === UNCATEGORISED_KEY ? active.section : targetLane.key;
-
   const isRecurring = active.is_recurring;
-  const inBucket = (c: DropCard) =>
-    c.is_recurring === isRecurring &&
-    (targetLane.key !== UNCATEGORISED_KEY || c.section === section);
-  const bucket = targetLane.cards.filter((c) => c.id !== activeId && inBucket(c));
+  const bucket = targetLane.cards.filter(
+    (c) => c.id !== activeId && c.is_recurring === isRecurring,
+  );
 
   const overCard =
-    overLaneKey != null ? null : (targetLane.cards.find((c) => c.id === overId) ?? null);
-  const overIndex = overCard && inBucket(overCard) ? bucket.findIndex((c) => c.id === overCard.id) : -1;
+    overListId != null ? null : (targetLane.cards.find((c) => c.id === overId) ?? null);
+  const overIndex =
+    overCard && overCard.is_recurring === isRecurring
+      ? bucket.findIndex((c) => c.id === overCard.id)
+      : -1;
   const index = overIndex === -1 ? bucket.length : overIndex;
 
-  const orderedIds = bucket.map((c) => c.id);
-  orderedIds.splice(index, 0, activeId);
+  const orderedCards = [...bucket];
+  orderedCards.splice(index, 0, active);
 
-  const moved = active.section !== section;
-  // Dropping a card back exactly where it started changes nothing.
+  const moved = targetLane !== sourceLane;
   if (!moved) {
-    const before = targetLane.cards.filter(inBucket).map((c) => c.id);
-    if (before.length === orderedIds.length && before.every((id, i) => id === orderedIds[i])) {
-      return null;
-    }
+    const before = sourceLane.cards.filter((c) => c.is_recurring === isRecurring);
+    if (before.every((c, i) => c.id === orderedCards[i]?.id)) return null;
   }
-  return { section, isRecurring, orderedIds, index, moved };
+  return { listId: targetLane.list.id, moved, orderedCards };
+}
+
+// Rewrite the positions of one lane's bucket to match its new visual order.
+// The cards keep the set of position slots they already hold between them
+// (shuffled to the new order), so a drop never renumbers the rest of the day —
+// the same trick reorderPriorities plays with rank values. Cards that don't
+// actually move are dropped from the result.
+export function listDropAssignments(
+  orderedCards: readonly BoardCardLike[],
+): { id: string; position: number }[] {
+  const slots = orderedCards.map((c) => c.position).sort((a, b) => a - b);
+  const out: { id: string; position: number }[] = [];
+  orderedCards.forEach((card, i) => {
+    if (card.position !== slots[i]) out.push({ id: card.id, position: slots[i] });
+  });
+  return out;
 }

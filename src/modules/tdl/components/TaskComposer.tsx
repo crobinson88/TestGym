@@ -17,6 +17,7 @@ export function TaskComposer({
   snapshot_date,
   categories,
   fixedSection,
+  boardListId,
   autoFocus = true,
   collapseWhenEmpty = false,
   onCancel,
@@ -27,6 +28,8 @@ export function TaskComposer({
   categories: SectionConfig[];
   // When set the composer writes to this category and shows no picker.
   fixedSection?: SectionConfig;
+  // Board View only: the list lane the new card lands in.
+  boardListId?: string;
   autoFocus?: boolean;
   // Close the composer when the title is blurred/submitted while empty. The
   // column composer collapses that way; the quick-add bar keeps its category
@@ -107,6 +110,7 @@ export function TaskComposer({
       eisenhower_quadrant: quadrant,
       notes: notes.trim() ? notes.trim() : null,
       images,
+      board_list_id: boardListId ?? null,
     });
     onCreated?.(v.title, cfg!);
     // Keep the composer open for the next quick add, collapsing details again.
