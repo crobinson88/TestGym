@@ -14,6 +14,7 @@ import {
   Volume2,
 } from "lucide-react";
 import type { FrenchTestKind } from "@/lib/database.types";
+import { Input } from "@/components/ui/Input";
 import { cn, relativeDay } from "@/lib/utils";
 import {
   useFrenchStats,
@@ -27,6 +28,9 @@ import {
   LISTENING_SIZES,
   LISTENING_SPEEDS,
   LISTENING_WORDS_PER_ROUND,
+  MAX_TEST_SIZE,
+  MIN_TEST_SIZE,
+  parseCountInput,
   STUDY_MODES,
   TEST_SIZE,
   TEST_SIZES,
@@ -89,10 +93,27 @@ export default function FrenchHome() {
   const [answerMode, setAnswerMode] = useState<VocabAnswerMode>("choice");
   const [vocabMode, setVocabMode] = useState<StudyMode>("mixed");
   const [count, setCount] = useState<number>(TEST_SIZE);
+  // The typed count is held as text so the field can be cleared mid-edit; `count`
+  // only moves when what's typed parses to a usable length.
+  const [countText, setCountText] = useState<string>(String(TEST_SIZE));
   const [listenCount, setListenCount] = useState<number>(10);
   const [wordsPerRound, setWordsPerRound] = useState<number>(1);
   const [speed, setSpeed] = useState<ListeningSpeed>("normal");
   const [listenMode, setListenMode] = useState<StudyMode>("mixed");
+
+  function pickCount(n: number) {
+    setCount(n);
+    setCountText(String(n));
+  }
+
+  function typeCount(raw: string) {
+    setCountText(raw);
+    const parsed = parseCountInput(raw);
+    if (parsed !== null) setCount(parsed);
+  }
+
+  // Highlights the typed field when the chosen length isn't one of the presets.
+  const isCustomCount = !TEST_SIZES.some((n) => n === count);
 
   // Listening only speaks words already mastered in the written vocab tests.
   const masteredCount = mastered?.length ?? 0;
@@ -115,7 +136,7 @@ export default function FrenchHome() {
             {TEST_SIZES.map((n) => (
               <button
                 key={n}
-                onClick={() => setCount(n)}
+                onClick={() => pickCount(n)}
                 aria-pressed={count === n}
                 className={cn(
                   "flex-1 rounded-xl border px-2 py-2 text-sm font-semibold tabular-nums transition",
@@ -128,6 +149,29 @@ export default function FrenchHome() {
               </button>
             ))}
           </div>
+          <label
+            className={cn(
+              "flex items-center gap-3 rounded-xl border px-3 py-2 text-sm transition",
+              isCustomCount
+                ? "border-accent bg-accent/15 text-accent"
+                : "border-line bg-surface text-muted",
+            )}
+          >
+            <span className="font-medium">Or enter</span>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={MIN_TEST_SIZE}
+              max={MAX_TEST_SIZE}
+              step={1}
+              value={countText}
+              onChange={(e) => typeCount(e.target.value)}
+              onBlur={() => setCountText(String(count))}
+              aria-label="Questions per test"
+              className="h-10 w-20 bg-bg px-2 text-center text-sm font-semibold tabular-nums"
+            />
+            <span>questions</span>
+          </label>
         </div>
         <div className="space-y-2">
           <button

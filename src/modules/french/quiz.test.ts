@@ -22,6 +22,7 @@ import {
   makeSpeakingQuestion,
   makeVocabQuestion,
   normalizeAnswer,
+  parseCountInput,
   selectVocab,
   shuffle,
   speedRate,
@@ -474,6 +475,26 @@ describe("clampCount", () => {
   it("clamps to the guard-rail bounds", () => {
     expect(clampCount(-3)).toBe(1);
     expect(clampCount(999)).toBe(50);
+  });
+});
+
+describe("parseCountInput", () => {
+  it("returns null while the field holds nothing usable", () => {
+    expect(parseCountInput("")).toBeNull();
+    expect(parseCountInput("   ")).toBeNull();
+    expect(parseCountInput("abc")).toBeNull();
+    expect(parseCountInput("-")).toBeNull();
+    expect(parseCountInput("1.5")).toBeNull();
+    expect(parseCountInput("0")).toBeNull();
+  });
+
+  it("parses a typed count, ignoring surrounding space", () => {
+    expect(parseCountInput("7")).toBe(7);
+    expect(parseCountInput(" 12 ")).toBe(12);
+  });
+
+  it("clamps a typed count to the guard-rail bounds", () => {
+    expect(parseCountInput("999")).toBe(50);
   });
 });
 
