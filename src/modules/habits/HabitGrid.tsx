@@ -120,15 +120,15 @@ export function HabitGrid() {
 
 function DayRow({ row, isToday }: { row: HabitDayRow; isToday: boolean }) {
   return (
-    <div className={cn(ROW_GRID, row.isWeekend && "opacity-60")}>
+    <div className={cn(ROW_GRID, (row.isWeekend || row.holiday) && "opacity-60")}>
       <div
         className={cn(
           "flex h-11 flex-col justify-center rounded-l-md px-2 text-[11px] leading-tight",
           isToday ? "bg-surface2 font-semibold text-text" : "text-muted",
         )}
-        title={prettyDate(row.date)}
+        title={row.holiday ? `${prettyDate(row.date)} — ${row.holiday}` : prettyDate(row.date)}
       >
-        <span>{dowLabel(row.date)}</span>
+        <span>{row.holiday ? "Hol" : dowLabel(row.date)}</span>
         <span className="tabular-nums">{dmLabel(row.date)}</span>
       </div>
       {HABIT_COLUMNS.map((col) => {

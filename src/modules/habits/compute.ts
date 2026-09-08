@@ -1,3 +1,9 @@
+import {
+  countingDaysBack,
+  holidayName,
+  skipEmptyHolidays,
+  type SkipDay,
+} from "@/lib/holidays";
 import { SLOT_MINUTES, formatHours } from "@/lib/time";
 import { addDays } from "@/lib/utils";
 import { ACTION_TARGET } from "@/modules/tdl/targets";
@@ -20,6 +26,10 @@ export interface HabitColumn {
   short: string;
   manual: boolean;
   hint: string;
+  // The work columns ignore US public holidays: an empty holiday is blank
+  // rather than a miss, and the rolling window steps over it. The personal
+  // columns (bed, start, gym) count holidays like any other day.
+  ignoresHolidays: boolean;
 }
 
 export const ROLLING_HOURS_WINDOW_DAYS = 7;
@@ -52,6 +62,7 @@ export const HABIT_COLUMNS: readonly HabitColumn[] = [
     short: "5:30",
     manual: true,
     hint: `Time logged before ${clockLabel(EARLY_START_BEFORE_MINUTES)}`,
+    ignoresHolidays: false,
   },
   {
     key: "early_bed",
@@ -59,20 +70,23 @@ export const HABIT_COLUMNS: readonly HabitColumn[] = [
     short: "9:30",
     manual: true,
     hint: `"${BED_TASK_NAME}" logged by ${clockLabel(EARLY_BED_BY_MINUTES)}`,
+    ignoresHolidays: false,
   },
   {
     key: "rolling_hours",
     label: "7 Day Ave",
     short: "7d",
     manual: false,
-    hint: `Rolling ${ROLLING_HOURS_WINDOW_DAYS}-day logged hours — hit at ${ROLLING_HOURS_TARGET}h+`,
+    hint: `Rolling ${ROLLING_HOURS_WINDOW_DAYS} logged days — hit at ${ROLLING_HOURS_TARGET}h+ · US holidays skipped`,
+    ignoresHolidays: true,
   },
   {
     key: "priority_task",
     label: "Priority Task",
     short: "Pri",
     manual: false,
-    hint: "A ranked priority worked or done that day",
+    hint: "A ranked priority worked or done that day · US holidays skipped",
+    ignoresHolidays: true,
   },
   {
     key: "task_completion",
@@ -80,6 +94,7 @@ export const HABIT_COLUMNS: readonly HabitColumn[] = [
     short: "Task",
     manual: false,
     hint: `Action items worked or done against the daily target of ${ACTION_TARGET} — the to-do list's Action Items pie`,
+    ignoresHolidays: true,
   },
   {
     key: "gym_growth",
@@ -87,6 +102,7 @@ export const HABIT_COLUMNS: readonly HabitColumn[] = [
     short: "Gym",
     manual: false,
     hint: `Rolling ${GYM_GROWTH_WINDOW_DAYS}-day lifted volume vs the previous ${GYM_GROWTH_WINDOW_DAYS} days — hit when growing`,
+    ignoresHolidays: false,
   },
 ];
 
@@ -117,6 +133,9 @@ export interface HabitDayRow {
   date: string;
   isWeekend: boolean;
   isFuture: boolean;
+  // The US public holiday on this date with nothing logged against it, else
+  // null — the columns that ignore holidays leave it blank.
+  holiday: string | null;
   // The stored overrides for the day, null where the column is running derived.
   marks: HabitMark;
   cells: Record<HabitColumnKey, HabitCell>;
@@ -156,9 +175,13 @@ function sumWindow(
   values: ReadonlyMap<string, number>,
   endDate: string,
   days: number,
+  skip?: SkipDay,
 ): number {
+  const window = skip
+    ? countingDaysBack(endDate, days, skip)
+    : Array.from({ length: days }, (_, i) => addDays(endDate, -i));
   let total = 0;
-  for (let i = 0; i < days; i++) total += values.get(addDays(endDate, -i)) ?? 0;
+  for (const date of window) total += values.get(date) ?? 0;
   return total;
 }
 
@@ -206,13 +229,21 @@ export function earlyBedCell(
   );
 }
 
-function rollingHoursCell(hours: ReadonlyMap<string, number>, date: string): HabitCell {
-  const total = sumWindow(hours, date, ROLLING_HOURS_WINDOW_DAYS);
+// The window covers ROLLING_HOURS_WINDOW_DAYS days that counted — an empty US
+// public holiday pushes it a day further back rather than eating a slot, so the
+// target stays comparable across holiday weeks.
+function rollingHoursCell(
+  hours: ReadonlyMap<string, number>,
+  date: string,
+  skip: SkipDay,
+): HabitCell {
+  const total = sumWindow(hours, date, ROLLING_HOURS_WINDOW_DAYS, skip);
   if (total === 0) return BLANK;
+  const shown = formatHours(Math.round(total * 10) / 10);
   return {
     state: total >= ROLLING_HOURS_TARGET ? "hit" : "miss",
-    text: formatHours(Math.round(total * 10) / 10),
-    title: `${formatHours(Math.round(total * 10) / 10)}h over the last ${ROLLING_HOURS_WINDOW_DAYS} days (target ${ROLLING_HOURS_TARGET}h)`,
+    text: shown,
+    title: `${shown}h over the last ${ROLLING_HOURS_WINDOW_DAYS} logged days, US holidays skipped (target ${ROLLING_HOURS_TARGET}h)`,
   };
 }
 
@@ -259,7 +290,14 @@ export function gymGrowthCell(
   };
 }
 
+function holidayCell(name: string): HabitCell {
+  return { state: "none", text: "—", title: `${name} — US public holiday, not counted` };
+}
+
 export function buildHabitRows(dates: readonly string[], src: HabitSources): HabitDayRow[] {
+  // A holiday only drops out when nothing was logged — work done on a public
+  // holiday is work you did, and counts like any other day.
+  const skipHours = skipEmptyHolidays((date) => (src.hours.get(date) ?? 0) > 0);
   return dates.map((date) => {
     const mark = src.marks.get(date);
     const marks: HabitMark = {
@@ -268,19 +306,31 @@ export function buildHabitRows(dates: readonly string[], src: HabitSources): Hab
     };
     const future = date > src.today;
     const tdl = src.tdl.get(date);
+    // A holiday with to-do activity is a day you worked — the work columns only
+    // stand down when the day is genuinely empty.
+    const holiday = (tdl?.active ?? 0) === 0 ? holidayName(date) : null;
     return {
       date,
       isWeekend: isWeekend(date),
       isFuture: future,
+      holiday,
       marks,
       cells: {
         early_start: future
           ? BLANK
           : earlyStartCell(src.firstSlot.get(date), marks.early_start),
         early_bed: future ? BLANK : earlyBedCell(src.firstBedSlot.get(date), marks.early_bed),
-        rolling_hours: future ? BLANK : rollingHoursCell(src.hours, date),
-        priority_task: future ? BLANK : priorityCell(tdl),
-        task_completion: future ? BLANK : completionCell(tdl),
+        rolling_hours: future ? BLANK : rollingHoursCell(src.hours, date, skipHours),
+        priority_task: future
+          ? BLANK
+          : holiday
+            ? holidayCell(holiday)
+            : priorityCell(tdl),
+        task_completion: future
+          ? BLANK
+          : holiday
+            ? holidayCell(holiday)
+            : completionCell(tdl),
         gym_growth: future ? BLANK : gymGrowthCell(src.gymVolume, date),
       },
     };
@@ -309,15 +359,19 @@ export function tallyColumns(rows: readonly HabitDayRow[]): ColumnTally[] {
 }
 
 // Consecutive days ending at the most recent non-future day where the habit was
-// hit. Days with no data break the streak, matching the sheet's day count.
+// hit. Days with no data break the streak, matching the sheet's day count — but
+// a US public holiday is stepped over on the columns that ignore them, so it
+// neither breaks the run nor adds to it.
 export function currentStreak(
   rows: readonly HabitDayRow[],
   key: HabitColumnKey,
 ): number {
+  const ignoresHolidays = HABIT_COLUMNS.find((c) => c.key === key)?.ignoresHolidays ?? false;
   let streak = 0;
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
     if (row.isFuture) continue;
+    if (ignoresHolidays && row.holiday) continue;
     if (row.cells[key].state !== "hit") break;
     streak++;
   }

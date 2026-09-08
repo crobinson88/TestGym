@@ -1,3 +1,9 @@
+import {
+  countingDaysBack,
+  holidayName,
+  skipEmptyHolidays,
+  type SkipDay,
+} from "./holidays";
 import { addDays } from "./utils";
 
 export const SLOT_MINUTES = 15;
@@ -104,11 +110,16 @@ export function workHoursInRange(
 export interface WeekHoursPoint {
   week_start: string;
   hours: number;
+  // US public holidays in the week that had nothing logged — the tooltip says
+  // so, since a short week isn't a slack one.
+  holidays: number;
 }
 
 export interface HoursPoint {
   date: string;
   hours: number;
+  // The US public holiday on this date when nothing was logged, else null.
+  holiday: string | null;
 }
 
 export function hoursPerDay(allocs: readonly AllocationLike[]): Map<string, number> {
@@ -119,26 +130,41 @@ export function hoursPerDay(allocs: readonly AllocationLike[]): Map<string, numb
   return out;
 }
 
+// A day is skipped only when it's a US public holiday with nothing logged —
+// hours worked on a holiday are hours you worked, and count normally.
+export function holidaySkip(perDay: ReadonlyMap<string, number>): SkipDay {
+  return skipEmptyHolidays((date) => (perDay.get(date) ?? 0) > 0);
+}
+
 export function weeklyHours(
   perDay: ReadonlyMap<string, number>,
   weekStarts: readonly string[],
 ): WeekHoursPoint[] {
+  const skip = holidaySkip(perDay);
   return weekStarts.map((ws) => {
     let hours = 0;
-    for (let i = 0; i < 7; i++) hours += perDay.get(addDays(ws, i)) ?? 0;
-    return { week_start: ws, hours };
+    let holidays = 0;
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(ws, i);
+      hours += perDay.get(date) ?? 0;
+      if (skip(date)) holidays++;
+    }
+    return { week_start: ws, hours, holidays };
   });
 }
 
+// The trailing window covers `windowDays` days that counted: an empty public
+// holiday extends it a day further back instead of dragging the total down.
 export function rollingHours(
   perDay: ReadonlyMap<string, number>,
   endDates: readonly string[],
   windowDays: number,
 ): HoursPoint[] {
+  const skip = holidaySkip(perDay);
   return endDates.map((d) => {
     let hours = 0;
-    for (let i = 0; i < windowDays; i++) hours += perDay.get(addDays(d, -i)) ?? 0;
-    return { date: d, hours };
+    for (const date of countingDaysBack(d, windowDays, skip)) hours += perDay.get(date) ?? 0;
+    return { date: d, hours, holiday: skip(d) ? holidayName(d) : null };
   });
 }
 
@@ -146,5 +172,10 @@ export function dailyHours(
   perDay: ReadonlyMap<string, number>,
   dates: readonly string[],
 ): HoursPoint[] {
-  return dates.map((d) => ({ date: d, hours: perDay.get(d) ?? 0 }));
+  const skip = holidaySkip(perDay);
+  return dates.map((d) => ({
+    date: d,
+    hours: perDay.get(d) ?? 0,
+    holiday: skip(d) ? holidayName(d) : null,
+  }));
 }
