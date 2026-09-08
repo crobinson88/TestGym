@@ -106,12 +106,43 @@ export function isHoliday(date: string): boolean {
   return holidayName(date) !== null;
 }
 
-// Holidays are only ignored when the day is genuinely empty — work logged on a
-// public holiday is work you did, and counts like any other day.
+// A day off is a hand-marked pause — sick, PTO, anything that legitimately
+// stopped the day. Keyed by date, valued by the free-text reason (null when
+// none was typed).
+export type DayOffMap = ReadonlyMap<string, string | null>;
+
+export const NO_DAYS_OFF: DayOffMap = new Map();
+
+// What a day off without a typed reason is called in the UI.
+export const DAY_OFF_LABEL = "Day off";
+
+// Why a stat stands down on this date, or null when the day counts normally.
+// Only the work stats pass `includeHolidays` — a public holiday is no reason to
+// skip the gym, but a sick day is, so every stat but Smoke-free honours a day
+// off.
+export function pauseReason(
+  date: string,
+  daysOff: DayOffMap,
+  includeHolidays: boolean,
+): string | null {
+  if (daysOff.has(date)) return daysOff.get(date) || DAY_OFF_LABEL;
+  return includeHolidays ? holidayName(date) : null;
+}
+
+// A paused day is only ignored when it's genuinely empty — work logged on a
+// public holiday or a sick day is work you did, and counts like any other day.
 export type SkipDay = (date: string) => boolean;
 
+export function skipEmptyPauses(
+  hasData: (date: string) => boolean,
+  daysOff: DayOffMap,
+  includeHolidays: boolean,
+): SkipDay {
+  return (date) => pauseReason(date, daysOff, includeHolidays) !== null && !hasData(date);
+}
+
 export function skipEmptyHolidays(hasData: (date: string) => boolean): SkipDay {
-  return (date) => isHoliday(date) && !hasData(date);
+  return skipEmptyPauses(hasData, NO_DAYS_OFF, true);
 }
 
 export const NEVER_SKIP: SkipDay = () => false;

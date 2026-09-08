@@ -487,6 +487,11 @@ export interface DailyHabitRow {
   habit_date: string;
   early_start: boolean | null;
   early_bed: boolean | null;
+  // A hand-marked day off — sick, PTO, anything that legitimately stops the
+  // day. Treated like a US public holiday by every derived stat except
+  // Smoke-free, and like a holiday it's only ignored when nothing was logged.
+  day_off: boolean;
+  day_off_reason: string | null;
   client_id: string | null;
   user_id: string | null;
   created_at: string;

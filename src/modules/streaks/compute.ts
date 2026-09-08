@@ -1,9 +1,11 @@
 import {
   NEVER_SKIP,
-  holidayName,
+  NO_DAYS_OFF,
   lastCountingDay,
   onlySkippedBetween,
-  skipEmptyHolidays,
+  pauseReason,
+  skipEmptyPauses,
+  type DayOffMap,
   type SkipDay,
 } from "@/lib/holidays";
 import { addDays } from "@/lib/utils";
@@ -24,6 +26,9 @@ export interface StreakDef {
   // neither breaks the run nor counts toward it. The personal streaks don't: a
   // public holiday is no reason to smoke or skip the gym.
   skipsHolidays: boolean;
+  // A hand-marked day off (sick, PTO) pauses every streak but Smoke-free —
+  // being ill stops the gym and the work, but it's no reason to smoke.
+  skipsDaysOff: boolean;
 }
 
 // Time-tracking task names the work streaks read. Matched by name (duplicate
@@ -42,6 +47,7 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     unit: "day",
     color: "#22d3ee",
     skipsHolidays: false,
+    skipsDaysOff: true,
   },
   {
     key: "gym",
@@ -50,6 +56,7 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     unit: "day",
     color: "#f97316",
     skipsHolidays: false,
+    skipsDaysOff: true,
   },
   {
     key: "tgm",
@@ -58,6 +65,7 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     unit: "day",
     color: "#a78bfa",
     skipsHolidays: true,
+    skipsDaysOff: true,
   },
   {
     key: "getbuddy",
@@ -66,6 +74,7 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     unit: "day",
     color: "#34d399",
     skipsHolidays: true,
+    skipsDaysOff: true,
   },
   {
     key: "smoke_free",
@@ -74,6 +83,7 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     unit: "day",
     color: "#10b981",
     skipsHolidays: false,
+    skipsDaysOff: false,
   },
 ];
 
@@ -114,9 +124,10 @@ export interface Streak {
   // The run is alive but today isn't on it yet — a streak only breaks once a
   // whole day is missed, so an unlogged today doesn't zero it before bedtime.
   pendingToday: boolean;
-  // Today is a US public holiday this streak skips — the run is paused, not
-  // pending. Named so the card can say which holiday.
-  holidayToday: string | null;
+  // Today is a day this streak stands down on — a US public holiday it skips,
+  // or a hand-marked day off. The run is paused, not pending; named so the
+  // card can say which.
+  pausedToday: string | null;
   badges: Badge[];
   next: NextBadge | null;
 }
@@ -155,16 +166,17 @@ export function buildStreak(
   days: ReadonlySet<string>,
   today: string,
   skip: SkipDay = NEVER_SKIP,
+  pausedLabel: (date: string) => string | null = () => null,
 ): Streak {
   const sorted = Array.from(days).sort();
   // The last day that could have kept the streak: yesterday, or the day before
   // a run of skipped days leading up to it.
   const anchor = lastCountingDay(addDays(today, -1), skip);
-  const holidayToday = !days.has(today) && skip(today) ? holidayName(today) : null;
+  const pausedToday = !days.has(today) && skip(today) ? pausedLabel(today) : null;
   const current = days.has(today)
     ? runEndingAt(days, today, skip)
     : runEndingAt(days, anchor, skip);
-  const pendingToday = !days.has(today) && holidayToday === null && current > 0;
+  const pendingToday = !days.has(today) && pausedToday === null && current > 0;
   const best = Math.max(longestRun(sorted, skip), current);
   const badges = BADGE_TIERS.map((tier) => ({
     ...tier,
@@ -179,7 +191,7 @@ export function buildStreak(
     total: sorted.length,
     lastDate: sorted.length > 0 ? sorted[sorted.length - 1] : null,
     pendingToday,
-    holidayToday,
+    pausedToday,
     badges,
     next: nextTier
       ? { days: nextTier.days, label: nextTier.label, remaining: nextTier.days - current }
@@ -191,13 +203,25 @@ export type StreakDays = Record<StreakKey, ReadonlySet<string>>;
 
 export interface StreakSources extends StreakDays {
   today: string;
+  // Hand-marked days off, date → reason. Optional so a caller that tracks none
+  // still builds streaks.
+  daysOff?: DayOffMap;
 }
 
 export function buildStreaks(src: StreakSources): Streak[] {
+  const daysOff = src.daysOff ?? NO_DAYS_OFF;
   return STREAK_DEFS.map((def) => {
     const days = src[def.key];
-    const skip = def.skipsHolidays ? skipEmptyHolidays((date) => days.has(date)) : NEVER_SKIP;
-    return buildStreak(def.key, days, src.today, skip);
+    // Neither pause applies to Smoke-free, so it skips nothing at all.
+    if (!def.skipsHolidays && !def.skipsDaysOff) return buildStreak(def.key, days, src.today);
+    const scope = def.skipsDaysOff ? daysOff : NO_DAYS_OFF;
+    return buildStreak(
+      def.key,
+      days,
+      src.today,
+      skipEmptyPauses((date) => days.has(date), scope, def.skipsHolidays),
+      (date) => pauseReason(date, scope, def.skipsHolidays),
+    );
   });
 }
 

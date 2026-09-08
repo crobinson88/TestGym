@@ -1,7 +1,8 @@
 import {
   countingDaysBack,
-  holidayName,
-  skipEmptyHolidays,
+  pauseReason,
+  skipEmptyPauses,
+  type DayOffMap,
   type SkipDay,
 } from "@/lib/holidays";
 import { SLOT_MINUTES, formatHours } from "@/lib/time";
@@ -28,7 +29,8 @@ export interface HabitColumn {
   hint: string;
   // The work columns ignore US public holidays: an empty holiday is blank
   // rather than a miss, and the rolling window steps over it. The personal
-  // columns (bed, start, gym) count holidays like any other day.
+  // columns (bed, start, gym) count holidays like any other day. Every column
+  // honours a hand-marked day off — a sick day stops the lot.
   ignoresHolidays: boolean;
 }
 
@@ -133,15 +135,24 @@ export interface HabitDayRow {
   date: string;
   isWeekend: boolean;
   isFuture: boolean;
-  // The US public holiday on this date with nothing logged against it, else
-  // null — the columns that ignore holidays leave it blank.
+  // Why the work columns stand down on this date — the US public holiday, or
+  // the hand-marked day off's reason — else null. Empty days only: a paused
+  // day you logged against counts like any other.
   holiday: string | null;
+  // The day is marked off by hand, so every column stands down, not just the
+  // work three. Carries the reason where one was typed.
+  dayOff: string | null;
+  // The stored flag, whatever was logged that day — what the row's toggle
+  // reads, so marking a busy day off still shows as marked.
+  isDayOff: boolean;
   // The stored overrides for the day, null where the column is running derived.
   marks: HabitMark;
   cells: Record<HabitColumnKey, HabitCell>;
 }
 
 export interface HabitSources {
+  // Hand-marked days off, date → reason.
+  daysOff: DayOffMap;
   // Hand-set overrides; a non-null flag wins over the derived value.
   marks: ReadonlyMap<string, HabitMark>;
   // Hours logged per day, all tasks — the same series behind the rolling-hours chart.
@@ -243,7 +254,7 @@ function rollingHoursCell(
   return {
     state: total >= ROLLING_HOURS_TARGET ? "hit" : "miss",
     text: shown,
-    title: `${shown}h over the last ${ROLLING_HOURS_WINDOW_DAYS} logged days, US holidays skipped (target ${ROLLING_HOURS_TARGET}h)`,
+    title: `${shown}h over the last ${ROLLING_HOURS_WINDOW_DAYS} logged days, holidays and days off skipped (target ${ROLLING_HOURS_TARGET}h)`,
   };
 }
 
@@ -290,14 +301,18 @@ export function gymGrowthCell(
   };
 }
 
-function holidayCell(name: string): HabitCell {
-  return { state: "none", text: "—", title: `${name} — US public holiday, not counted` };
+function pausedCell(reason: string): HabitCell {
+  return { state: "none", text: "—", title: `${reason} — not counted` };
 }
 
 export function buildHabitRows(dates: readonly string[], src: HabitSources): HabitDayRow[] {
-  // A holiday only drops out when nothing was logged — work done on a public
-  // holiday is work you did, and counts like any other day.
-  const skipHours = skipEmptyHolidays((date) => (src.hours.get(date) ?? 0) > 0);
+  // A paused day only drops out when nothing was logged — work done on a public
+  // holiday or a sick day is work you did, and counts like any other day.
+  const skipHours = skipEmptyPauses(
+    (date) => (src.hours.get(date) ?? 0) > 0,
+    src.daysOff,
+    true,
+  );
   return dates.map((date) => {
     const mark = src.marks.get(date);
     const marks: HabitMark = {
@@ -306,32 +321,36 @@ export function buildHabitRows(dates: readonly string[], src: HabitSources): Hab
     };
     const future = date > src.today;
     const tdl = src.tdl.get(date);
-    // A holiday with to-do activity is a day you worked — the work columns only
-    // stand down when the day is genuinely empty.
-    const holiday = (tdl?.active ?? 0) === 0 ? holidayName(date) : null;
+    const worked = (tdl?.active ?? 0) > 0;
+    // A paused day with to-do activity is a day you worked — the work columns
+    // only stand down when the day is genuinely empty.
+    const holiday = worked ? null : pauseReason(date, src.daysOff, true);
+    // Only a hand-marked day off pauses the personal columns; a public holiday
+    // is no reason to skip the gym or sleep in.
+    const dayOff = worked ? null : pauseReason(date, src.daysOff, false);
+    const paused = (reason: string | null, cell: () => HabitCell) =>
+      future ? BLANK : reason ? pausedCell(reason) : cell();
     return {
       date,
       isWeekend: isWeekend(date),
       isFuture: future,
       holiday,
+      dayOff,
+      isDayOff: src.daysOff.has(date),
       marks,
       cells: {
-        early_start: future
-          ? BLANK
-          : earlyStartCell(src.firstSlot.get(date), marks.early_start),
-        early_bed: future ? BLANK : earlyBedCell(src.firstBedSlot.get(date), marks.early_bed),
+        early_start: paused(dayOff, () =>
+          earlyStartCell(src.firstSlot.get(date), marks.early_start),
+        ),
+        early_bed: paused(dayOff, () =>
+          earlyBedCell(src.firstBedSlot.get(date), marks.early_bed),
+        ),
+        // The rolling window steps over paused days rather than blanking the
+        // cell, so the 70h target stays comparable through a sick week.
         rolling_hours: future ? BLANK : rollingHoursCell(src.hours, date, skipHours),
-        priority_task: future
-          ? BLANK
-          : holiday
-            ? holidayCell(holiday)
-            : priorityCell(tdl),
-        task_completion: future
-          ? BLANK
-          : holiday
-            ? holidayCell(holiday)
-            : completionCell(tdl),
-        gym_growth: future ? BLANK : gymGrowthCell(src.gymVolume, date),
+        priority_task: paused(holiday, () => priorityCell(tdl)),
+        task_completion: paused(holiday, () => completionCell(tdl)),
+        gym_growth: paused(dayOff, () => gymGrowthCell(src.gymVolume, date)),
       },
     };
   });
@@ -371,7 +390,8 @@ export function currentStreak(
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
     if (row.isFuture) continue;
-    if (ignoresHolidays && row.holiday) continue;
+    // A day off steps over every column; a holiday only the work three.
+    if (row.dayOff || (ignoresHolidays && row.holiday)) continue;
     if (row.cells[key].state !== "hit") break;
     streak++;
   }

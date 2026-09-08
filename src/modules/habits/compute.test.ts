@@ -18,6 +18,7 @@ const empty: HabitSources = {
   firstBedSlot: new Map(),
   tdl: new Map(),
   gymVolume: new Map(),
+  daysOff: new Map(),
   today: "2026-09-01",
 };
 
@@ -243,7 +244,7 @@ describe("US public holidays on the work columns", () => {
     expect(rows[0].holiday).toBe("Thanksgiving Day");
     expect(rows[0].cells.priority_task.state).toBe("none");
     expect(rows[0].cells.task_completion.state).toBe("none");
-    expect(rows[0].cells.priority_task.title).toContain("US public holiday");
+    expect(rows[0].cells.priority_task.title).toContain("Thanksgiving Day");
   });
 
   it("grades the to-do columns normally on a holiday you worked", () => {
@@ -298,5 +299,69 @@ describe("US public holidays on the work columns", () => {
       hit: 1,
       marked: 1,
     });
+  });
+});
+
+describe("hand-marked days off", () => {
+  const today = { today: "2026-09-04" };
+  const SICK = "2026-09-02";
+  const idleDay = { total: 5, done: 0, active: 0, priorityTotal: 0, priorityActive: 0 };
+  const busyDay = { total: 5, done: 3, active: 4, priorityTotal: 2, priorityActive: 1 };
+  const off = (reason: string | null = null) => new Map([[SICK, reason]]);
+
+  it("blanks every column on an empty day off, not just the work three", () => {
+    const rows = buildHabitRows(
+      [SICK],
+      src({
+        ...today,
+        daysOff: off("Sick"),
+        firstSlot: new Map([[SICK, slotAt(8)]]),
+        gymVolume: new Map([["2026-08-30", 1000]]),
+        tdl: new Map([[SICK, idleDay]]),
+      }),
+    );
+    const cells = rows[0].cells;
+    expect(cells.early_start.state).toBe("none");
+    expect(cells.early_bed.state).toBe("none");
+    expect(cells.gym_growth.state).toBe("none");
+    expect(cells.priority_task.state).toBe("none");
+    expect(cells.task_completion.state).toBe("none");
+    expect(cells.early_start.title).toContain("Sick");
+  });
+
+  it("falls back to a plain label when no reason was typed", () => {
+    const rows = buildHabitRows([SICK], src({ ...today, daysOff: off() }));
+    expect(rows[0].dayOff).toBe("Day off");
+  });
+
+  it("grades the day normally when you worked anyway", () => {
+    const rows = buildHabitRows(
+      [SICK],
+      src({ ...today, daysOff: off("Sick"), tdl: new Map([[SICK, busyDay]]) }),
+    );
+    expect(rows[0].dayOff).toBeNull();
+    expect(rows[0].cells.priority_task.state).toBe("hit");
+    // Still marked off, so the row's toggle reads as set.
+    expect(rows[0].isDayOff).toBe(true);
+  });
+
+  it("extends the rolling window past an empty day off", () => {
+    const hours = new Map<string, number>();
+    for (let d = 26; d <= 31; d++) hours.set(`2026-08-${d}`, 12);
+    hours.set("2026-09-01", 12);
+    const rows = buildHabitRows([SICK], src({ ...today, daysOff: off("Sick"), hours }));
+    expect(rows[0].cells.rolling_hours).toMatchObject({ state: "hit", text: "84" });
+  });
+
+  it("steps the streak over a day off on every column", () => {
+    const firstSlot = new Map([
+      ["2026-09-01", slotAt(5, 30)],
+      ["2026-09-03", slotAt(5, 15)],
+    ]);
+    const rows = buildHabitRows(
+      ["2026-09-01", SICK, "2026-09-03"],
+      src({ ...today, daysOff: off("Sick"), firstSlot }),
+    );
+    expect(currentStreak(rows, "early_start")).toBe(2);
   });
 });

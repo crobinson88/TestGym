@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { dayOffMap } from "@/lib/dayOff";
 import { todayIsoDate } from "@/lib/utils";
 import {
   FRENCH_TASK_NAME,
@@ -24,13 +25,14 @@ function taskIdsNamed(
 
 export function useStreaks(): Streak[] | undefined {
   return useLiveQuery(async () => {
-    const [attempts, sets, cardio, allocs, timeTasks, smoking] = await Promise.all([
+    const [attempts, sets, cardio, allocs, timeTasks, smoking, habitRows] = await Promise.all([
       db.french_attempts.toArray(),
       db.sets.toArray(),
       db.cardio_sessions.toArray(),
       db.timeAllocations.toArray(),
       db.timeTasks.toArray(),
       db.smoking_logs.toArray(),
+      db.daily_habits.toArray(),
     ]);
 
     const french = new Set<string>();
@@ -75,6 +77,14 @@ export function useStreaks(): Streak[] | undefined {
       if (!v.smoked) smoke_free.add(date);
     }
 
-    return buildStreaks({ today: todayIsoDate(), french, gym, tgm, getbuddy, smoke_free });
+    return buildStreaks({
+      today: todayIsoDate(),
+      french,
+      gym,
+      tgm,
+      getbuddy,
+      smoke_free,
+      daysOff: dayOffMap(habitRows),
+    });
   }, []);
 }

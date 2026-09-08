@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Input } from "@/components/ui/Input";
+import { DAY_OFF_LABEL } from "@/lib/holidays";
 import { addDays, cn, prettyDate, todayIsoDate } from "@/lib/utils";
 import {
   BED_TASK_NAME,
@@ -11,7 +13,7 @@ import {
   type HabitDayRow,
   type ManualHabitKey,
 } from "./compute";
-import { setHabitMark, useHabitRows } from "./hooks";
+import { setDayOff, setHabitMark, useHabitRows } from "./hooks";
 
 const WINDOW_DAYS = 14;
 
@@ -40,6 +42,7 @@ const ROW_GRID = "grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))] gap-px";
 export function HabitGrid() {
   const today = todayIsoDate();
   const [offset, setOffset] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
   const endDate = addDays(today, offset * WINDOW_DAYS);
   const rows = useHabitRows(endDate, WINDOW_DAYS);
 
@@ -88,7 +91,17 @@ export function HabitGrid() {
 
       <div className="space-y-px">
         {ordered.map((row) => (
-          <DayRow key={row.date} row={row} isToday={row.date === today} />
+          <div key={row.date} className="space-y-px">
+            <DayRow
+              row={row}
+              isToday={row.date === today}
+              selected={selected === row.date}
+              onSelect={() => setSelected((d) => (d === row.date ? null : row.date))}
+            />
+            {selected === row.date && (
+              <DayOffEditor row={row} onClose={() => setSelected(null)} />
+            )}
+          </div>
         ))}
       </div>
 
@@ -112,25 +125,54 @@ export function HabitGrid() {
       <div className="mt-1 text-[11px] text-muted">
         5:30 hits when time is logged before 6am; 9:30 when “{BED_TASK_NAME}” is logged by 9:30pm.
         Tap either to override a day (Y → N → back to the time log). The other four are read from
-        your hours, to-do list and gym log.
+        your hours, to-do list and gym log. Tap a date to mark the day off (sick, PTO) — every
+        column stands down and the streaks step over it.
       </div>
     </div>
   );
 }
 
-function DayRow({ row, isToday }: { row: HabitDayRow; isToday: boolean }) {
+// The left-hand date cell doubles as the day-off toggle: "Off" when the day is
+// marked off by hand, "Hol" on an empty US public holiday, else the weekday.
+function dateBadge(row: HabitDayRow): string {
+  if (row.isDayOff) return "Off";
+  if (row.holiday) return "Hol";
+  return dowLabel(row.date);
+}
+
+function dateTitle(row: HabitDayRow): string {
+  const reason = row.isDayOff ? (row.dayOff ?? DAY_OFF_LABEL) : row.holiday;
+  return reason ? `${prettyDate(row.date)} — ${reason}` : prettyDate(row.date);
+}
+
+function DayRow({
+  row,
+  isToday,
+  selected,
+  onSelect,
+}: {
+  row: HabitDayRow;
+  isToday: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <div className={cn(ROW_GRID, (row.isWeekend || row.holiday) && "opacity-60")}>
-      <div
+    <div className={cn(ROW_GRID, (row.isWeekend || row.holiday || row.isDayOff) && "opacity-60")}>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-expanded={selected}
         className={cn(
-          "flex h-11 flex-col justify-center rounded-l-md px-2 text-[11px] leading-tight",
+          "flex h-11 flex-col justify-center rounded-l-md px-2 text-left text-[11px] leading-tight transition hover:bg-surface2",
           isToday ? "bg-surface2 font-semibold text-text" : "text-muted",
+          selected && "bg-surface2 text-text",
+          row.isDayOff && "text-warn",
         )}
-        title={row.holiday ? `${prettyDate(row.date)} — ${row.holiday}` : prettyDate(row.date)}
+        title={dateTitle(row)}
       >
-        <span>{row.holiday ? "Hol" : dowLabel(row.date)}</span>
+        <span>{dateBadge(row)}</span>
         <span className="tabular-nums">{dmLabel(row.date)}</span>
-      </div>
+      </button>
       {HABIT_COLUMNS.map((col) => {
         const cell = row.cells[col.key];
         if (!col.manual) {
@@ -194,5 +236,65 @@ function ManualCell({
     >
       {cell.text}
     </button>
+  );
+}
+
+// Tapping a date opens this: mark the day off (sick, PTO) with an optional
+// reason. A day off pauses every column and is stepped over by the streaks.
+function DayOffEditor({ row, onClose }: { row: HabitDayRow; onClose: () => void }) {
+  const [reason, setReason] = useState(row.dayOff ?? "");
+
+  // Re-seed when a sync or another device changes the stored reason.
+  useEffect(() => setReason(row.dayOff ?? ""), [row.date, row.dayOff]);
+
+  const save = (off: boolean, text: string) => void setDayOff(row.date, off, text);
+
+  return (
+    <div className="rounded-md border border-line bg-surface2 p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold">{prettyDate(row.date)}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      {row.isDayOff ? (
+        <div className="mt-2 space-y-2">
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onBlur={() => save(true, reason)}
+            placeholder="Sick, PTO, …"
+            aria-label="Reason"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              save(false, "");
+              onClose();
+            }}
+            className="h-11 w-full rounded-lg border border-line text-sm font-medium text-muted hover:bg-surface"
+          >
+            Clear day off
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => save(true, reason)}
+          className="mt-2 h-11 w-full rounded-lg bg-warn/20 text-sm font-semibold text-warn hover:brightness-125"
+        >
+          Mark day off
+        </button>
+      )}
+      <p className="mt-2 text-[11px] text-muted">
+        Pauses every column and steps the streaks over the day — except Smoke-free, which keeps
+        counting. Anything you do log still counts.
+      </p>
+    </div>
   );
 }

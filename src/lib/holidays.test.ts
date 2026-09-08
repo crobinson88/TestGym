@@ -6,7 +6,9 @@ import {
   isHoliday,
   lastCountingDay,
   onlySkippedBetween,
+  pauseReason,
   skipEmptyHolidays,
+  skipEmptyPauses,
 } from "./holidays";
 
 describe("US federal holidays", () => {
@@ -109,5 +111,37 @@ describe("walking over skipped days", () => {
 
   it("onlySkippedBetween is false across an ordinary missed day", () => {
     expect(onlySkippedBetween("2026-03-03", "2026-03-05", skip)).toBe(false);
+  });
+});
+
+describe("hand-marked days off", () => {
+  const daysOff = new Map([
+    ["2026-09-02", "Sick"],
+    ["2026-09-03", null],
+  ]);
+
+  it("names the reason a stat stands down", () => {
+    expect(pauseReason("2026-09-02", daysOff, false)).toBe("Sick");
+  });
+
+  it("falls back to a plain label with no reason typed", () => {
+    expect(pauseReason("2026-09-03", daysOff, false)).toBe("Day off");
+  });
+
+  it("only reports the holiday when the stat ignores holidays", () => {
+    expect(pauseReason("2026-11-26", daysOff, true)).toBe("Thanksgiving Day");
+    expect(pauseReason("2026-11-26", daysOff, false)).toBeNull();
+  });
+
+  it("lets a day off win over the holiday it lands on", () => {
+    const onHoliday = new Map([["2026-11-26", "Sick"]]);
+    expect(pauseReason("2026-11-26", onHoliday, true)).toBe("Sick");
+  });
+
+  it("skips an empty day off but keeps one you worked", () => {
+    const worked = skipEmptyPauses((d) => d === "2026-09-03", daysOff, false);
+    expect(worked("2026-09-02")).toBe(true);
+    expect(worked("2026-09-03")).toBe(false);
+    expect(worked("2026-09-04")).toBe(false);
   });
 });
