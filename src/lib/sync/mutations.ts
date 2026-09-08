@@ -913,6 +913,68 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
   }
 
+  // A row with nothing hand-set on it says nothing, so it's soft-deleted rather
+  // than left behind as an all-null row.
+  function habitRowIsEmpty(row: DailyHabitRow): boolean {
+    return row.early_start === null && row.early_bed === null && !row.day_off;
+  }
+
+  // Mark (or clear) a day off — sick, PTO, anything that legitimately stops the
+  // day. `off = false` clears it and its reason together. Shares the day's
+  // `daily_habits` row with the hand-set habit flags.
+  async function setDayOff(
+    date: string,
+    off: boolean,
+    reason: string | null = null,
+  ): Promise<LocalDailyHabit | null> {
+    const live = await liveHabitRows(date);
+    const existing = live[0];
+    const ts = now();
+    // Soft-delete stray duplicates left by offline races, keeping the newest.
+    for (const dupe of live.slice(1)) {
+      await db.daily_habits.put({
+        ...dupe,
+        deleted_at: ts,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
+    const trimmed = reason?.trim() ?? null;
+    if (existing) {
+      const next: LocalDailyHabit = {
+        ...existing,
+        day_off: off,
+        day_off_reason: off ? (trimmed || null) : null,
+        updated_at: ts,
+        sync_status: "pending",
+      };
+      const empty = habitRowIsEmpty(next);
+      await db.daily_habits.put(empty ? { ...next, deleted_at: ts } : next);
+      notify();
+      return empty ? null : next;
+    }
+    if (!off) {
+      notify();
+      return null;
+    }
+    const id = uuid();
+    const row: DailyHabitRow = {
+      id,
+      habit_date: date,
+      early_start: null,
+      early_bed: null,
+      day_off: true,
+      day_off_reason: trimmed || null,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingDailyHabit(row);
+    await db.daily_habits.put(local);
+    notify();
+    return local;
+  }
+
   // The Stats habit grid: mark one hand-tracked habit for a day. `true` = hit,
   // `false` = missed, `null` = unmarked. The day's row is soft-deleted once no
   // habit on it is marked, so an all-null day reads as "no data" everywhere.
@@ -940,7 +1002,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
         updated_at: ts,
         sync_status: "pending",
       };
-      const empty = next.early_start === null && next.early_bed === null;
+      const empty = habitRowIsEmpty(next);
       await db.daily_habits.put(empty ? { ...next, deleted_at: ts } : next);
       notify();
       return empty ? null : next;
@@ -955,6 +1017,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       habit_date: date,
       early_start: habit === "early_start" ? value : null,
       early_bed: habit === "early_bed" ? value : null,
+      day_off: false,
+      day_off_reason: null,
       client_id: id,
       user_id: null,
       ...baseRowDefaults(ts),
@@ -1123,6 +1187,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     setSmoked,
     setCigaretteCount,
     setDailyHabit,
+    setDayOff,
     addFoodEntry,
     updateFoodEntry,
     deleteFoodEntry,

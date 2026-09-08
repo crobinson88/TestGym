@@ -25,6 +25,7 @@ export function StreakBoard() {
 }
 
 function subtitle(streak: Streak): string {
+  if (streak.pausedToday) return `${streak.pausedToday} — streak paused`;
   if (streak.current === 0) {
     return streak.lastDate ? `Last on ${relativeDay(streak.lastDate)}` : "Not started yet";
   }
