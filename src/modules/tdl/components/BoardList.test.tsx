@@ -30,6 +30,14 @@ vi.mock("../boardLists", () => ({
   deleteBoardList: (...a: unknown[]) => deleteBoardList(...a),
 }));
 
+vi.mock("../comments", () => ({
+  useThreadId: () => "thread-1",
+  useComments: () => [],
+  addComment: vi.fn(),
+  updateComment: vi.fn(),
+  deleteComment: vi.fn(),
+}));
+
 vi.mock("../storage", () => ({
   tdlSignedUrlMap: vi.fn(async () => ({})),
   uploadTdlImages: vi.fn(async () => []),
@@ -94,6 +102,8 @@ function renderLane(cards: LocalTdlItem[], props: Record<string, unknown> = {}) 
         categories={[CFG]}
         snapshot_date="2026-09-08"
         cards={cards}
+        lists={[LIST]}
+        takenRanks={new Set<number>()}
         {...props}
       />
     </DndContext>,

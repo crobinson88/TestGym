@@ -7,6 +7,7 @@ import {
   Clock,
   Flame,
   GripVertical,
+  MessageSquare,
   Square,
   StickyNote,
   ThumbsDown,
@@ -20,9 +21,10 @@ import { cycleStatus, snoozeItems, updateItem } from "../repo";
 import type { SectionConfig } from "../sections";
 import { QUADRANT_BY_KEY } from "../quadrant";
 import { isSnoozed } from "../snooze";
+import type { LocalTdlBoardList } from "@/lib/db";
 import { ItemActionsMenu } from "./ItemActionsMenu";
 import { AGE_CLASSES, QUADRANT_COLOR } from "./itemStyles";
-import { ItemDetail } from "./ItemDetail";
+import { CardDetailModal } from "./CardDetailModal";
 import { StatusPill } from "./StatusPill";
 
 type SortableReturn = ReturnType<typeof useSortable>;
@@ -40,6 +42,12 @@ export interface BoardCardProps {
   // Draws the insertion line: this is where the card in flight would land.
   indicate?: boolean;
   categories: SectionConfig[];
+  // The card's own category and its lists, for the detail dialog.
+  cfg: SectionConfig;
+  lists: LocalTdlBoardList[];
+  takenRanks: Set<number>;
+  // Comments on this card's roll-forward chain, for the badge.
+  commentCount?: number;
   focused?: boolean;
   selecting?: boolean;
   selected?: boolean;
@@ -113,6 +121,10 @@ function BoardCardBase({
   onToggleSelect,
   onBulkActed,
   indicate,
+  cfg,
+  lists,
+  takenRanks,
+  commentCount = 0,
   marker,
   drag,
 }: BoardCardProps & { marker?: "flame" | "rank"; drag: DragBinding }) {
@@ -122,9 +134,8 @@ function BoardCardBase({
   const [menu, setMenu] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
 
-  const cfg = categories.find((c) => c.key === item.section);
-  const hasDueDate = cfg?.hasDueDate ?? true;
-  const hasTimeEstimate = cfg?.hasTimeEstimate ?? true;
+  const hasDueDate = cfg.hasDueDate;
+  const hasTimeEstimate = cfg.hasTimeEstimate;
   const done = item.status === "done";
   const cancelled = item.status === "cancelled";
   const paused = item.status === "paused";
@@ -217,18 +228,24 @@ function BoardCardBase({
           ) : (
             <button
               type="button"
-              onClick={() => (selecting ? onToggleSelect?.(item.id) : setDetailOpen((v) => !v))}
-              aria-expanded={selecting ? undefined : detailOpen}
-              title={selecting ? (selected ? "Deselect" : "Select") : "Click for details"}
+              onClick={() => (selecting ? onToggleSelect?.(item.id) : setDetailOpen(true))}
+              title={selecting ? (selected ? "Deselect" : "Select") : "Open card"}
               className={cn(
                 "flex w-full items-start gap-1 text-left text-sm leading-snug",
                 (done || cancelled) && "text-muted line-through",
               )}
             >
-              <span className={cn("min-w-0", detailOpen ? "whitespace-normal break-words" : "line-clamp-3")}>
-                {item.title}
-              </span>
+              <span className="line-clamp-3 min-w-0">{item.title}</span>
               {hasDetail && <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />}
+              {commentCount > 0 && (
+                <span
+                  className="mt-0.5 inline-flex shrink-0 items-center gap-0.5 text-[10px] tabular-nums text-muted"
+                  title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  {commentCount}
+                </span>
+              )}
             </button>
           )}
 
@@ -373,9 +390,13 @@ function BoardCardBase({
         />
       </div>
       {detailOpen && (
-        <div className="border-t border-line/50 px-1.5 pb-1.5">
-          <ItemDetail item={item} />
-        </div>
+        <CardDetailModal
+          item={item}
+          cfg={cfg}
+          lists={lists}
+          takenRanks={takenRanks}
+          onClose={() => setDetailOpen(false)}
+        />
       )}
     </li>
   );

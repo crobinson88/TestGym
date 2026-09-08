@@ -123,6 +123,20 @@ export interface TdlBoardListRow {
   deleted_at: string | null;
 }
 
+// A comment on a to-do card. Because a task gets a fresh tdl_items row each day
+// it rolls forward, comments hang off the *chain*: `thread_id` is the root row
+// of that chain (see rootItemId), so a thread stays readable on tomorrow's
+// card. `item_id` is the row the comment was actually written on.
+export interface TdlCommentRow {
+  id: string;
+  thread_id: string;
+  item_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type TdlStatus =
   | "open"
   | "worked_today"
@@ -611,6 +625,16 @@ export type Database = {
         Row: TdlCategoryRow;
         Insert: Partial<TdlCategoryRow> & { id: string; key: string; label: string };
         Update: Partial<TdlCategoryRow>;
+      };
+      tdl_comments: {
+        Row: TdlCommentRow;
+        Insert: Partial<TdlCommentRow> & {
+          id: string;
+          thread_id: string;
+          item_id: string;
+          body: string;
+        };
+        Update: Partial<TdlCommentRow>;
       };
       tdl_board_lists: {
         Row: TdlBoardListRow;

@@ -24,6 +24,9 @@ export function BoardList({
   categories,
   snapshot_date,
   cards,
+  lists,
+  takenRanks,
+  commentCounts,
   focusedId,
   selecting,
   selectedIds,
@@ -39,6 +42,11 @@ export function BoardList({
   categories: SectionConfig[];
   snapshot_date: string;
   cards: LocalTdlItem[];
+  // Every list in this category, so a card's dialog can move it between lanes.
+  lists: LocalTdlBoardList[];
+  takenRanks: Set<number>;
+  // Item id → comment count on its thread, for the card badges.
+  commentCounts?: Map<string, number>;
   focusedId?: string;
   selecting?: boolean;
   selectedIds?: Set<string>;
@@ -195,6 +203,10 @@ export function BoardList({
                   key={item.id}
                   item={item}
                   categories={categories}
+                  cfg={cfg}
+                  lists={lists}
+                  takenRanks={takenRanks}
+                  commentCount={commentCounts?.get(item.id) ?? 0}
                   indicate={indicateCardId === item.id}
                   focused={focusedId === item.id}
                   selecting={selecting}

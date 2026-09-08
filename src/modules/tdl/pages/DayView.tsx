@@ -547,6 +547,7 @@ export default function DayView() {
                 categories={categories}
                 lists={boardLists}
                 cards={boardCards}
+                takenRanks={takenRanks}
                 snapshot_date={date}
                 focusedId={focusedId}
                 selecting={selecting}

@@ -19,6 +19,7 @@ import type {
   TipRow,
   TdlCategoryRow,
   TdlBoardListRow,
+  TdlCommentRow,
   TdlDayRow,
   TdlItemRow,
   TimeAllocationRow,
@@ -166,6 +167,18 @@ async function mergeTdlBoardLists(db: GymDB, rows: TdlBoardListRow[]) {
       const local = await db.tdl_board_lists.get(remote.id);
       if (!local || remote.updated_at > local.updated_at) {
         await db.tdl_board_lists.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
+async function mergeTdlComments(db: GymDB, rows: TdlCommentRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.tdl_comments, async () => {
+    for (const remote of rows) {
+      const local = await db.tdl_comments.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.tdl_comments.put({ ...remote, sync_status: "synced" });
       }
     }
   });
@@ -405,6 +418,7 @@ const META_KEYS: Record<SyncTable, string> = {
   tdl_days: "last_pull_tdl_days",
   tdl_categories: "last_pull_tdl_categories",
   tdl_board_lists: "last_pull_tdl_board_lists",
+  tdl_comments: "last_pull_tdl_comments",
   time_tasks: "last_pull_time_tasks",
   time_allocations: "last_pull_time_allocations",
   share_trades: "last_pull_share_trades",
@@ -442,6 +456,7 @@ export function createPull({ client, db, log }: PullDeps) {
       tdl_days: 0,
       tdl_categories: 0,
       tdl_board_lists: 0,
+      tdl_comments: 0,
       time_tasks: 0,
       time_allocations: 0,
       share_trades: 0,
@@ -508,6 +523,13 @@ export function createPull({ client, db, log }: PullDeps) {
           fetched.tdl_board_lists = rows.length;
           if (rows.length > 0) {
             await writeMark("tdl_board_lists", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "tdl_comments") {
+          const rows = await fetchSince<TdlCommentRow>(client, "tdl_comments", since);
+          await mergeTdlComments(db, rows);
+          fetched.tdl_comments = rows.length;
+          if (rows.length > 0) {
+            await writeMark("tdl_comments", rows[rows.length - 1].updated_at);
           }
         } else if (table === "time_tasks") {
           const rows = await fetchSince<TimeTaskRow>(client, "time_tasks", since);

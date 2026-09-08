@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { LocalTdlBoardList } from "@/lib/db";
 import { createBoardList, reorderBoardLists, seedDefaultLists } from "../boardLists";
+import { useCommentCounts } from "../comments";
 import { applyCardPositions, moveItemToBoardList } from "../repo";
 import {
   groupCardsByList,
@@ -39,6 +40,7 @@ export function BoardCanvas({
   categories,
   lists,
   cards,
+  takenRanks,
   snapshot_date,
   focusedId,
   selecting,
@@ -51,6 +53,7 @@ export function BoardCanvas({
   lists: LocalTdlBoardList[];
   // Every live card in this category on this day (already filtered by search).
   cards: LocalTdlItem[];
+  takenRanks: Set<number>;
   snapshot_date: string;
   focusedId?: string;
   selecting?: boolean;
@@ -65,6 +68,7 @@ export function BoardCanvas({
   const [addingList, setAddingList] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [seeding, setSeeding] = useState(false);
+  const commentCounts = useCommentCounts();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -216,6 +220,9 @@ export function BoardCanvas({
               categories={categories}
               snapshot_date={snapshot_date}
               cards={laneById.get(list.id)?.cards ?? []}
+              lists={lists}
+              takenRanks={takenRanks}
+              commentCounts={commentCounts}
               focusedId={focusedId}
               selecting={selecting}
               selectedIds={selectedIds}

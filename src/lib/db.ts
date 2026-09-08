@@ -20,6 +20,7 @@ import type {
   TipRow,
   TdlCategoryRow,
   TdlBoardListRow,
+  TdlCommentRow,
   TdlDayRow,
   TdlItemRow,
   TimeAllocationRow,
@@ -102,6 +103,10 @@ export interface LocalTdlBoardList extends TdlBoardListRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalTdlComment extends TdlCommentRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalShareTrade extends ShareTradeRow {
   sync_status: SyncStatus;
   sync_attempts: number;
@@ -166,6 +171,7 @@ export class GymDB extends Dexie {
   tdl_days!: Table<LocalTdlDay, string>;
   tdl_categories!: Table<LocalTdlCategory, string>;
   tdl_board_lists!: Table<LocalTdlBoardList, string>;
+  tdl_comments!: Table<LocalTdlComment, string>;
   share_trades!: Table<LocalShareTrade, string>;
   stocks!: Table<LocalStock, string>;
   forecasts!: Table<LocalForecast, string>;
@@ -384,6 +390,10 @@ export class GymDB extends Dexie {
             if (row.board_list_id === undefined) row.board_list_id = null;
           });
       });
+    this.version(29).stores({
+      tdl_comments:
+        "id, thread_id, item_id, [thread_id+created_at], updated_at, sync_status, deleted_at",
+    });
   }
 }
 
