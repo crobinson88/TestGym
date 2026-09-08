@@ -26,6 +26,12 @@ import {
 } from "../hooks";
 import { matchesQuery as matchesTdlQuery } from "../search";
 import {
+  VIEW_MODE_STORAGE_KEY,
+  clampViewMode,
+  orderLaneCards,
+  type TdlViewMode,
+} from "../board";
+import {
   EMPTY_CREATED_RANGE,
   describeCreatedRange,
   isCreatedRangeActive,
@@ -66,6 +72,13 @@ import { RollForwardButton } from "../components/RollForwardButton";
 import { OffBoardResults } from "../components/OffBoardResults";
 import { QuickAdd } from "../components/QuickAdd";
 import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
+import { ViewToggle } from "../components/ViewToggle";
+import {
+  BoardCanvas,
+  DO_FIRST_LANE,
+  PRIORITY_LANE,
+  type BoardLane,
+} from "../components/BoardCanvas";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -82,6 +95,15 @@ function loadCollapsed(): Set<string> {
     // ignore malformed/unavailable storage — start with nothing collapsed
   }
   return new Set();
+}
+
+function loadViewMode(): TdlViewMode {
+  try {
+    return clampViewMode(localStorage.getItem(VIEW_MODE_STORAGE_KEY));
+  } catch {
+    // ignore unavailable storage — fall back to the list layout
+    return clampViewMode(null);
+  }
 }
 
 export default function DayView() {
@@ -118,6 +140,15 @@ export default function DayView() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(loadCollapsed);
+  const [viewMode, setViewMode] = useState<TdlViewMode>(loadViewMode);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    } catch {
+      // ignore storage failures — the choice still holds for the session
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     try {
@@ -398,6 +429,25 @@ export default function DayView() {
   const reorderableKeySet = new Set(reorderableKeys);
   const sortableColumnIds = reorderableKeys.map((k) => SECTION_SORTABLE_PREFIX + k);
 
+  // Board view stacks the same items as cards: the two mirrors first (read-only,
+  // exactly as in the list layout), then one lane per category.
+  const boardLanes: BoardLane[] = [
+    ...(showPriorityColumn
+      ? [{ cfg: PRIORITY_LANE, cards: priorityItems, mirror: "priority" as const }]
+      : []),
+    ...(showDoFirstColumn
+      ? [{ cfg: DO_FIRST_LANE, cards: doFirstItems, mirror: "do_first" as const }]
+      : []),
+    ...visibleColumns.map((cfg) => {
+      const lists = listsFor(cfg.key);
+      return {
+        cfg,
+        cards: orderLaneCards(lists.recurring, lists.dated),
+        sections: cfg.key === UNCATEGORISED_KEY ? orphanSections : [cfg.key],
+      };
+    }),
+  ];
+
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
       <DayHeader
@@ -409,8 +459,10 @@ export default function DayView() {
       />
       <div className="p-3">
         <QuickAdd snapshot_date={date} categories={categories} />
-        {!empty && (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+          {!empty && (
+            <>
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input
@@ -428,24 +480,26 @@ export default function DayView() {
               open={rangeOpen}
               onToggle={() => setRangeOpen((v) => !v)}
             />
-            <Button
-              variant="ghost"
-              onClick={() =>
-                setCollapsedKeys(allCollapsed ? new Set() : new Set(collapsibleKeys))
-              }
-              className="h-10 shrink-0 px-3 text-sm"
-              aria-pressed={allCollapsed}
-              title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
-            >
-              {allCollapsed ? (
-                <ChevronsUpDown className="h-4 w-4 sm:mr-1" />
-              ) : (
-                <ChevronsDownUp className="h-4 w-4 sm:mr-1" />
-              )}
-              <span className="hidden sm:inline">
-                {allCollapsed ? "Expand all" : "Collapse all"}
-              </span>
-            </Button>
+            {viewMode === "list" && (
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setCollapsedKeys(allCollapsed ? new Set() : new Set(collapsibleKeys))
+                }
+                className="h-10 shrink-0 px-3 text-sm"
+                aria-pressed={allCollapsed}
+                title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+              >
+                {allCollapsed ? (
+                  <ChevronsUpDown className="h-4 w-4 sm:mr-1" />
+                ) : (
+                  <ChevronsDownUp className="h-4 w-4 sm:mr-1" />
+                )}
+                <span className="hidden sm:inline">
+                  {allCollapsed ? "Expand all" : "Collapse all"}
+                </span>
+              </Button>
+            )}
             <Button
               variant={selecting ? "secondary" : "ghost"}
               onClick={() => (selecting ? exitSelection() : setSelecting(true))}
@@ -455,8 +509,9 @@ export default function DayView() {
               <CheckSquare className="mr-1 h-4 w-4" />
               {selecting ? "Cancel" : "Select"}
             </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
         {empty && prev && (
           <div className="mb-4">
             <RollForwardButton fromDate={prev} toDate={date} />
@@ -468,7 +523,21 @@ export default function DayView() {
             {rangeActive && ` · added ${describeCreatedRange(createdRange)}`}.
           </div>
         )}
-        {showBoard && (
+        {showBoard && viewMode === "board" && (
+          <BoardCanvas
+            lanes={boardLanes}
+            categories={categories}
+            snapshot_date={date}
+            keyToRowId={keyToRowId}
+            focusedId={focusedId}
+            selecting={selecting}
+            selectedIds={selected}
+            onToggleSelect={toggleSelect}
+            onBulkActed={() => setSelected(new Set())}
+            reorderableKeys={reorderableKeys}
+          />
+        )}
+        {showBoard && viewMode === "list" && (
           <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}>
             <SortableContext items={sortableColumnIds} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
