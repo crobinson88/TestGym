@@ -26,6 +26,14 @@ import {
 } from "../hooks";
 import { matchesQuery as matchesTdlQuery } from "../search";
 import {
+  BOARD_CATEGORY_STORAGE_KEY,
+  VIEW_MODE_STORAGE_KEY,
+  clampViewMode,
+  resolveBoardCategory,
+  type TdlViewMode,
+} from "../board";
+import { useBoardLists } from "../boardLists";
+import {
   EMPTY_CREATED_RANGE,
   describeCreatedRange,
   isCreatedRangeActive,
@@ -66,6 +74,9 @@ import { RollForwardButton } from "../components/RollForwardButton";
 import { OffBoardResults } from "../components/OffBoardResults";
 import { QuickAdd } from "../components/QuickAdd";
 import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
+import { ViewToggle } from "../components/ViewToggle";
+import { BoardCanvas } from "../components/BoardCanvas";
+import { BoardCategoryPicker } from "../components/BoardCategoryPicker";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -82,6 +93,23 @@ function loadCollapsed(): Set<string> {
     // ignore malformed/unavailable storage — start with nothing collapsed
   }
   return new Set();
+}
+
+function loadBoardCategory(): string | null {
+  try {
+    return localStorage.getItem(BOARD_CATEGORY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function loadViewMode(): TdlViewMode {
+  try {
+    return clampViewMode(localStorage.getItem(VIEW_MODE_STORAGE_KEY));
+  } catch {
+    // ignore unavailable storage — fall back to the list layout
+    return clampViewMode(null);
+  }
 }
 
 export default function DayView() {
@@ -118,6 +146,23 @@ export default function DayView() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(loadCollapsed);
+  const [viewMode, setViewMode] = useState<TdlViewMode>(loadViewMode);
+  // Board View shows one category at a time; the pick is remembered per device.
+  const [boardCategoryKey, setBoardCategoryKey] = useState<string | null>(loadBoardCategory);
+  const boardCategory = resolveBoardCategory(
+    boardCategoryKey,
+    categories.map((c) => c.key),
+  );
+  const boardLists = useBoardLists(viewMode === "board" ? boardCategory : null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+      if (boardCategory) localStorage.setItem(BOARD_CATEGORY_STORAGE_KEY, boardCategory);
+    } catch {
+      // ignore storage failures — the choices still hold for the session
+    }
+  }, [viewMode, boardCategory]);
 
   useEffect(() => {
     try {
@@ -398,6 +443,21 @@ export default function DayView() {
   const reorderableKeySet = new Set(reorderableKeys);
   const sortableColumnIds = reorderableKeys.map((k) => SECTION_SORTABLE_PREFIX + k);
 
+  // Board View works on one category: its cards for the day (search-filtered
+  // like everywhere else) and a count per category for the picker.
+  const boardCounts = new Map<string, number>();
+  for (const cfg of columns) {
+    const lists = listsFor(cfg.key);
+    boardCounts.set(cfg.key, lists.recurring.length + lists.dated.length);
+  }
+  const boardCfg = columns.find((c) => c.key === boardCategory) ?? null;
+  const boardCards = boardCfg
+    ? (() => {
+        const lists = listsFor(boardCfg.key);
+        return [...lists.recurring, ...lists.dated];
+      })()
+    : [];
+
   return (
     <div ref={containerRef} className="flex min-h-full flex-col">
       <DayHeader
@@ -409,8 +469,10 @@ export default function DayView() {
       />
       <div className="p-3">
         <QuickAdd snapshot_date={date} categories={categories} />
-        {!empty && (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+          {!empty && (
+            <>
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input
@@ -428,24 +490,26 @@ export default function DayView() {
               open={rangeOpen}
               onToggle={() => setRangeOpen((v) => !v)}
             />
-            <Button
-              variant="ghost"
-              onClick={() =>
-                setCollapsedKeys(allCollapsed ? new Set() : new Set(collapsibleKeys))
-              }
-              className="h-10 shrink-0 px-3 text-sm"
-              aria-pressed={allCollapsed}
-              title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
-            >
-              {allCollapsed ? (
-                <ChevronsUpDown className="h-4 w-4 sm:mr-1" />
-              ) : (
-                <ChevronsDownUp className="h-4 w-4 sm:mr-1" />
-              )}
-              <span className="hidden sm:inline">
-                {allCollapsed ? "Expand all" : "Collapse all"}
-              </span>
-            </Button>
+            {viewMode === "list" && (
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setCollapsedKeys(allCollapsed ? new Set() : new Set(collapsibleKeys))
+                }
+                className="h-10 shrink-0 px-3 text-sm"
+                aria-pressed={allCollapsed}
+                title={allCollapsed ? "Expand all categories" : "Collapse all categories"}
+              >
+                {allCollapsed ? (
+                  <ChevronsUpDown className="h-4 w-4 sm:mr-1" />
+                ) : (
+                  <ChevronsDownUp className="h-4 w-4 sm:mr-1" />
+                )}
+                <span className="hidden sm:inline">
+                  {allCollapsed ? "Expand all" : "Collapse all"}
+                </span>
+              </Button>
+            )}
             <Button
               variant={selecting ? "secondary" : "ghost"}
               onClick={() => (selecting ? exitSelection() : setSelecting(true))}
@@ -455,20 +519,50 @@ export default function DayView() {
               <CheckSquare className="mr-1 h-4 w-4" />
               {selecting ? "Cancel" : "Select"}
             </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
         {empty && prev && (
           <div className="mb-4">
             <RollForwardButton fromDate={prev} toDate={date} />
           </div>
         )}
-        {nothingMatches && (
+        {nothingMatches && viewMode === "list" && (
           <div className="py-8 text-center text-sm text-muted">
             No tasks match {q ? `“${query.trim()}”` : "this filter"}
             {rangeActive && ` · added ${describeCreatedRange(createdRange)}`}.
           </div>
         )}
-        {showBoard && (
+        {viewMode === "board" && (
+          <>
+            <BoardCategoryPicker
+              categories={columns}
+              value={boardCategory}
+              counts={boardCounts}
+              onChange={setBoardCategoryKey}
+            />
+            {boardCfg && boardLists ? (
+              <BoardCanvas
+                cfg={boardCfg}
+                categories={categories}
+                lists={boardLists}
+                cards={boardCards}
+                takenRanks={takenRanks}
+                snapshot_date={date}
+                focusedId={focusedId}
+                selecting={selecting}
+                selectedIds={selected}
+                onToggleSelect={toggleSelect}
+                onBulkActed={() => setSelected(new Set())}
+              />
+            ) : (
+              <div className="py-8 text-center text-sm text-muted">
+                {boardCfg ? "Loading lists…" : "Add a category to start a board."}
+              </div>
+            )}
+          </>
+        )}
+        {showBoard && viewMode === "list" && (
           <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}>
             <SortableContext items={sortableColumnIds} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

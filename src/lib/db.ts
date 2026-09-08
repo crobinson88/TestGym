@@ -19,6 +19,8 @@ import type {
   StockRow,
   TipRow,
   TdlCategoryRow,
+  TdlBoardListRow,
+  TdlCommentRow,
   TdlDayRow,
   TdlItemRow,
   TimeAllocationRow,
@@ -97,6 +99,14 @@ export interface LocalTimeAllocation extends TimeAllocationRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalTdlBoardList extends TdlBoardListRow {
+  sync_status: SyncStatus;
+}
+
+export interface LocalTdlComment extends TdlCommentRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalShareTrade extends ShareTradeRow {
   sync_status: SyncStatus;
   sync_attempts: number;
@@ -160,6 +170,8 @@ export class GymDB extends Dexie {
   tdl_items!: Table<LocalTdlItem, string>;
   tdl_days!: Table<LocalTdlDay, string>;
   tdl_categories!: Table<LocalTdlCategory, string>;
+  tdl_board_lists!: Table<LocalTdlBoardList, string>;
+  tdl_comments!: Table<LocalTdlComment, string>;
   share_trades!: Table<LocalShareTrade, string>;
   stocks!: Table<LocalStock, string>;
   forecasts!: Table<LocalForecast, string>;
@@ -362,6 +374,25 @@ export class GymDB extends Dexie {
     });
     this.version(27).stores({
       daily_habits: "id, habit_date, updated_at, sync_status, deleted_at",
+    });
+    this.version(28)
+      .stores({
+        tdl_board_lists:
+          "id, category_key, [category_key+sort_order], updated_at, sync_status, deleted_at",
+        tdl_items:
+          "id, snapshot_date, [snapshot_date+section+position], board_list_id, updated_at, sync_status, deleted_at, is_archived",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("tdl_items")
+          .toCollection()
+          .modify((row: LocalTdlItem) => {
+            if (row.board_list_id === undefined) row.board_list_id = null;
+          });
+      });
+    this.version(29).stores({
+      tdl_comments:
+        "id, thread_id, item_id, [thread_id+created_at], updated_at, sync_status, deleted_at",
     });
   }
 }

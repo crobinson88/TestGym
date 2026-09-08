@@ -12,6 +12,22 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>Gym Tracker</title>
+    <script>
+      // Apply the stored theme before first paint so a light-mode reload never
+      // flashes the dark palette. Mirrors lib/theme.ts.
+      (function () {
+        try {
+          var light = localStorage.getItem("theme") === "light";
+          var root = document.documentElement;
+          root.classList.toggle("light", light);
+          root.classList.toggle("dark", !light);
+          root.style.colorScheme = light ? "light" : "dark";
+          document
+            .querySelector('meta[name="theme-color"]')
+            .setAttribute("content", light ? "#f7f7f8" : "#0a0a0a");
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

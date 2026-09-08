@@ -109,6 +109,34 @@ export interface TdlCategoryRow {
   deleted_at: string | null;
 }
 
+// Board View lanes inside one category — "Backlog", "In progress", "Done", …
+// User-managed rows, one set per category (`category_key` is a
+// tdl_categories.key). Only the Board layout reads them; the List layout is
+// unaffected.
+export interface TdlBoardListRow {
+  id: string;
+  category_key: string;
+  label: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+// A comment on a to-do card. Because a task gets a fresh tdl_items row each day
+// it rolls forward, comments hang off the *chain*: `thread_id` is the root row
+// of that chain (see rootItemId), so a thread stays readable on tomorrow's
+// card. `item_id` is the row the comment was actually written on.
+export interface TdlCommentRow {
+  id: string;
+  thread_id: string;
+  item_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type TdlStatus =
   | "open"
   | "worked_today"
@@ -155,6 +183,10 @@ export interface TdlItemRow {
   // Object paths in the private `share-images` bucket (tdl/ prefix). The detail
   // panel resolves them to signed URLs on demand.
   images: string[];
+  // The Board View lane this card sits in (tdl_board_lists.id), or null when
+  // it has never been placed — which reads as the category's first list.
+  // Carried forward day to day.
+  board_list_id: string | null;
   origin_item_id: string | null;
   origin_snapshot_date: string | null;
   created_at: string;
@@ -598,6 +630,21 @@ export type Database = {
         Row: TdlCategoryRow;
         Insert: Partial<TdlCategoryRow> & { id: string; key: string; label: string };
         Update: Partial<TdlCategoryRow>;
+      };
+      tdl_comments: {
+        Row: TdlCommentRow;
+        Insert: Partial<TdlCommentRow> & {
+          id: string;
+          thread_id: string;
+          item_id: string;
+          body: string;
+        };
+        Update: Partial<TdlCommentRow>;
+      };
+      tdl_board_lists: {
+        Row: TdlBoardListRow;
+        Insert: Partial<TdlBoardListRow> & { id: string; category_key: string; label: string };
+        Update: Partial<TdlBoardListRow>;
       };
       time_tasks: {
         Row: TimeTaskRow;

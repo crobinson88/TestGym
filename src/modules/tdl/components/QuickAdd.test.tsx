@@ -67,6 +67,8 @@ describe("QuickAdd", () => {
       eisenhower_quadrant: "do_first",
       notes: null,
       images: [],
+      // Quick-add is a list-view surface, so the card is unplaced on the board.
+      board_list_id: null,
     });
     expect(await screen.findByText(/Added “Chase the quote” to Follow Ups/)).toBeTruthy();
   });

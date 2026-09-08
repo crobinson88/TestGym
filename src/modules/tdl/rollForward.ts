@@ -73,6 +73,7 @@ export async function rollForward(
       last_worked_at: prev.last_worked_at ?? null,
       notes: prev.notes,
       images: [],
+      board_list_id: prev.board_list_id ?? null,
       origin_item_id: prev.id,
       origin_snapshot_date: prev.origin_snapshot_date ?? prev.snapshot_date,
       created_at: ts,

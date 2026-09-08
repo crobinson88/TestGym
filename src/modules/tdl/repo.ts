@@ -36,6 +36,7 @@ export interface CreateItemInput {
   snoozed_until?: string | null;
   is_reluctant?: boolean;
   reluctance_reason?: string | null;
+  board_list_id?: string | null;
   last_worked_at?: string | null;
   notes?: string | null;
   images?: string[];
@@ -85,6 +86,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     last_worked_at: input.last_worked_at ?? null,
     notes: input.notes ?? null,
     images: input.images ?? [],
+    board_list_id: input.board_list_id ?? null,
     origin_item_id: input.origin_item_id ?? null,
     origin_snapshot_date: input.origin_snapshot_date ?? null,
     created_at: ts,
@@ -444,6 +446,39 @@ export async function moveItemToSection(
   if (existing.section === toSection) return existing;
   const position = await nextPosition(existing.snapshot_date, toSection, existing.is_recurring);
   return moveItem(id, toSection, position);
+}
+
+// Move a card into a Board View list (or clear its placement with null). The
+// card keeps its category — lists live inside one category, so a lane move is
+// not a category move.
+export async function moveItemToBoardList(
+  id: string,
+  boardListId: string | null,
+): Promise<LocalTdlItem | null> {
+  return updateItem(id, { board_list_id: boardListId });
+}
+
+// Apply hand-computed positions (see listDropAssignments) to a handful of
+// cards. Unlike reorderSection this doesn't renumber a whole bucket — the board
+// only ever reshuffles the slots one lane already holds.
+export async function applyCardPositions(
+  assignments: readonly { id: string; position: number }[],
+): Promise<void> {
+  if (assignments.length === 0) return;
+  const ts = nowIso();
+  await db.transaction("rw", db.tdl_items, async () => {
+    for (const { id, position } of assignments) {
+      const existing = await db.tdl_items.get(id);
+      if (!existing || existing.position === position) continue;
+      await db.tdl_items.put({
+        ...existing,
+        position,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
+  });
+  pokeOutbox();
 }
 
 export async function reorderSection(

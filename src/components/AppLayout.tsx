@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useIsDesktop, useWorkstreamAlert } from "@/modules/workstreams/hooks";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Tab = {
   to: string;
@@ -103,6 +104,7 @@ export function AppLayout() {
               )}
             </button>
           )}
+          <ThemeToggle />
           <button
             onClick={signOut}
             className="flex h-10 w-10 items-center justify-center rounded-xl text-muted hover:bg-surface2"
