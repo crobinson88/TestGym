@@ -3,6 +3,7 @@ import {
   countingDaysBack,
   pauseReason,
   skipEmptyPauses,
+  skipAllPauses,
   type DayOffMap,
   type SkipDay,
 } from "./holidays";
@@ -120,7 +121,9 @@ export interface WeekHoursPoint {
 export interface HoursPoint {
   date: string;
   hours: number;
-  // Why this date didn't count — the US public holiday or the day-off reason —
+  // Why this date didn't count — the US public holiday or the day-off reason
+  // (on the daily series only when nothing was logged; on the rolling series
+  // whenever the day is paused, since the window always steps over it) —
   // when nothing was logged against it, else null.
   holiday: string | null;
 }
@@ -170,11 +173,14 @@ export function rollingHours(
   windowDays: number,
   daysOff: DayOffMap = NO_DAYS_OFF,
 ): HoursPoint[] {
-  const skip = holidaySkip(perDay, daysOff);
+  // Unlike the daily/weekly series, a holiday or day off is always stepped
+  // over here — logged or not — so the window covers `windowDays` working days
+  // and the 70h target stays comparable across a holiday week.
+  const skip = skipAllPauses(daysOff, true);
   return endDates.map((d) => {
     let hours = 0;
     for (const date of countingDaysBack(d, windowDays, skip)) hours += perDay.get(date) ?? 0;
-    return { date: d, hours, holiday: skip(d) ? pauseReason(d, daysOff, true) : null };
+    return { date: d, hours, holiday: pauseReason(d, daysOff, true) };
   });
 }
 

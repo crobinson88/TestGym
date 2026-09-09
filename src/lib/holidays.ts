@@ -145,6 +145,13 @@ export function skipEmptyHolidays(hasData: (date: string) => boolean): SkipDay {
   return skipEmptyPauses(hasData, NO_DAYS_OFF, true);
 }
 
+// A paused day is stepped over whatever was logged on it — for a rolling
+// window that should cover N working days, a few hours on a public holiday
+// shouldn't take one of its slots.
+export function skipAllPauses(daysOff: DayOffMap, includeHolidays: boolean): SkipDay {
+  return (date) => pauseReason(date, daysOff, includeHolidays) !== null;
+}
+
 export const NEVER_SKIP: SkipDay = () => false;
 
 // Runaway guard: nothing in the calendar produces a long chain of skipped days,

@@ -142,11 +142,12 @@ describe("hours aggregation (all logged hours)", () => {
   it("rollingHours sums the trailing window ending on each date", () => {
     const perDay = hoursPerDay(allocs);
     const points = rollingHours(perDay, ["2026-05-25", "2026-05-26"], 7);
-    // 25th: window 19..25 -> 0.25 (20th) + 0.5 (25th) = 0.75
-    // 26th: window 20..26 -> 0.25 (20th) + 0.5 (25th) + 0.5 (26th) = 1.25
+    // Memorial Day (the 25th) is stepped over even with hours logged on it.
+    // 25th: window 18..24 -> 0.25 (18th) + 0.25 (20th) = 0.5
+    // 26th: window 19..26 minus the 25th -> 0.25 (20th) + 0.5 (26th) = 0.75
     expect(points).toEqual([
-      { date: "2026-05-25", hours: 0.75, holiday: null },
-      { date: "2026-05-26", hours: 1.25, holiday: null },
+      { date: "2026-05-25", hours: 0.5, holiday: "Memorial Day" },
+      { date: "2026-05-26", hours: 0.75, holiday: null },
     ]);
   });
 });
@@ -163,10 +164,16 @@ describe("US public holidays in the hours stats", () => {
     expect(point).toEqual({ date: THANKSGIVING, hours: 60, holiday: "Thanksgiving Day" });
   });
 
-  it("counts a holiday you logged hours on", () => {
-    const perDay = new Map([[THANKSGIVING, 8]]);
+  it("steps over a holiday even when hours were logged on it", () => {
+    // A few hours on Labor Day shouldn't take one of the window's seven slots:
+    // the window ending on the holiday still covers the seven days before it.
+    const perDay = new Map<string, number>([[THANKSGIVING, 4]]);
+    for (let d = 19; d <= 25; d++) perDay.set(`2026-11-${d}`, 10);
     const [point] = rollingHours(perDay, [THANKSGIVING], 7);
-    expect(point).toEqual({ date: THANKSGIVING, hours: 8, holiday: null });
+    expect(point).toEqual({ date: THANKSGIVING, hours: 70, holiday: "Thanksgiving Day" });
+    const [next] = rollingHours(perDay, ["2026-11-27"], 7);
+    // The next day's window drops the 19th, not the holiday's hours.
+    expect(next).toEqual({ date: "2026-11-27", hours: 60, holiday: null });
   });
 
   it("flags an empty holiday on the daily series", () => {
