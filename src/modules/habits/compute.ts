@@ -1,7 +1,7 @@
 import {
   countingDaysBack,
   pauseReason,
-  skipEmptyPauses,
+  skipAllPauses,
   type DayOffMap,
   type SkipDay,
 } from "@/lib/holidays";
@@ -306,13 +306,10 @@ function pausedCell(reason: string): HabitCell {
 }
 
 export function buildHabitRows(dates: readonly string[], src: HabitSources): HabitDayRow[] {
-  // A paused day only drops out when nothing was logged — work done on a public
-  // holiday or a sick day is work you did, and counts like any other day.
-  const skipHours = skipEmptyPauses(
-    (date) => (src.hours.get(date) ?? 0) > 0,
-    src.daysOff,
-    true,
-  );
+  // The 7-day window always steps over a holiday or day off, logged or not,
+  // so it covers seven working days (the to-do columns below only stand down
+  // when the day is genuinely empty).
+  const skipHours = skipAllPauses(src.daysOff, true);
   return dates.map((date) => {
     const mark = src.marks.get(date);
     const marks: HabitMark = {

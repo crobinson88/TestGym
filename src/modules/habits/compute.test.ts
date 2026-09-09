@@ -265,10 +265,11 @@ describe("US public holidays on the work columns", () => {
     expect(rows[0].cells.rolling_hours).toMatchObject({ state: "hit", text: "84" });
   });
 
-  it("still counts hours logged on a holiday", () => {
-    const hours = new Map([[THANKSGIVING, 6]]);
+  it("steps over a holiday even when hours were logged on it", () => {
+    const hours = new Map<string, number>([[THANKSGIVING, 6]]);
+    for (let d = 19; d <= 25; d++) hours.set(`2026-11-${d}`, 12);
     const rows = buildHabitRows([THANKSGIVING], src({ ...today, hours }));
-    expect(rows[0].cells.rolling_hours).toMatchObject({ state: "miss", text: "6" });
+    expect(rows[0].cells.rolling_hours).toMatchObject({ state: "hit", text: "84" });
   });
 
   it("leaves the personal columns counting the holiday", () => {
