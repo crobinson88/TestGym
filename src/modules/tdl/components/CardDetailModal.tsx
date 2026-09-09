@@ -22,6 +22,7 @@ export function CardDetailModal({
   cfg,
   lists,
   takenRanks,
+  focusComments = false,
   onClose,
 }: {
   item: LocalTdlItem;
@@ -29,6 +30,8 @@ export function CardDetailModal({
   // The category's lists, so the card can be moved between lanes from here.
   lists: LocalTdlBoardList[];
   takenRanks: Set<number>;
+  // Open with the comment thread in view and the reply box focused.
+  focusComments?: boolean;
   onClose: () => void;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -206,7 +209,7 @@ export function CardDetailModal({
             <ItemDetail item={item} />
           </section>
 
-          <CardComments threadId={threadId} itemId={item.id} />
+          <CardComments threadId={threadId} itemId={item.id} autoFocus={focusComments} />
         </div>
       </div>
     </div>
