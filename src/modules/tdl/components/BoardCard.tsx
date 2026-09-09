@@ -131,8 +131,16 @@ function BoardCardBase({
   const [editing, setEditing] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  // Opened from the comment button rather than the title: the dialog lands on
+  // the thread with the reply box focused.
+  const [detailOnComments, setDetailOnComments] = useState(false);
   const [menu, setMenu] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
+
+  function openDetail(onComments = false) {
+    setDetailOnComments(onComments);
+    setDetailOpen(true);
+  }
 
   const hasDueDate = cfg.hasDueDate;
   const hasTimeEstimate = cfg.hasTimeEstimate;
@@ -228,7 +236,7 @@ function BoardCardBase({
           ) : (
             <button
               type="button"
-              onClick={() => (selecting ? onToggleSelect?.(item.id) : setDetailOpen(true))}
+              onClick={() => (selecting ? onToggleSelect?.(item.id) : openDetail())}
               title={selecting ? (selected ? "Deselect" : "Select") : "Open card"}
               className={cn(
                 "flex w-full items-start gap-1 text-left text-sm leading-snug",
@@ -365,13 +373,28 @@ function BoardCardBase({
             </div>
           )}
 
-          <div className="mt-1.5">
+          <div className="mt-1.5 flex items-center gap-1.5">
             <StatusPill
               status={item.status}
               section={item.section}
               compact
               onClick={() => void cycleStatus(item.id)}
             />
+            <button
+              type="button"
+              onClick={() => openDetail(true)}
+              className={cn(
+                "ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] tabular-nums",
+                commentCount > 0
+                  ? "border-accent/40 bg-accent/10 text-accent hover:bg-accent/20"
+                  : "border-line bg-surface text-muted hover:border-accent/40 hover:text-accent",
+              )}
+              aria-label={commentCount > 0 ? `Open comments (${commentCount})` : "Add a comment"}
+              title={commentCount > 0 ? "Open comments" : "Add a comment"}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              {commentCount > 0 ? commentCount : "Comment"}
+            </button>
           </div>
         </div>
 
@@ -383,7 +406,7 @@ function BoardCardBase({
           selectedIds={selectedIds}
           onBulkActed={onBulkActed}
           onRename={() => setEditing(true)}
-          onOpenDetail={() => setDetailOpen(true)}
+          onOpenDetail={() => openDetail()}
           onStartSnooze={() => setSnoozing(true)}
           onOpenChange={setMenu}
           triggerClassName="h-7 w-7"
@@ -395,6 +418,7 @@ function BoardCardBase({
           cfg={cfg}
           lists={lists}
           takenRanks={takenRanks}
+          focusComments={detailOnComments}
           onClose={() => setDetailOpen(false)}
         />
       )}

@@ -49,6 +49,7 @@ import {
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { selectPriorityItems } from "../priority";
 import { selectDoFirstItems } from "../quadrant";
+import { selectReluctantItems } from "../reluctance";
 import type { LocalTdlItem } from "../types";
 import {
   archiveItems,
@@ -68,6 +69,7 @@ import { DayHeader } from "../components/DayHeader";
 import { SectionColumn, SECTION_SORTABLE_PREFIX } from "../components/SectionColumn";
 import { PriorityColumn } from "../components/PriorityColumn";
 import { DoFirstColumn } from "../components/DoFirstColumn";
+import { ReluctantColumn } from "../components/ReluctantColumn";
 import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { RollForwardButton } from "../components/RollForwardButton";
@@ -84,6 +86,7 @@ import { BoardCategoryPicker } from "../components/BoardCategoryPicker";
 const COLLAPSE_STORAGE_KEY = "tdl:collapsedSections";
 const PRIORITIES_COLLAPSE_KEY = "__priorities__";
 const DO_FIRST_COLLAPSE_KEY = "__do_first__";
+const RELUCTANT_COLLAPSE_KEY = "__reluctant__";
 
 function loadCollapsed(): Set<string> {
   try {
@@ -405,6 +408,8 @@ export default function DayView() {
   const showPriorityColumn = !searching || priorityItems.length > 0;
   const doFirstItems = selectDoFirstItems(bundle.items).filter(matchesQuery);
   const showDoFirstColumn = !searching || doFirstItems.length > 0;
+  const reluctantItems = selectReluctantItems(bundle.items).filter(matchesQuery);
+  const showReluctantColumn = !searching || reluctantItems.length > 0;
 
   // While filtering, also surface matching archived/snoozed items (they never
   // appear on the board). Empty when unfiltered so nothing renders below.
@@ -414,7 +419,8 @@ export default function DayView() {
   const boardEmpty =
     visibleColumns.length === 0 &&
     priorityItems.length === 0 &&
-    doFirstItems.length === 0;
+    doFirstItems.length === 0 &&
+    reluctantItems.length === 0;
   const showBoard = !searching || !boardEmpty;
   const nothingMatches =
     searching &&
@@ -422,12 +428,13 @@ export default function DayView() {
     archivedMatches.length === 0 &&
     snoozedMatches.length === 0;
 
-  // "Collapse all" targets every column on the board (the Priorities and Do First
-  // mirrors plus each category), independent of the filters so the toggle
-  // is stable.
+  // "Collapse all" targets every column on the board (the Priorities, Do First
+  // and Don't-want-to-do mirrors plus each category), independent of the
+  // filters so the toggle is stable.
   const collapsibleKeys = [
     PRIORITIES_COLLAPSE_KEY,
     DO_FIRST_COLLAPSE_KEY,
+    RELUCTANT_COLLAPSE_KEY,
     ...columns.map((c) => c.key),
   ];
   const allCollapsed = collapsibleKeys.every((k) => collapsedKeys.has(k));
@@ -474,14 +481,14 @@ export default function DayView() {
           {!empty && (
             <>
             <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent" />
               <Input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search tasks…"
                 aria-label="Search tasks"
-                className="h-10 pl-9 text-sm"
+                className="h-10 border-accent/50 bg-accent/10 pl-9 text-sm placeholder:text-text/70 focus:bg-accent/15"
               />
             </div>
             <CreatedRangeFilter
@@ -590,6 +597,21 @@ export default function DayView() {
                     forceExpanded={searching}
                     collapsed={collapsedKeys.has(DO_FIRST_COLLAPSE_KEY)}
                     onToggleCollapse={() => toggleCollapse(DO_FIRST_COLLAPSE_KEY)}
+                    selecting={selecting}
+                    selectedIds={selected}
+                    onToggleSelect={toggleSelect}
+                    onBulkActed={() => setSelected(new Set())}
+                  />
+                )}
+                {showReluctantColumn && (
+                  <ReluctantColumn
+                    items={reluctantItems}
+                    categories={categories}
+                    focusedId={focusedId}
+                    takenRanks={takenRanks}
+                    forceExpanded={searching}
+                    collapsed={collapsedKeys.has(RELUCTANT_COLLAPSE_KEY)}
+                    onToggleCollapse={() => toggleCollapse(RELUCTANT_COLLAPSE_KEY)}
                     selecting={selecting}
                     selectedIds={selected}
                     onToggleSelect={toggleSelect}

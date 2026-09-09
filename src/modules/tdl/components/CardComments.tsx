@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
@@ -21,15 +21,28 @@ function timeAgo(iso: string, now = Date.now()): string {
 export function CardComments({
   threadId,
   itemId,
+  autoFocus = false,
 }: {
   threadId: string | undefined;
   itemId: string;
+  // Opened straight from the card's comment button: scroll the thread into view
+  // and put the cursor in the box so a reply is one tap away.
+  autoFocus?: boolean;
 }) {
   const comments = useComments(threadId);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = draftRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    el.focus();
+  }, [autoFocus]);
 
   async function submit() {
     if (!threadId || !draft.trim()) return;
@@ -119,6 +132,7 @@ export function CardComments({
 
       <div className="space-y-2">
         <textarea
+          ref={draftRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Write a comment…"

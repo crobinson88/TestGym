@@ -52,8 +52,9 @@ function toDragBinding(s: SortableReturn): DragBinding {
 // separate sortable namespace. DayView routes drops by this prefix.
 export const PRIORITY_SORTABLE_PREFIX = "priority:";
 
-// A no-op drag binding for the read-only mirror columns (Do First). The row
-// still renders inside the board's DndContext but isn't itself draggable.
+// A no-op drag binding for the read-only mirror columns (Do First, Don't want
+// to do). The row still renders inside the board's DndContext but isn't itself
+// draggable.
 const STATIC_DRAG: DragBinding = {
   setNodeRef: () => {},
   style: {},
@@ -78,8 +79,9 @@ interface ItemRowProps {
   // Called after a menu action fanned out across the selection, so the parent
   // can clear it (matching the BulkActionBar).
   onBulkActed?: () => void;
-  // Read-only mirror rows (Do First): no drag handle, a Flame marker instead.
-  dragless?: boolean;
+  // Read-only mirror rows: no drag handle, a marker in its place — a Flame for
+  // Do First, a ThumbsDown for Don't want to do.
+  marker?: "flame" | "thumbs";
 }
 
 // Draggable row for the category board columns.
@@ -105,7 +107,13 @@ export function PriorityItemRow(props: ItemRowProps) {
 // renders (and is draggable) in its real category column, so it isn't a
 // sortable itself — the quadrant tag drives membership, not manual ordering.
 export function DoFirstItemRow(props: ItemRowProps) {
-  return <ItemRowBase {...props} drag={STATIC_DRAG} dragless />;
+  return <ItemRowBase {...props} drag={STATIC_DRAG} marker="flame" />;
+}
+
+// Read-only row for the virtual "Don't want to do" column — the same deal as
+// Do First, with the reluctance flag driving membership.
+export function ReluctantItemRow(props: ItemRowProps) {
+  return <ItemRowBase {...props} drag={STATIC_DRAG} marker="thumbs" />;
 }
 
 function ItemRowBase({
@@ -119,7 +127,7 @@ function ItemRowBase({
   selectedIds,
   onToggleSelect,
   onBulkActed,
-  dragless,
+  marker,
   drag,
 }: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
@@ -174,12 +182,19 @@ function ItemRowBase({
             <Square className="h-4 w-4" />
           )}
         </button>
-      ) : dragless ? (
+      ) : marker === "flame" ? (
         <span
           className="flex h-9 w-6 shrink-0 items-center justify-center text-danger/70"
           aria-hidden
         >
           <Flame className="h-4 w-4" />
+        </span>
+      ) : marker === "thumbs" ? (
+        <span
+          className="flex h-9 w-6 shrink-0 items-center justify-center text-warn"
+          aria-hidden
+        >
+          <ThumbsDown className="h-4 w-4" />
         </span>
       ) : (
         <button
@@ -372,7 +387,7 @@ function ItemRowBase({
         className="shrink-0"
         onClick={() => void cycleStatus(item.id)}
       />
-      {item.is_reluctant && (
+      {item.is_reluctant && marker !== "thumbs" && (
         <span
           className="flex h-9 w-5 shrink-0 items-center justify-center text-warn"
           title="Don't want to do"
