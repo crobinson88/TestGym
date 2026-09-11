@@ -1,5 +1,5 @@
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import { ACTION_TARGET, PRIORITY_TARGET, RELUCTANT_TARGET } from "../targets";
+import { ACTION_TARGET, PRIORITY_TARGET } from "../targets";
 
 function TargetPie({
   label,
@@ -13,9 +13,11 @@ function TargetPie({
   color: string;
 }) {
   const filled = Math.max(0, Math.min(value, target));
-  const remaining = Math.max(0, target - filled);
+  // An empty target (no reluctant tasks flagged today) draws a plain grey ring
+  // rather than a met goal.
+  const remaining = target === 0 ? 1 : Math.max(0, target - filled);
   const pct = target === 0 ? 0 : Math.round((value / target) * 100);
-  const met = value >= target;
+  const met = target > 0 && value >= target;
   const ringColor = met ? "#10b981" : color;
   const data = [
     { name: "engaged", value: filled },
@@ -62,16 +64,26 @@ export function TargetPies({
   engaged,
   priorityEngaged,
   reluctantDone,
+  reluctantTotal,
 }: {
   engaged: number;
   priorityEngaged: number;
   reluctantDone: number;
+  // "Did Anyway" runs against the day's own flagged count, not a fixed goal —
+  // it's a progress bar over the "Don't want to do" column, so the two read the
+  // same numbers.
+  reluctantTotal: number;
 }) {
   return (
     <div className="flex items-start justify-center gap-6">
       <TargetPie label="Action Items" value={engaged} target={ACTION_TARGET} color="#22d3ee" />
       <TargetPie label="Priority" value={priorityEngaged} target={PRIORITY_TARGET} color="#f59e0b" />
-      <TargetPie label="Did Anyway" value={reluctantDone} target={RELUCTANT_TARGET} color="#a78bfa" />
+      <TargetPie
+        label="Did Anyway"
+        value={reluctantDone}
+        target={reluctantTotal}
+        color="#a78bfa"
+      />
     </div>
   );
 }

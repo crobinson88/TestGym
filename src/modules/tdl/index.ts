@@ -40,7 +40,7 @@ export { isSnoozed, isActive } from "./snooze";
 export { useDayCompletion, dayCompletion } from "./hooks";
 export type { DayCompletion } from "./hooks";
 export { TargetPies } from "./components/TargetPies";
-export { ACTION_TARGET, PRIORITY_TARGET, RELUCTANT_TARGET } from "./targets";
+export { ACTION_TARGET, PRIORITY_TARGET } from "./targets";
 export type {
   TdlSection,
   TdlStatus,

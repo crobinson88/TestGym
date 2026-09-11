@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import type { LocalTdlItem } from "../types";
 import type { SectionConfig } from "../sections";
 import { ReluctantItemRow } from "./ItemRow";
+import { reluctantCounts } from "../reluctance";
 
 // Virtual board column that auto-populates with every item flagged "Don't want
 // to do" (is_reluctant), ranked ones first then by board position. Items keep
@@ -36,17 +37,9 @@ export function ReluctantColumn({
 }) {
   const isCollapsed = forceExpanded ? false : collapsed;
 
-  // Completed vs still-to-do split for the header badges. "Outstanding" mirrors
-  // SectionColumn's not-done set (open + in progress + testing); cancelled items
-  // count toward neither but stay in the total.
-  const total = items.length;
-  const done = items.filter((i) => i.status === "done").length;
-  const outstanding = items.filter(
-    (i) =>
-      i.status === "open" ||
-      i.status === "worked_today" ||
-      i.status === "ready_for_testing",
-  ).length;
+  // Completed vs still-to-do split for the header badges, off the same counter
+  // that feeds the header's "Did Anyway" pie.
+  const { total, done, outstanding } = reluctantCounts(items);
 
   return (
     <section

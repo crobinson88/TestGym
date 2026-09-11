@@ -408,7 +408,9 @@ export default function DayView() {
   const showPriorityColumn = !searching || priorityItems.length > 0;
   const doFirstItems = selectDoFirstItems(bundle.items).filter(matchesQuery);
   const showDoFirstColumn = !searching || doFirstItems.length > 0;
-  const reluctantItems = selectReluctantItems(bundle.items).filter(matchesQuery);
+  // completionItems, not items: a done-then-archived task keeps its place in
+  // the set so the pie's numerator stays visible in the list.
+  const reluctantItems = selectReluctantItems(bundle.completionItems).filter(matchesQuery);
   const showReluctantColumn = !searching || reluctantItems.length > 0;
 
   // While filtering, also surface matching archived/snoozed items (they never
