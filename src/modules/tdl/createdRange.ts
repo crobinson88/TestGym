@@ -1,4 +1,4 @@
-import { addDays, dayMonth, todayIsoDate } from "@/lib/utils";
+import { addDays, dayMonth, todayIsoDate, weekStart } from "@/lib/utils";
 import type { LocalTdlItem } from "./types";
 
 // An inclusive [from, to] window over the day a task was added. Either end can
@@ -7,10 +7,12 @@ export type CreatedRange = { from: string | null; to: string | null };
 
 export const EMPTY_CREATED_RANGE: CreatedRange = { from: null, to: null };
 
-export type CreatedRangePresetKey = "today" | "7d" | "30d" | "month";
+export type CreatedRangePresetKey = "today" | "yesterday" | "week" | "7d" | "30d" | "month";
 
 export const CREATED_RANGE_PRESETS: { key: CreatedRangePresetKey; label: string }[] = [
   { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "week", label: "This week" },
   { key: "7d", label: "Last 7 days" },
   { key: "30d", label: "Last 30 days" },
   { key: "month", label: "This month" },
@@ -53,6 +55,12 @@ export function createdRangePreset(
   switch (key) {
     case "today":
       return { from: today, to: today };
+    case "yesterday": {
+      const day = addDays(today, -1);
+      return { from: day, to: day };
+    }
+    case "week":
+      return { from: weekStart(today), to: today };
     case "7d":
       return { from: addDays(today, -6), to: today };
     case "30d":
