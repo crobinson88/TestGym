@@ -26,6 +26,7 @@ export function DailyGoals({ date }: { date: string }) {
             engaged={completion.active}
             priorityEngaged={completion.priorityActive}
             reluctantDone={completion.reluctantDone}
+            reluctantTotal={completion.reluctantTotal}
           />
         ) : (
           <div className="py-6 text-center text-sm text-muted">Loading…</div>

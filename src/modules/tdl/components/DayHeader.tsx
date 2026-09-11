@@ -49,6 +49,7 @@ export function DayHeader({
           engaged={c.active}
           priorityEngaged={c.priorityActive}
           reluctantDone={c.reluctantDone}
+          reluctantTotal={c.reluctantTotal}
         />
       </div>
       <div className="flex items-center gap-1">

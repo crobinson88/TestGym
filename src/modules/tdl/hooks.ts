@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { todayIsoDate } from "@/lib/utils";
 import { SECTIONS } from "./sections";
 import { isSnoozed } from "./snooze";
+import { reluctantCounts } from "./reluctance";
 import type { LocalTdlDay, LocalTdlItem, TdlStatus } from "./types";
 
 export interface DayBundle {
@@ -105,7 +106,9 @@ export interface DayCompletion {
   activeRatio: number;
   priorityTotal: number;
   priorityActive: number;
-  // "Don't want to do" items: how many exist today vs how many are finished.
+  // "Don't want to do" items: how many are on the day vs how many are
+  // finished. Counted off the same set the board column renders
+  // (`selectReluctantItems`), so the pie and the list always agree.
   reluctantTotal: number;
   reluctantDone: number;
 }
@@ -129,7 +132,7 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
   const active = counted.filter(isActive).length;
   const total = counted.length;
   const priority = counted.filter((i) => i.priority_rank != null);
-  const reluctant = counted.filter((i) => i.is_reluctant);
+  const reluctant = reluctantCounts(items);
   return {
     total,
     done,
@@ -138,8 +141,8 @@ export function dayCompletion(items: LocalTdlItem[]): DayCompletion {
     activeRatio: total === 0 ? 0 : active / total,
     priorityTotal: priority.length,
     priorityActive: priority.filter(isActive).length,
-    reluctantTotal: reluctant.length,
-    reluctantDone: reluctant.filter((i) => i.status === "done").length,
+    reluctantTotal: reluctant.total,
+    reluctantDone: reluctant.done,
   };
 }
 
