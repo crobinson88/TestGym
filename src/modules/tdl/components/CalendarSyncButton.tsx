@@ -12,6 +12,7 @@ import {
   Pin,
   Plus,
   Search,
+  Timer,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -23,15 +24,22 @@ import {
   DEFAULT_DURATION_MIN,
   DEFAULT_END_MINUTES,
   DEFAULT_START_MINUTES,
+  DURATION_RANGE_PRESETS,
   DURATION_STEP_MIN,
+  EMPTY_DURATION_RANGE,
   MAX_DURATION_MIN,
   MIN_DURATION_MIN,
   applyCandidateOrder,
   clampDuration,
   collectCalendarCandidates,
+  describeDurationRange,
+  durationRangePreset,
   googleCalendarDayUrl,
   groupCandidates,
+  isDurationRangeActive,
   matchesCandidateQuery,
+  matchesDurationRange,
+  matchingDurationPreset,
   minutesToTime,
   parseTimeToMinutes,
   prettyDuration,
@@ -43,6 +51,7 @@ import {
   type CalendarCandidate,
   type CalendarOverride,
   type CandidateGroup,
+  type DurationRange,
   type ScheduledEvent,
 } from "../calendar";
 import { DayTimeline } from "./DayTimeline";
@@ -107,6 +116,9 @@ export function CalendarSyncButton({
   // Priorities → Do First → Daily Tasks → other categories order.
   const [order, setOrder] = useState<string[] | null>(null);
   const [query, setQuery] = useState("");
+  // Block-length window used to bulk-pick rows — "every task of 15m or less".
+  const [lengthRange, setLengthRange] = useState<DurationRange>(EMPTY_DURATION_RANGE);
+  const [lengthOpen, setLengthOpen] = useState(false);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pane, setPane] = useState<"list" | "day">("list");
@@ -160,11 +172,22 @@ export function CalendarSyncButton({
     [ordered, excluded, byId],
   );
 
+  const lengthActive = isDurationRangeActive(lengthRange);
+
+  // The search and the length window stack (AND), so "select all" below always
+  // means "select exactly what the list is showing".
   const visible = useMemo(
-    () => ordered.filter((c) => matchesCandidateQuery(c, query)),
-    [ordered, query],
+    () =>
+      ordered.filter(
+        (c) =>
+          matchesCandidateQuery(c, query) &&
+          (!lengthActive || matchesDurationRange(plannedDuration(c), lengthRange)),
+      ),
+    // plannedDuration reads `overrides`, so a hand-adjusted block re-filters.
+    [ordered, query, lengthActive, lengthRange, overrides],
   );
   const searching = query.trim().length > 0;
+  const filtering = searching || lengthActive;
 
   // The list reads under a heading per source group rather than as one long run
   // of rows, so a 130-task day is scannable.
@@ -227,6 +250,8 @@ export function CalendarSyncButton({
     setOverrides({});
     setOrder(null);
     setQuery("");
+    setLengthRange(EMPTY_DURATION_RANGE);
+    setLengthOpen(false);
     setFocusedId(null);
     setExpandedId(null);
     setPane("list");
@@ -259,17 +284,24 @@ export function CalendarSyncButton({
     });
   }
 
-  // Tick or untick a whole heading. All on → clear it; anything else → fill it.
-  function toggleGroup(group: CandidateGroup) {
-    const allOn = group.candidates.every((c) => !excluded.has(c.id));
+  // Select or skip every row under a heading. The group only ever holds the rows
+  // the filters are showing, so "All" under a length filter means "every 15m
+  // Priority", not the whole category.
+  function setGroup(group: CandidateGroup, on: boolean) {
     setExcluded((prev) => {
       const next = new Set(prev);
       for (const c of group.candidates) {
-        if (allOn) next.add(c.id);
-        else next.delete(c.id);
+        if (on) next.delete(c.id);
+        else next.add(c.id);
       }
       return next;
     });
+  }
+
+  // The heading checkbox is the one-tap version: all on → clear it; anything
+  // else → fill it.
+  function toggleGroup(group: CandidateGroup) {
+    setGroup(group, !group.candidates.every((c) => !excluded.has(c.id)));
   }
 
   function toggleCollapsed(label: string) {
@@ -292,11 +324,16 @@ export function CalendarSyncButton({
   }
 
   // The block length a row is showing: its scheduled block when selected, else
-  // the override or the item's own estimate — so an unchecked row can still be
-  // adjusted before it goes back on the day.
+  // its planned length — so an unchecked row can still be adjusted before it
+  // goes back on the day.
   function durationOf(c: CalendarCandidate): number {
-    const scheduledBlock = byId.get(c.id);
-    if (scheduledBlock) return scheduledBlock.durationMin;
+    return byId.get(c.id)?.durationMin ?? plannedDuration(c);
+  }
+
+  // The length a block would get regardless of whether it is currently picked —
+  // its override, else its estimate, else the default. The length filter reads
+  // this rather than durationOf so ticking a row can't change what it matches.
+  function plannedDuration(c: CalendarCandidate): number {
     const override = overrides[c.id]?.durationMin;
     if (override != null && override > 0) return clampDuration(override);
     return c.timeEstimateMin != null && c.timeEstimateMin > 0
@@ -312,6 +349,7 @@ export function CalendarSyncButton({
   // editing — the "find it and adjust it" path from the drawn day.
   function focusFromTimeline(id: string) {
     setQuery("");
+    setLengthRange(EMPTY_DURATION_RANGE);
     const label = candidates.find((c) => c.id === id)?.sourceLabel;
     if (label) {
       setCollapsed((prev) => {
@@ -484,18 +522,143 @@ export function CalendarSyncButton({
             </header>
 
             <div className="space-y-2 border-b border-line px-4 py-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                <Input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search these tasks…"
-                  aria-label="Search tasks to schedule"
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search these tasks…"
+                    aria-label="Search tasks to schedule"
+                    disabled={running}
+                    className="h-11 pl-9 text-sm"
+                  />
+                </div>
+                <Button
+                  variant={lengthActive ? "secondary" : "ghost"}
+                  onClick={() => setLengthOpen((v) => !v)}
+                  aria-expanded={lengthOpen}
+                  aria-pressed={lengthActive}
                   disabled={running}
-                  className="h-11 pl-9 text-sm"
-                />
+                  className="h-11 shrink-0 px-3 text-sm"
+                  title="Narrow the list to blocks of a given length, then select them"
+                >
+                  <Timer className="h-4 w-4 sm:mr-1" />
+                  <span className="hidden sm:inline">
+                    {lengthActive ? describeDurationRange(lengthRange) : "Length"}
+                  </span>
+                </Button>
               </div>
+              {lengthOpen && (
+                <div className="rounded-2xl border border-line bg-surface2/50 p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      Blocks of this length
+                    </span>
+                    {lengthActive && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setLengthRange(EMPTY_DURATION_RANGE)}
+                        disabled={running}
+                        className="ml-auto h-8 px-2 text-xs text-muted"
+                      >
+                        <X className="mr-1 h-3.5 w-3.5" /> Clear
+                      </Button>
+                    )}
+                  </div>
+                  <div
+                    role="group"
+                    aria-label="Block length presets"
+                    className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1"
+                  >
+                    {DURATION_RANGE_PRESETS.map((p) => {
+                      const on = matchingDurationPreset(lengthRange) === p.key;
+                      return (
+                        <button
+                          key={p.key}
+                          type="button"
+                          onClick={() =>
+                            setLengthRange(on ? EMPTY_DURATION_RANGE : durationRangePreset(p.key))
+                          }
+                          aria-pressed={on}
+                          disabled={running}
+                          className={`shrink-0 rounded-full px-3 py-2 text-xs disabled:opacity-50 ${
+                            on
+                              ? "bg-accent/15 text-accent ring-1 ring-accent/40"
+                              : "bg-surface2 text-muted hover:text-text"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 flex items-end gap-2">
+                    <label className="flex-1">
+                      <span className="mb-1 block text-[11px] text-muted">At least (min)</span>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={DURATION_STEP_MIN}
+                        value={lengthRange.minMin ?? ""}
+                        onChange={(e) =>
+                          setLengthRange((r) => ({
+                            ...r,
+                            minMin: e.target.value === "" ? null : Number(e.target.value),
+                          }))
+                        }
+                        disabled={running}
+                        aria-label="Minimum block length in minutes"
+                        className="h-11 px-3 text-sm"
+                      />
+                    </label>
+                    <label className="flex-1">
+                      <span className="mb-1 block text-[11px] text-muted">At most (min)</span>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={DURATION_STEP_MIN}
+                        value={lengthRange.maxMin ?? ""}
+                        onChange={(e) =>
+                          setLengthRange((r) => ({
+                            ...r,
+                            maxMin: e.target.value === "" ? null : Number(e.target.value),
+                          }))
+                        }
+                        disabled={running}
+                        aria-label="Maximum block length in minutes"
+                        className="h-11 px-3 text-sm"
+                      />
+                    </label>
+                  </div>
+                  {lengthActive && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setAllVisible(true)}
+                        disabled={running || visible.length === 0}
+                        className="h-9"
+                      >
+                        Select these {visible.length}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setAllVisible(false)}
+                        disabled={running || visible.length === 0}
+                        className="h-9"
+                      >
+                        Deselect these {visible.length}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
                 <label htmlFor="cal-start-time">Schedule between</label>
                 <input
@@ -527,7 +690,11 @@ export function CalendarSyncButton({
                 <span>
                   {scheduled.length} of {candidates.length} scheduled ·{" "}
                   {prettyMinutes(startMinutes)}–{prettyMinutes(endMinutes)}, {timelineHint}
-                  {searching ? ` · ${visible.length} matching “${query.trim()}”` : ""}
+                  {filtering
+                    ? ` · showing ${visible.length}${searching ? ` matching “${query.trim()}”` : ""}${
+                        lengthActive ? ` of ${describeDurationRange(lengthRange).toLowerCase()}` : ""
+                      }`
+                    : ""}
                 </span>
                 <span className="flex items-center gap-1">
                   {order && (
@@ -544,14 +711,16 @@ export function CalendarSyncButton({
                   <button
                     type="button"
                     onClick={() => setAllVisible(true)}
+                    aria-label="Select every task shown"
                     disabled={running || visible.length === 0}
                     className="rounded-lg px-2 py-1 hover:bg-surface2 hover:text-text disabled:opacity-50"
                   >
-                    {searching ? "Select matching" : "Select all"}
+                    {filtering ? "Select shown" : "Select all"}
                   </button>
                   <button
                     type="button"
                     onClick={() => setAllVisible(false)}
+                    aria-label="Deselect every task shown"
                     disabled={running || visible.length === 0}
                     className="rounded-lg px-2 py-1 hover:bg-surface2 hover:text-text disabled:opacity-50"
                   >
@@ -587,18 +756,24 @@ export function CalendarSyncButton({
 
             <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_26rem]">
               <div
+                role="group"
+                aria-label="Tasks to schedule"
                 className={`min-h-0 space-y-2 overflow-y-auto p-2 ${pane === "list" ? "" : "hidden"} lg:block`}
               >
                 {visible.length === 0 && (
                   <p className="py-8 text-center text-sm text-muted">
-                    No tasks match “{query.trim()}”.
+                    {searching && lengthActive
+                      ? `No ${describeDurationRange(lengthRange).toLowerCase()} tasks match “${query.trim()}”.`
+                      : searching
+                        ? `No tasks match “${query.trim()}”.`
+                        : `No tasks of ${describeDurationRange(lengthRange).toLowerCase()}.`}
                   </p>
                 )}
                 {groups.map((group) => {
                   const selectedCount = group.candidates.filter((c) => !excluded.has(c.id)).length;
                   const allOn = selectedCount === group.candidates.length;
-                  // A search shows every match, folded heading or not.
-                  const shut = !searching && collapsed.has(group.label);
+                  // A filter shows every match, folded heading or not.
+                  const shut = !filtering && collapsed.has(group.label);
                   return (
                     <section key={group.label}>
                       <header className="sticky top-0 z-10 flex items-center gap-1 bg-surface/95 pb-1 backdrop-blur">
@@ -646,6 +821,26 @@ export function CalendarSyncButton({
                             {selectedCount}/{group.candidates.length}
                           </span>
                         </button>
+                        <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted">
+                          <button
+                            type="button"
+                            onClick={() => setGroup(group, true)}
+                            disabled={running || allOn}
+                            className="rounded-lg px-2 py-2 hover:bg-surface2 hover:text-text disabled:opacity-40"
+                            title={`Select every ${group.label}`}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGroup(group, false)}
+                            disabled={running || selectedCount === 0}
+                            className="rounded-lg px-2 py-2 hover:bg-surface2 hover:text-text disabled:opacity-40"
+                            title={`Deselect every ${group.label}`}
+                          >
+                            None
+                          </button>
+                        </span>
                       </header>
                       {!shut && (
                         <ul className="space-y-1">
