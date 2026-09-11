@@ -105,9 +105,25 @@ describe("createdRangePreset", () => {
 
   it("builds inclusive windows ending today", () => {
     expect(createdRangePreset("today", today)).toEqual({ from: today, to: today });
+    expect(createdRangePreset("yesterday", today)).toEqual({
+      from: "2026-06-09",
+      to: "2026-06-09",
+    });
     expect(createdRangePreset("7d", today)).toEqual({ from: "2026-06-04", to: today });
     expect(createdRangePreset("30d", today)).toEqual({ from: "2026-05-12", to: today });
     expect(createdRangePreset("month", today)).toEqual({ from: "2026-06-01", to: today });
+  });
+
+  it("runs this week from the Monday", () => {
+    expect(createdRangePreset("week", today)).toEqual({ from: "2026-06-08", to: today });
+    expect(createdRangePreset("week", "2026-06-08")).toEqual({
+      from: "2026-06-08",
+      to: "2026-06-08",
+    });
+    expect(createdRangePreset("week", "2026-06-14")).toEqual({
+      from: "2026-06-08",
+      to: "2026-06-14",
+    });
   });
 
   it("round-trips through matchingPreset", () => {
