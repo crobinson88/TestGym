@@ -1,5 +1,6 @@
 export { tdlRoutes } from "./routes";
-export { rollForward } from "./rollForward";
+export { rollForward, planRollForward, applyRollForward } from "./rollForward";
+export type { RollForwardPlan, RollForwardDuplicate } from "./rollForward";
 export {
   SECTIONS,
   SECTION_BY_KEY,

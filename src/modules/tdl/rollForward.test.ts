@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { v4 as uuid } from "uuid";
 import { GymDB, type LocalTdlItem, type LocalTdlDay } from "@/lib/db";
 import type { TdlItemRow, TdlSection } from "./types";
-import { rollForward } from "./rollForward";
+import {
+  applyRollForward,
+  buildRootMap,
+  normaliseTitle,
+  planRollForward,
+  rollForward,
+} from "./rollForward";
 
 let db: GymDB;
 
@@ -301,5 +307,169 @@ describe("rollForward", () => {
     expect(r.daySeeded).toBe(true);
     const newDay = await db.tdl_days.get("2026-05-28");
     expect(newDay?.snapshot_date).toBe("2026-05-28");
+  });
+});
+
+
+describe("buildRootMap", () => {
+  it("resolves every row on a chain to the first row", () => {
+    const rows = [
+      { id: "a", origin_item_id: null },
+      { id: "b", origin_item_id: "a" },
+      { id: "c", origin_item_id: "b" },
+    ];
+    const roots = buildRootMap(rows);
+    expect(roots.get("a")).toBe("a");
+    expect(roots.get("b")).toBe("a");
+    expect(roots.get("c")).toBe("a");
+  });
+
+  it("stops at the oldest row still held when the start has been purged", () => {
+    const roots = buildRootMap([{ id: "c", origin_item_id: "gone" }]);
+    expect(roots.get("c")).toBe("c");
+  });
+
+  it("does not loop on a cyclic chain", () => {
+    const roots = buildRootMap([
+      { id: "a", origin_item_id: "b" },
+      { id: "b", origin_item_id: "a" },
+    ]);
+    expect(roots.get("a")).toBeDefined();
+    expect(roots.get("b")).toBeDefined();
+  });
+});
+
+describe("normaliseTitle", () => {
+  it("ignores case and runs of whitespace", () => {
+    expect(normaliseTitle("  Call   Sam ")).toBe(normaliseTitle("call sam"));
+  });
+});
+
+describe("planRollForward", () => {
+  it("carries everything when the target day is empty", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "A" }),
+      makeItem("2026-05-27", "product", { title: "B" }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    expect(plan.carry).toHaveLength(2);
+    expect(plan.duplicates).toHaveLength(0);
+  });
+
+  it("writes nothing", async () => {
+    await seed([makeItem("2026-05-27", "follow_ups", { title: "A" })]);
+    await planRollForward("2026-05-27", "2026-05-28", { db });
+    expect(await listFor("2026-05-28")).toHaveLength(0);
+    expect(await db.tdl_days.get("2026-05-28")).toBeUndefined();
+  });
+
+  it("flags a task that already reached the target day by a different path", async () => {
+    // Made on the 4th, carried day by day to the 6th. Rolling the 4th forward
+    // into the 6th would land the same task twice.
+    await seed([makeItem("2026-05-04", "follow_ups", { title: "Long runner" })]);
+    await rollForward("2026-05-04", "2026-05-05", { db });
+    await rollForward("2026-05-05", "2026-05-06", { db });
+
+    const plan = await planRollForward("2026-05-04", "2026-05-06", { db });
+    expect(plan.carry).toHaveLength(0);
+    expect(plan.duplicates).toHaveLength(1);
+    expect(plan.duplicates[0].reason).toBe("chain");
+    expect(plan.duplicates[0].existing.snapshot_date).toBe("2026-05-06");
+  });
+
+  it("flags a same-title task in the same category as a duplicate", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "Call Sam" }),
+      makeItem("2026-05-28", "follow_ups", { title: "  call   sam " }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    expect(plan.carry).toHaveLength(0);
+    expect(plan.duplicates).toHaveLength(1);
+    expect(plan.duplicates[0].reason).toBe("title");
+  });
+
+  it("does not flag the same title in a different category", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "Call Sam" }),
+      makeItem("2026-05-28", "product", { title: "Call Sam" }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    expect(plan.carry).toHaveLength(1);
+    expect(plan.duplicates).toHaveLength(0);
+  });
+
+  it("splits a mixed day into new tasks and duplicates", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "Shared" }),
+      makeItem("2026-05-27", "follow_ups", { title: "Only on the 27th", position: 1 }),
+      makeItem("2026-05-28", "follow_ups", { title: "Shared" }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    expect(plan.carry.map((r) => r.title)).toEqual(["Only on the 27th"]);
+    expect(plan.duplicates.map((d) => d.row.title)).toEqual(["Shared"]);
+  });
+
+  it("can roll from any earlier day, not just the one before", async () => {
+    await seed([makeItem("2026-05-01", "follow_ups", { title: "Old job" })]);
+    const plan = await planRollForward("2026-05-01", "2026-05-20", { db });
+    expect(plan.carry).toHaveLength(1);
+    await applyRollForward("2026-05-20", plan.carry, { db });
+    const next = await listFor("2026-05-20");
+    expect(next).toHaveLength(1);
+    expect(next[0].origin_snapshot_date).toBe("2026-05-01");
+  });
+});
+
+describe("applyRollForward", () => {
+  it("adds only the rows it is handed", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "Shared" }),
+      makeItem("2026-05-27", "follow_ups", { title: "New one", position: 1 }),
+      makeItem("2026-05-28", "follow_ups", { title: "Shared" }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    const r = await applyRollForward("2026-05-28", plan.carry, { db });
+    expect(r.created).toBe(1);
+    const titles = (await listFor("2026-05-28")).map((i) => i.title).sort();
+    expect(titles).toEqual(["New one", "Shared"]);
+  });
+
+  it("adds a confirmed duplicate when the user accepts it", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "Shared" }),
+      makeItem("2026-05-28", "follow_ups", { title: "Shared" }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    await applyRollForward("2026-05-28", plan.duplicates.map((d) => d.row), { db });
+    const next = await listFor("2026-05-28");
+    expect(next).toHaveLength(2);
+    expect(next.every((i) => i.title === "Shared")).toBe(true);
+  });
+
+  it("renumbers positions across the merged day without gaps", async () => {
+    await seed([
+      makeItem("2026-05-27", "product", { title: "A", position: 4 }),
+      makeItem("2026-05-28", "product", { title: "Z", position: 9 }),
+    ]);
+    const plan = await planRollForward("2026-05-27", "2026-05-28", { db });
+    await applyRollForward("2026-05-28", plan.carry, { db });
+    const positions = (await listFor("2026-05-28"))
+      .map((r) => r.position)
+      .sort((a, b) => a - b);
+    expect(positions).toEqual([0, 1]);
+  });
+});
+
+describe("rollForward duplicate handling", () => {
+  it("holds back suspected duplicates and reports them as skipped", async () => {
+    await seed([
+      makeItem("2026-05-27", "follow_ups", { title: "Shared" }),
+      makeItem("2026-05-27", "follow_ups", { title: "New one", position: 1 }),
+      makeItem("2026-05-28", "follow_ups", { title: "Shared" }),
+    ]);
+    const r = await rollForward("2026-05-27", "2026-05-28", { db });
+    expect(r.created).toBe(1);
+    expect(r.skipped).toBe(1);
+    expect(await listFor("2026-05-28")).toHaveLength(2);
   });
 });

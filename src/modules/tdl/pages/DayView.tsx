@@ -72,7 +72,7 @@ import { DoFirstColumn } from "../components/DoFirstColumn";
 import { ReluctantColumn } from "../components/ReluctantColumn";
 import { PRIORITY_SORTABLE_PREFIX } from "../components/ItemRow";
 import { BulkActionBar } from "../components/BulkActionBar";
-import { RollForwardButton } from "../components/RollForwardButton";
+import { RollForwardEmptyCard } from "../components/RollForwardButton";
 import { OffBoardResults } from "../components/OffBoardResults";
 import { QuickAdd } from "../components/QuickAdd";
 import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
@@ -529,9 +529,9 @@ export default function DayView() {
             </>
           )}
         </div>
-        {empty && prev && (
+        {empty && (
           <div className="mb-4">
-            <RollForwardButton fromDate={prev} toDate={date} />
+            <RollForwardEmptyCard toDate={date} defaultFrom={prev} />
           </div>
         )}
         {nothingMatches && viewMode === "list" && (
