@@ -12,7 +12,6 @@ import {
   Pin,
   Plus,
   Search,
-  Timer,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -24,25 +23,17 @@ import {
   DEFAULT_DURATION_MIN,
   DEFAULT_END_MINUTES,
   DEFAULT_START_MINUTES,
-  DURATION_RANGE_PRESETS,
   DURATION_STEP_MIN,
-  EMPTY_DURATION_RANGE,
   MAX_DURATION_MIN,
   MIN_DURATION_MIN,
   applyCandidateOrder,
   clampDuration,
   collectCalendarCandidates,
-  describeDurationRange,
-  durationRangePreset,
   googleCalendarDayUrl,
   groupCandidates,
-  isDurationRangeActive,
   matchesCandidateQuery,
-  matchesDurationRange,
-  matchingDurationPreset,
   minutesToTime,
   parseTimeToMinutes,
-  prettyDuration,
   prettyMinutes,
   reorderByStep,
   reorderForDrop,
@@ -51,9 +42,17 @@ import {
   type CalendarCandidate,
   type CalendarOverride,
   type CandidateGroup,
-  type DurationRange,
   type ScheduledEvent,
 } from "../calendar";
+import {
+  EMPTY_DURATION_RANGE,
+  describeDurationRange,
+  isDurationRangeActive,
+  matchesDurationRange,
+  prettyDuration,
+  type DurationRange,
+} from "../duration";
+import { DurationFilter } from "./DurationFilter";
 import { DayTimeline } from "./DayTimeline";
 
 // Quick block lengths offered next to the stepper.
@@ -535,130 +534,43 @@ export function CalendarSyncButton({
                     className="h-11 pl-9 text-sm"
                   />
                 </div>
-                <Button
-                  variant={lengthActive ? "secondary" : "ghost"}
-                  onClick={() => setLengthOpen((v) => !v)}
-                  aria-expanded={lengthOpen}
-                  aria-pressed={lengthActive}
+                <DurationFilter
+                  value={lengthRange}
+                  onChange={setLengthRange}
+                  open={lengthOpen}
+                  onToggle={() => setLengthOpen((v) => !v)}
                   disabled={running}
-                  className="h-11 shrink-0 px-3 text-sm"
+                  label="Length"
+                  heading="Blocks of this length"
                   title="Narrow the list to blocks of a given length, then select them"
-                >
-                  <Timer className="h-4 w-4 sm:mr-1" />
-                  <span className="hidden sm:inline">
-                    {lengthActive ? describeDurationRange(lengthRange) : "Length"}
-                  </span>
-                </Button>
-              </div>
-              {lengthOpen && (
-                <div className="rounded-2xl border border-line bg-surface2/50 p-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                      Blocks of this length
-                    </span>
-                    {lengthActive && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setLengthRange(EMPTY_DURATION_RANGE)}
-                        disabled={running}
-                        className="ml-auto h-8 px-2 text-xs text-muted"
-                      >
-                        <X className="mr-1 h-3.5 w-3.5" /> Clear
-                      </Button>
-                    )}
-                  </div>
-                  <div
-                    role="group"
-                    aria-label="Block length presets"
-                    className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1"
-                  >
-                    {DURATION_RANGE_PRESETS.map((p) => {
-                      const on = matchingDurationPreset(lengthRange) === p.key;
-                      return (
-                        <button
-                          key={p.key}
-                          type="button"
-                          onClick={() =>
-                            setLengthRange(on ? EMPTY_DURATION_RANGE : durationRangePreset(p.key))
-                          }
-                          aria-pressed={on}
-                          disabled={running}
-                          className={`shrink-0 rounded-full px-3 py-2 text-xs disabled:opacity-50 ${
-                            on
-                              ? "bg-accent/15 text-accent ring-1 ring-accent/40"
-                              : "bg-surface2 text-muted hover:text-text"
-                          }`}
+                  buttonClassName="h-11"
+                  panelClassName="bg-surface2/50"
+                  footer={
+                    lengthActive && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setAllVisible(true)}
+                          disabled={running || visible.length === 0}
+                          className="h-9"
                         >
-                          {p.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-2 flex items-end gap-2">
-                    <label className="flex-1">
-                      <span className="mb-1 block text-[11px] text-muted">At least (min)</span>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        step={DURATION_STEP_MIN}
-                        value={lengthRange.minMin ?? ""}
-                        onChange={(e) =>
-                          setLengthRange((r) => ({
-                            ...r,
-                            minMin: e.target.value === "" ? null : Number(e.target.value),
-                          }))
-                        }
-                        disabled={running}
-                        aria-label="Minimum block length in minutes"
-                        className="h-11 px-3 text-sm"
-                      />
-                    </label>
-                    <label className="flex-1">
-                      <span className="mb-1 block text-[11px] text-muted">At most (min)</span>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        step={DURATION_STEP_MIN}
-                        value={lengthRange.maxMin ?? ""}
-                        onChange={(e) =>
-                          setLengthRange((r) => ({
-                            ...r,
-                            maxMin: e.target.value === "" ? null : Number(e.target.value),
-                          }))
-                        }
-                        disabled={running}
-                        aria-label="Maximum block length in minutes"
-                        className="h-11 px-3 text-sm"
-                      />
-                    </label>
-                  </div>
-                  {lengthActive && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setAllVisible(true)}
-                        disabled={running || visible.length === 0}
-                        className="h-9"
-                      >
-                        Select these {visible.length}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setAllVisible(false)}
-                        disabled={running || visible.length === 0}
-                        className="h-9"
-                      >
-                        Deselect these {visible.length}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
+                          Select these {visible.length}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setAllVisible(false)}
+                          disabled={running || visible.length === 0}
+                          className="h-9"
+                        >
+                          Deselect these {visible.length}
+                        </Button>
+                      </div>
+                    )
+                  }
+                />
+              </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
                 <label htmlFor="cal-start-time">Schedule between</label>
                 <input

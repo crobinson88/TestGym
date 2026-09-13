@@ -12,20 +12,13 @@ import {
   MIN_DURATION_MIN,
   clampDuration,
   collectCalendarCandidates,
-  describeDurationRange,
-  durationRangePreset,
   googleCalendarDayUrl,
   groupCandidates,
-  isDurationRangeActive,
   layoutLanes,
-  matchesDurationRange,
-  matchingDurationPreset,
   matchesCandidateQuery,
   mergeBusy,
   minutesToTime,
-  normaliseDurationRange,
   parseTimeToMinutes,
-  prettyDuration,
   prettyHourLabel,
   prettyMinutes,
   scheduleEvents,
@@ -354,7 +347,7 @@ describe("time helpers", () => {
   });
 });
 
-describe("prettyMinutes / prettyDuration", () => {
+describe("prettyMinutes", () => {
   it("renders a 12h clock label", () => {
     expect(prettyMinutes(9 * 60)).toBe("9:00 AM");
     expect(prettyMinutes(0)).toBe("12:00 AM");
@@ -364,12 +357,6 @@ describe("prettyMinutes / prettyDuration", () => {
 
   it("wraps past midnight", () => {
     expect(prettyMinutes(25 * 60)).toBe("1:00 AM");
-  });
-
-  it("renders durations", () => {
-    expect(prettyDuration(45)).toBe("45m");
-    expect(prettyDuration(60)).toBe("1h");
-    expect(prettyDuration(90)).toBe("1h 30m");
   });
 });
 
@@ -879,55 +866,5 @@ describe("googleCalendarDayUrl", () => {
 
   it("falls back to the calendar root for an unparseable date", () => {
     expect(googleCalendarDayUrl("not-a-date")).toBe("https://calendar.google.com/calendar/r");
-  });
-});
-
-describe("duration range", () => {
-  it("treats an empty window as no filter", () => {
-    const empty = { minMin: null, maxMin: null };
-    expect(isDurationRangeActive(empty)).toBe(false);
-    expect(matchesDurationRange(5, empty)).toBe(true);
-    expect(matchesDurationRange(600, empty)).toBe(true);
-    expect(describeDurationRange(empty)).toBe("Any length");
-  });
-
-  it("matches inclusively on both ends", () => {
-    const range = { minMin: 30, maxMin: 60 };
-    expect(matchesDurationRange(29, range)).toBe(false);
-    expect(matchesDurationRange(30, range)).toBe(true);
-    expect(matchesDurationRange(45, range)).toBe(true);
-    expect(matchesDurationRange(60, range)).toBe(true);
-    expect(matchesDurationRange(61, range)).toBe(false);
-  });
-
-  it("leaves an open end unbounded", () => {
-    expect(matchesDurationRange(5, { minMin: null, maxMin: 15 })).toBe(true);
-    expect(matchesDurationRange(16, { minMin: null, maxMin: 15 })).toBe(false);
-    expect(matchesDurationRange(720, { minMin: 60, maxMin: null })).toBe(true);
-    expect(matchesDurationRange(59, { minMin: 60, maxMin: null })).toBe(false);
-  });
-
-  it("swaps ends given the wrong way round", () => {
-    expect(normaliseDurationRange({ minMin: 90, maxMin: 15 })).toEqual({ minMin: 15, maxMin: 90 });
-    expect(matchesDurationRange(30, { minMin: 90, maxMin: 15 })).toBe(true);
-  });
-
-  it("reads a blank or non-positive end as open", () => {
-    expect(normaliseDurationRange({ minMin: 0, maxMin: 45 })).toEqual({ minMin: null, maxMin: 45 });
-    expect(isDurationRangeActive({ minMin: 0, maxMin: null })).toBe(false);
-  });
-
-  it("recognises its own presets", () => {
-    expect(matchingDurationPreset(durationRangePreset("q15"))).toBe("q15");
-    expect(matchingDurationPreset(durationRangePreset("half"))).toBe("half");
-    expect(matchingDurationPreset({ minMin: 20, maxMin: 40 })).toBeNull();
-    expect(describeDurationRange(durationRangePreset("hour"))).toBe("1h or more");
-  });
-
-  it("describes a hand-typed window", () => {
-    expect(describeDurationRange({ minMin: 20, maxMin: 90 })).toBe("20m – 1h 30m");
-    expect(describeDurationRange({ minMin: 45, maxMin: 45 })).toBe("45m");
-    expect(describeDurationRange({ minMin: null, maxMin: 120 })).toBe("2h or less");
-    expect(describeDurationRange({ minMin: 90, maxMin: null })).toBe("1h 30m or more");
   });
 });

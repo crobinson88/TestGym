@@ -84,14 +84,6 @@ export function prettyHourLabel(minutes: number): string {
   return `${h12} ${h < 12 ? "AM" : "PM"}`;
 }
 
-// "45m" / "1h" / "1h 30m" — the block length as it reads on a calendar.
-export function prettyDuration(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
 // Deep link to the day the blocks were written to, so the user can jump
 // straight to Google Calendar and see what got booked. No `/u/0/` — Google
 // resolves the signed-in account itself, which is right when several are.
@@ -212,82 +204,6 @@ export function matchesCandidateQuery(
     candidate.title.toLowerCase().includes(q) ||
     candidate.sourceLabel.toLowerCase().includes(q)
   );
-}
-
-// An inclusive [min, max] window over a block's length in minutes, used to bulk
-// pick rows in the modal ("every task of 15 minutes or less"). Either end can be
-// null (open-ended); both null = no filter.
-export type DurationRange = { minMin: number | null; maxMin: number | null };
-
-export const EMPTY_DURATION_RANGE: DurationRange = { minMin: null, maxMin: null };
-
-export type DurationRangePresetKey = "q15" | "q30" | "half" | "hour";
-
-export const DURATION_RANGE_PRESETS: { key: DurationRangePresetKey; label: string }[] = [
-  { key: "q15", label: "15m or less" },
-  { key: "q30", label: "30m or less" },
-  { key: "half", label: "30m – 1h" },
-  { key: "hour", label: "1h or more" },
-];
-
-export function durationRangePreset(key: DurationRangePresetKey): DurationRange {
-  switch (key) {
-    case "q15":
-      return { minMin: null, maxMin: 15 };
-    case "q30":
-      return { minMin: null, maxMin: 30 };
-    case "half":
-      return { minMin: 30, maxMin: 60 };
-    case "hour":
-      return { minMin: 60, maxMin: null };
-  }
-}
-
-// Ends given the wrong way round still describe a window, so swap rather than
-// matching nothing. Blank / non-positive ends read as open.
-export function normaliseDurationRange(range: DurationRange): DurationRange {
-  const min = range.minMin != null && range.minMin > 0 ? range.minMin : null;
-  const max = range.maxMin != null && range.maxMin > 0 ? range.maxMin : null;
-  if (min != null && max != null && min > max) return { minMin: max, maxMin: min };
-  return { minMin: min, maxMin: max };
-}
-
-export function isDurationRangeActive(range: DurationRange): boolean {
-  const { minMin, maxMin } = normaliseDurationRange(range);
-  return minMin != null || maxMin != null;
-}
-
-export function matchesDurationRange(durationMin: number, range: DurationRange): boolean {
-  const { minMin, maxMin } = normaliseDurationRange(range);
-  if (minMin != null && durationMin < minMin) return false;
-  if (maxMin != null && durationMin > maxMin) return false;
-  return true;
-}
-
-// Which preset (if any) the window is exactly, so the picker shows the active
-// chip instead of a raw pair.
-export function matchingDurationPreset(range: DurationRange): DurationRangePresetKey | null {
-  const { minMin, maxMin } = normaliseDurationRange(range);
-  for (const { key } of DURATION_RANGE_PRESETS) {
-    const preset = durationRangePreset(key);
-    if (preset.minMin === minMin && preset.maxMin === maxMin) return key;
-  }
-  return null;
-}
-
-// Short chip label: a preset name when it is one, else the window itself.
-export function describeDurationRange(range: DurationRange): string {
-  const { minMin, maxMin } = normaliseDurationRange(range);
-  if (minMin == null && maxMin == null) return "Any length";
-  const preset = matchingDurationPreset({ minMin, maxMin });
-  if (preset) return DURATION_RANGE_PRESETS.find((p) => p.key === preset)!.label;
-  if (minMin != null && maxMin != null) {
-    return minMin === maxMin
-      ? prettyDuration(minMin)
-      : `${prettyDuration(minMin)} – ${prettyDuration(maxMin)}`;
-  }
-  if (minMin != null) return `${prettyDuration(minMin)} or more`;
-  return `${prettyDuration(maxMin!)} or less`;
 }
 
 // One heading's worth of rows in the modal's task list. Groups follow the order
