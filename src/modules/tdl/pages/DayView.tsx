@@ -41,6 +41,13 @@ import {
   type CreatedRange,
 } from "../createdRange";
 import {
+  EMPTY_DURATION_RANGE,
+  describeDurationRange,
+  isDurationRangeActive,
+  matchesItemDuration,
+  type DurationRange,
+} from "../duration";
+import {
   reorderCategories,
   setCategoryArchived,
   useCategories,
@@ -76,6 +83,7 @@ import { RollForwardEmptyCard } from "../components/RollForwardButton";
 import { OffBoardResults } from "../components/OffBoardResults";
 import { QuickAdd } from "../components/QuickAdd";
 import { CreatedRangeFilter } from "../components/CreatedRangeFilter";
+import { DurationFilter } from "../components/DurationFilter";
 import { ViewToggle } from "../components/ViewToggle";
 import { BoardCanvas } from "../components/BoardCanvas";
 import { BoardCategoryPicker } from "../components/BoardCategoryPicker";
@@ -137,7 +145,9 @@ export default function DayView() {
 
   const [query, setQuery] = useState("");
   const [createdRange, setCreatedRange] = useState<CreatedRange>(EMPTY_CREATED_RANGE);
+  const [durationRange, setDurationRange] = useState<DurationRange>(EMPTY_DURATION_RANGE);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [durationOpen, setDurationOpen] = useState(false);
 
   const allIds = useMemo(() => bundle?.items.map((i) => i.id) ?? [], [bundle]);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -363,12 +373,15 @@ export default function DayView() {
   const columns = orphanSections.length > 0 ? [...categories, UNCATEGORISED] : categories;
 
   const q = query.trim().toLowerCase();
-  // Text and added-date filters stack (AND); "searching" is either of them being
-  // on, which is what narrows the board.
+  // Text, added-date and time-requirement filters stack (AND); "searching" is
+  // any of them being on, which is what narrows the board.
   const rangeActive = isCreatedRangeActive(createdRange);
-  const searching = q.length > 0 || rangeActive;
+  const durationActive = isDurationRangeActive(durationRange);
+  const searching = q.length > 0 || rangeActive || durationActive;
   const matchesQuery = (i: LocalTdlItem) =>
-    matchesTdlQuery(i, query) && matchesCreatedRange(i, createdRange);
+    matchesTdlQuery(i, query) &&
+    matchesCreatedRange(i, createdRange) &&
+    matchesItemDuration(i, durationRange);
 
   // Selectable = every live item currently visible on the board (filter-aware).
   const selectableIds = bundle.items.filter(matchesQuery).map((i) => i.id);
@@ -497,7 +510,20 @@ export default function DayView() {
               value={createdRange}
               onChange={setCreatedRange}
               open={rangeOpen}
-              onToggle={() => setRangeOpen((v) => !v)}
+              onToggle={() => {
+                setRangeOpen((v) => !v);
+                setDurationOpen(false);
+              }}
+            />
+            <DurationFilter
+              value={durationRange}
+              onChange={setDurationRange}
+              open={durationOpen}
+              onToggle={() => {
+                setDurationOpen((v) => !v);
+                setRangeOpen(false);
+              }}
+              title="Filter by how long a task takes — tasks with no time set are hidden"
             />
             {viewMode === "list" && (
               <Button
@@ -539,7 +565,8 @@ export default function DayView() {
         {nothingMatches && viewMode === "list" && (
           <div className="py-8 text-center text-sm text-muted">
             No tasks match {q ? `“${query.trim()}”` : "this filter"}
-            {rangeActive && ` · added ${describeCreatedRange(createdRange)}`}.
+            {rangeActive && ` · added ${describeCreatedRange(createdRange)}`}
+            {durationActive && ` · ${describeDurationRange(durationRange).toLowerCase()}`}.
           </div>
         )}
         {viewMode === "board" && (

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GripVertical } from "lucide-react";
 import {
   layoutLanes,
-  prettyDuration,
   prettyHourLabel,
   prettyMinutes,
   snapMinutes,
@@ -10,6 +9,7 @@ import {
   type BusyInterval,
   type ScheduledEvent,
 } from "../calendar";
+import { prettyDuration } from "../duration";
 
 // Pixels per hour on the drawn day. Roomy enough that a 30-minute block reads
 // at body size and a 15-minute one still shows its title — a taller day you
