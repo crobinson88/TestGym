@@ -451,14 +451,14 @@ function ItemRowBase({
                 <RankSelect
                   item={item}
                   takenRanks={takenRanks}
-                  className="mr-2 w-auto rounded-lg border border-line bg-surface2 px-2 text-left"
+                  className="mr-2 w-14 rounded-lg border border-line bg-surface2 px-1"
                 />
               </>
             )}
             <span>Quadrant</span>
             <QuadrantSelect
               item={item}
-              className="w-auto rounded-lg border border-line bg-surface2 px-2 text-left"
+              className="w-32 rounded-lg border border-line bg-surface2 px-2 text-left"
             />
           </div>
           <ItemDetail item={item} />
