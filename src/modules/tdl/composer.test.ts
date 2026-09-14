@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEstimate, validateDraft } from "./composer";
+import { parseEstimate, resolveQuickAddCategory, validateDraft } from "./composer";
 
 describe("parseEstimate", () => {
   it("reads whole positive minutes", () => {
@@ -68,5 +68,41 @@ describe("validateDraft", () => {
       requiresEstimate: true,
     });
     expect(v.errors).toEqual({ title: true, estimate: true, quadrant: true, section: true });
+  });
+});
+
+describe("resolveQuickAddCategory", () => {
+  const cats = [
+    { key: "daily_tasks", label: "Daily Tasks" },
+    { key: "tgm_tasks", label: "TGM Tasks" },
+    { key: "get_buddy", label: "Get Buddy" },
+  ];
+
+  it("opens on TGM Tasks when nothing is remembered", () => {
+    expect(resolveQuickAddCategory(null, cats)).toBe("tgm_tasks");
+  });
+
+  it("matches TGM Tasks by label when the category carries a hand-made key", () => {
+    expect(
+      resolveQuickAddCategory(null, [
+        { key: "daily_tasks", label: "Daily Tasks" },
+        { key: "cat_7f21", label: "  tgm tasks " },
+      ]),
+    ).toBe("cat_7f21");
+  });
+
+  it("prefers the remembered category while it is still live", () => {
+    expect(resolveQuickAddCategory("get_buddy", cats)).toBe("get_buddy");
+  });
+
+  it("falls back to TGM Tasks when the remembered category is gone", () => {
+    expect(resolveQuickAddCategory("archived_one", cats)).toBe("tgm_tasks");
+  });
+
+  it("falls back to the first category when there is no TGM Tasks", () => {
+    expect(resolveQuickAddCategory(null, [{ key: "daily_tasks", label: "Daily Tasks" }])).toBe(
+      "daily_tasks",
+    );
+    expect(resolveQuickAddCategory(null, [])).toBe("");
   });
 });

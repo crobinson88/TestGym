@@ -3,7 +3,25 @@ import { Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import type { SectionConfig } from "../sections";
+import { QUICK_ADD_CATEGORY_STORAGE_KEY, resolveQuickAddCategory } from "../composer";
 import { TaskComposer } from "./TaskComposer";
+
+function loadQuickAddCategory(): string | null {
+  try {
+    return localStorage.getItem(QUICK_ADD_CATEGORY_STORAGE_KEY);
+  } catch {
+    // ignore unavailable storage — fall back to the initial default
+    return null;
+  }
+}
+
+function rememberQuickAddCategory(key: string) {
+  try {
+    localStorage.setItem(QUICK_ADD_CATEGORY_STORAGE_KEY, key);
+  } catch {
+    // ignore storage failures — the pick still holds for the session
+  }
+}
 
 // Add a task from the top of the board without scrolling to its column: the
 // same fields as a column composer plus the category picker.
@@ -16,6 +34,9 @@ export function QuickAdd({
 }) {
   const [open, setOpen] = useState(false);
   const [added, setAdded] = useState<{ title: string; label: string } | null>(null);
+  // The default category is whichever one was last quick-added to (remembered
+  // per device); before anything is remembered it opens on TGM Tasks.
+  const [defaultKey, setDefaultKey] = useState(loadQuickAddCategory);
 
   if (categories.length === 0) return null;
 
@@ -49,6 +70,11 @@ export function QuickAdd({
           <TaskComposer
             snapshot_date={snapshot_date}
             categories={categories}
+            defaultSectionKey={resolveQuickAddCategory(defaultKey, categories)}
+            onSectionChange={(key) => {
+              setDefaultKey(key);
+              rememberQuickAddCategory(key);
+            }}
             onCancel={() => setOpen(false)}
             onCreated={(title, cfg) => setAdded({ title, label: cfg.label })}
           />
