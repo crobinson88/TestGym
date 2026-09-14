@@ -82,6 +82,10 @@ interface ItemRowProps {
   // Read-only mirror rows: no drag handle, a marker in its place — a Flame for
   // Do First, a ThumbsDown for Don't want to do.
   marker?: "flame" | "thumbs";
+  // Keep the rank selector in the row even on a phone. Only the Priorities
+  // column sets it: the rank is that column's ordinal, so dropping it would
+  // leave its rows unnumbered.
+  rankAlways?: boolean;
 }
 
 // Draggable row for the category board columns.
@@ -100,7 +104,7 @@ export function PriorityItemRow(props: ItemRowProps) {
     id: PRIORITY_SORTABLE_PREFIX + props.item.id,
     data: { priority: true },
   });
-  return <ItemRowBase {...props} drag={toDragBinding(sortable)} />;
+  return <ItemRowBase {...props} rankAlways drag={toDragBinding(sortable)} />;
 }
 
 // Read-only row for the virtual Do First column. It mirrors an item that also
@@ -116,6 +120,80 @@ export function ReluctantItemRow(props: ItemRowProps) {
   return <ItemRowBase {...props} drag={STATIC_DRAG} marker="thumbs" />;
 }
 
+// The rank / quadrant selectors. Pulled out of the row body because the phone
+// layout drops them from the row (too little width for the title) and offers
+// them in the expanded detail instead.
+function RankSelect({
+  item,
+  takenRanks,
+  className,
+}: {
+  item: LocalTdlItem;
+  takenRanks: Set<number>;
+  className?: string;
+}) {
+  return (
+    <select
+      value={item.priority_rank ?? ""}
+      onChange={(e) => {
+        const v = e.currentTarget.value;
+        void setPriorityRank(item.id, v === "" ? null : Number(v));
+      }}
+      aria-label={item.priority_rank != null ? `Priority rank ${item.priority_rank}` : "Set priority rank"}
+      title={item.priority_rank != null ? `Priority ${item.priority_rank}` : "Set priority rank"}
+      className={cn(
+        "h-9 w-9 shrink-0 cursor-pointer appearance-none rounded-lg bg-transparent text-center text-sm font-semibold tabular-nums outline-none focus:bg-surface2",
+        item.priority_rank != null ? "text-warn" : "text-muted hover:text-text",
+        className,
+      )}
+    >
+      <option value="">—</option>
+      {Array.from({ length: MAX_PRIORITY_RANK }, (_, i) => i + 1).map((n) => (
+        <option key={n} value={n} disabled={takenRanks.has(n) && n !== item.priority_rank}>
+          {n}
+          {takenRanks.has(n) && n !== item.priority_rank ? " (taken)" : ""}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function QuadrantSelect({ item, className }: { item: LocalTdlItem; className?: string }) {
+  return (
+    <select
+      value={item.eisenhower_quadrant ?? ""}
+      onChange={(e) => {
+        const v = e.currentTarget.value;
+        void setQuadrant(item.id, v === "" ? null : (v as TdlQuadrant));
+      }}
+      aria-label={
+        item.eisenhower_quadrant != null
+          ? `Quadrant ${QUADRANT_BY_KEY[item.eisenhower_quadrant].label}`
+          : "Set Eisenhower quadrant"
+      }
+      title={
+        item.eisenhower_quadrant != null
+          ? `${QUADRANT_BY_KEY[item.eisenhower_quadrant].label} — ${QUADRANT_BY_KEY[item.eisenhower_quadrant].hint}`
+          : "Set Eisenhower quadrant"
+      }
+      className={cn(
+        "h-9 w-10 shrink-0 cursor-pointer appearance-none rounded-lg bg-transparent text-center text-[11px] font-semibold uppercase outline-none focus:bg-surface2",
+        item.eisenhower_quadrant != null
+          ? QUADRANT_COLOR[item.eisenhower_quadrant]
+          : "text-muted hover:text-text",
+        className,
+      )}
+    >
+      <option value="">—</option>
+      {QUADRANTS.map((q) => (
+        <option key={q.key} value={q.key}>
+          {q.short} · {q.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ItemRowBase({
   item,
   categories,
@@ -128,6 +206,7 @@ function ItemRowBase({
   onToggleSelect,
   onBulkActed,
   marker,
+  rankAlways,
   drag,
 }: ItemRowProps & { drag: DragBinding }) {
   const [editing, setEditing] = useState(false);
@@ -184,14 +263,14 @@ function ItemRowBase({
         </button>
       ) : marker === "flame" ? (
         <span
-          className="flex h-9 w-6 shrink-0 items-center justify-center text-danger/70"
+          className="hidden h-9 w-6 shrink-0 items-center justify-center text-danger/70 sm:flex"
           aria-hidden
         >
           <Flame className="h-4 w-4" />
         </span>
       ) : marker === "thumbs" ? (
         <span
-          className="flex h-9 w-6 shrink-0 items-center justify-center text-warn"
+          className="hidden h-9 w-6 shrink-0 items-center justify-center text-warn sm:flex"
           aria-hidden
         >
           <ThumbsDown className="h-4 w-4" />
@@ -258,57 +337,12 @@ function ItemRowBase({
           {item.time_estimate_min != null ? item.time_estimate_min : <Clock className="h-4 w-4" />}
         </button>
       )}
-      <select
-        value={item.priority_rank ?? ""}
-        onChange={(e) => {
-          const v = e.currentTarget.value;
-          void setPriorityRank(item.id, v === "" ? null : Number(v));
-        }}
-        aria-label={item.priority_rank != null ? `Priority rank ${item.priority_rank}` : "Set priority rank"}
-        title={item.priority_rank != null ? `Priority ${item.priority_rank}` : "Set priority rank"}
-        className={cn(
-          "h-9 w-9 shrink-0 cursor-pointer appearance-none rounded-lg bg-transparent text-center text-sm font-semibold tabular-nums outline-none focus:bg-surface2",
-          item.priority_rank != null ? "text-warn" : "text-muted hover:text-text",
-        )}
-      >
-        <option value="">—</option>
-        {Array.from({ length: MAX_PRIORITY_RANK }, (_, i) => i + 1).map((n) => (
-          <option key={n} value={n} disabled={takenRanks.has(n) && n !== item.priority_rank}>
-            {n}
-            {takenRanks.has(n) && n !== item.priority_rank ? " (taken)" : ""}
-          </option>
-        ))}
-      </select>
-      <select
-        value={item.eisenhower_quadrant ?? ""}
-        onChange={(e) => {
-          const v = e.currentTarget.value;
-          void setQuadrant(item.id, v === "" ? null : (v as TdlQuadrant));
-        }}
-        aria-label={
-          item.eisenhower_quadrant != null
-            ? `Quadrant ${QUADRANT_BY_KEY[item.eisenhower_quadrant].label}`
-            : "Set Eisenhower quadrant"
-        }
-        title={
-          item.eisenhower_quadrant != null
-            ? `${QUADRANT_BY_KEY[item.eisenhower_quadrant].label} — ${QUADRANT_BY_KEY[item.eisenhower_quadrant].hint}`
-            : "Set Eisenhower quadrant"
-        }
-        className={cn(
-          "h-9 w-10 shrink-0 cursor-pointer appearance-none rounded-lg bg-transparent text-center text-[11px] font-semibold uppercase outline-none focus:bg-surface2",
-          item.eisenhower_quadrant != null
-            ? QUADRANT_COLOR[item.eisenhower_quadrant]
-            : "text-muted hover:text-text",
-        )}
-      >
-        <option value="">—</option>
-        {QUADRANTS.map((q) => (
-          <option key={q.key} value={q.key}>
-            {q.short} · {q.label}
-          </option>
-        ))}
-      </select>
+      <RankSelect
+        item={item}
+        takenRanks={takenRanks}
+        className={cn(!rankAlways && "hidden sm:block")}
+      />
+      <QuadrantSelect item={item} className="hidden sm:block" />
       <div className="min-w-0 flex-1">
         {editing ? (
           <Input
@@ -408,7 +442,28 @@ function ItemRowBase({
         onOpenChange={setMenu}
       />
       </div>
-      {detailOpen && <ItemDetail item={item} />}
+      {detailOpen && (
+        <>
+          <div className="mt-2 flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted sm:hidden">
+            {!rankAlways && (
+              <>
+                <span>Priority</span>
+                <RankSelect
+                  item={item}
+                  takenRanks={takenRanks}
+                  className="mr-2 w-auto rounded-lg border border-line bg-surface2 px-2 text-left"
+                />
+              </>
+            )}
+            <span>Quadrant</span>
+            <QuadrantSelect
+              item={item}
+              className="w-auto rounded-lg border border-line bg-surface2 px-2 text-left"
+            />
+          </div>
+          <ItemDetail item={item} />
+        </>
+      )}
     </li>
   );
 }
