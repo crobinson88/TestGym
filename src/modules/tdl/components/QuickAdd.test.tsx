@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QuickAdd } from "./QuickAdd";
 import type { SectionConfig } from "../sections";
 
@@ -39,6 +39,7 @@ function open() {
 beforeEach(() => {
   createItem.mockReset();
   createItem.mockResolvedValue({});
+  localStorage.clear();
 });
 
 describe("QuickAdd", () => {
@@ -50,8 +51,24 @@ describe("QuickAdd", () => {
     expect(screen.getByLabelText("Category")).toBeTruthy();
   });
 
+  it("opens on TGM Tasks before any category has been picked", () => {
+    open();
+    expect((screen.getByLabelText("Category") as HTMLSelectElement).value).toBe("tgm_tasks");
+  });
+
+  it("remembers the picked category as the default next time", () => {
+    open();
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "follow_ups" } });
+    expect(localStorage.getItem("tdl:quickAddCategory")).toBe("follow_ups");
+
+    cleanup();
+    open();
+    expect((screen.getByLabelText("Category") as HTMLSelectElement).value).toBe("follow_ups");
+  });
+
   it("saves to the picked category with the quadrant", async () => {
     open();
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "follow_ups" } });
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "  Chase the quote  " },
     });
@@ -75,6 +92,7 @@ describe("QuickAdd", () => {
 
   it("asks for a quadrant before saving", async () => {
     open();
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "follow_ups" } });
     fireEvent.change(screen.getByLabelText("Task title"), { target: { value: "No quadrant" } });
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));
 
@@ -84,6 +102,7 @@ describe("QuickAdd", () => {
 
   it("asks for minutes only when the picked category requires them", async () => {
     open();
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "follow_ups" } });
     expect(screen.queryByLabelText(/Time to complete estimate/)).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Category"), { target: { value: "tgm_tasks" } });
@@ -112,6 +131,7 @@ describe("QuickAdd", () => {
 
   it("clears the fields after a save so the next task starts fresh", async () => {
     open();
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "follow_ups" } });
     fireEvent.change(screen.getByLabelText("Task title"), { target: { value: "First" } });
     fireEvent.click(screen.getByRole("button", { name: /DL · Delegate/ }));
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));

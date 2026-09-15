@@ -50,3 +50,25 @@ export function validateDraft(draft: ComposerDraft): ComposerValidation {
   const ok = !errors.title && !errors.estimate && !errors.quadrant && !errors.section;
   return { ok, title, estimate, errors };
 }
+
+// The quick-add bar's category default is a per-device preference (like the
+// view mode and board category): whichever category you last quick-added to
+// leads the picker next time. Before anything is remembered it opens on TGM
+// Tasks — matched by key or label, since categories are user-managed rows and
+// a hand-made one won't carry the seeded key.
+export const QUICK_ADD_CATEGORY_STORAGE_KEY = "tdl:quickAddCategory";
+export const INITIAL_QUICK_ADD_KEY = "tgm_tasks";
+export const INITIAL_QUICK_ADD_LABEL = "TGM Tasks";
+
+export function resolveQuickAddCategory(
+  remembered: string | null | undefined,
+  categories: readonly { key: string; label: string }[],
+): string {
+  if (remembered && categories.some((c) => c.key === remembered)) return remembered;
+  const initial = categories.find(
+    (c) =>
+      c.key === INITIAL_QUICK_ADD_KEY ||
+      c.label.trim().toLowerCase() === INITIAL_QUICK_ADD_LABEL.toLowerCase(),
+  );
+  return initial?.key ?? categories[0]?.key ?? "";
+}

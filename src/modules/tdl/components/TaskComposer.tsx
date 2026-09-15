@@ -18,10 +18,12 @@ export function TaskComposer({
   categories,
   fixedSection,
   boardListId,
+  defaultSectionKey,
   autoFocus = true,
   collapseWhenEmpty = false,
   onCancel,
   onCreated,
+  onSectionChange,
 }: {
   snapshot_date: string;
   // Pickable categories. Ignored when `fixedSection` is set.
@@ -30,6 +32,9 @@ export function TaskComposer({
   fixedSection?: SectionConfig;
   // Board View only: the list lane the new card lands in.
   boardListId?: string;
+  // The category the picker opens on (and falls back to when the current pick
+  // goes away). Ignored when `fixedSection` is set.
+  defaultSectionKey?: string;
   autoFocus?: boolean;
   // Close the composer when the title is blurred/submitted while empty. The
   // column composer collapses that way; the quick-add bar keeps its category
@@ -37,9 +42,11 @@ export function TaskComposer({
   collapseWhenEmpty?: boolean;
   onCancel: () => void;
   onCreated?: (title: string, section: SectionConfig) => void;
+  // Fires when the category picker changes, so the caller can remember it.
+  onSectionChange?: (key: string) => void;
 }) {
   const [sectionKey, setSectionKey] = useState(
-    () => fixedSection?.key ?? categories[0]?.key ?? "",
+    () => fixedSection?.key ?? defaultSectionKey ?? categories[0]?.key ?? "",
   );
   const [draft, setDraft] = useState("");
   const [estimate, setEstimate] = useState("");
@@ -59,13 +66,16 @@ export function TaskComposer({
     [fixedSection, categories, sectionKey],
   );
 
-  // Categories arrive from a live query; fall back to the first one if the
-  // picked key is gone (archived elsewhere) or nothing was picked yet.
+  // Categories arrive from a live query; fall back to the default (else the
+  // first one) if the picked key is gone (archived elsewhere) or nothing was
+  // picked yet.
   useEffect(() => {
     if (fixedSection) return;
     if (categories.length === 0) return;
-    if (!categories.some((c) => c.key === sectionKey)) setSectionKey(categories[0].key);
-  }, [fixedSection, categories, sectionKey]);
+    if (categories.some((c) => c.key === sectionKey)) return;
+    const fallback = categories.find((c) => c.key === defaultSectionKey) ?? categories[0];
+    setSectionKey(fallback.key);
+  }, [fixedSection, categories, sectionKey, defaultSectionKey]);
 
   const requiresEstimate = cfg?.hasTimeEstimate ?? false;
 
@@ -130,6 +140,7 @@ export function TaskComposer({
             value={sectionKey}
             onChange={(e) => {
               setSectionKey(e.currentTarget.value);
+              onSectionChange?.(e.currentTarget.value);
               setErrors((p) => ({ ...p, section: false, estimate: false }));
             }}
             aria-label="Category"
