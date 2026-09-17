@@ -14,8 +14,8 @@ import {
   arrayMove,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CheckSquare, ChevronsDownUp, ChevronsUpDown, Search } from "lucide-react";
-import { Input } from "@/components/ui/Input";
+import { CheckSquare, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { SearchBox } from "../components/SearchBox";
 import { Button } from "@/components/ui/Button";
 import { todayIsoDate } from "@/lib/utils";
 import {
@@ -495,17 +495,15 @@ export default function DayView() {
           <ViewToggle value={viewMode} onChange={setViewMode} />
           {!empty && (
             <>
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent" />
-              <Input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search tasks…"
-                aria-label="Search tasks"
-                className="h-10 border-accent/50 bg-accent/10 pl-9 text-sm placeholder:text-text/70 focus:bg-accent/15"
-              />
-            </div>
+            <SearchBox
+              value={query}
+              onChange={setQuery}
+              placeholder="Search tasks…"
+              ariaLabel="Search tasks"
+              className="order-first basis-full sm:order-none sm:flex-1"
+              iconClassName="text-accent"
+              inputClassName="border-accent/50 bg-accent/10 placeholder:text-text/70 focus:bg-accent/15"
+            />
             <CreatedRangeFilter
               value={createdRange}
               onChange={setCreatedRange}

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { ArchiveRestore, ChevronLeft, Search } from "lucide-react";
+import { ArchiveRestore, ChevronLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { SearchBox } from "../components/SearchBox";
 import { dayMonth, todayIsoDate } from "@/lib/utils";
 import { useArchivedItems } from "../hooks";
 import { useCategories } from "../categories";
@@ -61,17 +61,13 @@ export default function ArchiveView() {
           <>
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                  <Input
-                    type="search"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search archived…"
-                    aria-label="Search archived items"
-                    className="h-10 pl-9 text-sm"
-                  />
-                </div>
+                <SearchBox
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search archived…"
+                  ariaLabel="Search archived items"
+                  className="basis-full sm:flex-1"
+                />
                 <CreatedRangeFilter
                   value={createdRange}
                   onChange={setCreatedRange}
