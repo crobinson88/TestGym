@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -599,6 +600,35 @@ interface ChartDatum {
   [category: string]: number | string;
 }
 
+function WeeklyVolumeTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { name?: string; value?: number; color?: string; payload?: ChartDatum }[];
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const total = payload[0]?.payload?.total ?? 0;
+  return (
+    <div
+      style={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
+      className="px-3 py-2 text-xs"
+    >
+      <div className="text-muted">Week of {prettyDate(label as string)}</div>
+      {payload.map((entry) => (
+        <div key={entry.name} style={{ color: entry.color }}>
+          {entry.name} : {formatFull(entry.value ?? 0)}
+        </div>
+      ))}
+      <div className="mt-1 border-t border-line pt-1 font-semibold text-text">
+        Total : {formatFull(total)} lb
+      </div>
+    </div>
+  );
+}
+
 function WeeklyChart({
   data,
   categories,
@@ -629,25 +659,30 @@ function WeeklyChart({
           width={44}
           tickFormatter={(v) => formatVolume(v as number)}
         />
-        <Tooltip
-          contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 8 }}
-          labelStyle={{ color: "#8a8a8a" }}
-          formatter={(value, name) => [formatFull(value as number), name as string]}
-          labelFormatter={(label) => `Week of ${prettyDate(label as string)}`}
-        />
+        <Tooltip content={<WeeklyVolumeTooltip />} />
         <Legend
           wrapperStyle={{ fontSize: 12 }}
           iconType="circle"
           iconSize={8}
         />
-        {categories.map((cat) => (
+        {categories.map((cat, i) => (
           <Bar
             key={cat}
             dataKey={cat}
             stackId="vol"
             fill={CATEGORY_COLORS[cat] ?? FALLBACK_COLOR}
             radius={[0, 0, 0, 0]}
-          />
+          >
+            {i === categories.length - 1 && (
+              <LabelList
+                dataKey="total"
+                position="top"
+                fontSize={10}
+                fill="#8a8a8a"
+                formatter={(v: number) => formatVolume(v)}
+              />
+            )}
+          </Bar>
         ))}
       </BarChart>
     </ResponsiveContainer>
