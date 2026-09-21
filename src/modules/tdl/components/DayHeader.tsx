@@ -11,6 +11,7 @@ import { CalendarSyncButton } from "./CalendarSyncButton";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 import { ResetStatusesButton } from "./ResetStatusesButton";
 import { RollForwardButton } from "./RollForwardButton";
+import { SuggestReluctantButton } from "./SuggestReluctantButton";
 import { SuggestSnoozeButton } from "./SuggestSnoozeButton";
 import { TargetPies } from "./TargetPies";
 
@@ -142,6 +143,7 @@ export function DayHeader({
         <CalendarSyncButton snapshot_date={snapshot_date} items={items} categories={categories} />
         <RollForwardButton toDate={snapshot_date} />
         <SuggestSnoozeButton snapshot_date={snapshot_date} items={items} />
+        <SuggestReluctantButton snapshot_date={snapshot_date} items={items} />
         <ResetStatusesButton snapshot_date={snapshot_date} items={items} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
