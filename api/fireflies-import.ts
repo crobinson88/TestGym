@@ -19,7 +19,13 @@ import {
   SECTION,
   type Db,
 } from "./_fireflies.js";
-import { createCalendarEvent, getCalendarAccessToken, getCalendarBusy } from "./_gcal.js";
+import {
+  createCalendarEvent,
+  getCalendarAccessToken,
+  getCalendarBusy,
+  getCalendarReadAccessToken,
+  listBusyCalendarIds,
+} from "./_gcal.js";
 import { triageInbox } from "./_workstreams.js";
 
 // Listing is quick; the calendar branch loops a handful of REST calls. 60s covers
@@ -129,15 +135,22 @@ async function handleCalendarBusy(body: CalendarSyncBody): Promise<Response> {
   if (!timeMin || !timeMax) return json({ error: "missing window" }, 400);
   const timeZone = body.timeZone?.trim() || "America/New_York";
 
-  let accessToken: string;
+  // Read busy time across ALL the user's calendars so tasks are scheduled around
+  // every calendar, not just the primary one. Enumerating the calendar list
+  // needs a read scope; if that scope isn't authorised yet (calendarList 403s),
+  // fall back to the single write-target calendar under the events scope so the
+  // feature keeps working exactly as before.
   try {
-    accessToken = await getCalendarAccessToken();
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : "auth failed" }, 500);
-  }
-
-  try {
-    const busy = await getCalendarBusy(accessToken, timeMin, timeMax, timeZone);
+    let calendarIds: string[] | undefined;
+    let accessToken: string;
+    try {
+      accessToken = await getCalendarReadAccessToken();
+      calendarIds = await listBusyCalendarIds(accessToken);
+    } catch {
+      accessToken = await getCalendarAccessToken();
+      calendarIds = undefined;
+    }
+    const busy = await getCalendarBusy(accessToken, timeMin, timeMax, timeZone, calendarIds);
     return json({ busy }, 200);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "freebusy failed" }, 500);
