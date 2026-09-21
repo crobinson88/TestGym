@@ -11,6 +11,10 @@ function b64url(buf: Buffer): string {
 }
 
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+// Reading the user's full calendar list needs a read scope; calendar.events
+// alone can't enumerate calendarList. Must also be authorised on the service
+// account's client id in Workspace admin (domain-wide delegation).
+export const CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 // Mint an OAuth access token for the calendar scope by signing a service-account
@@ -18,6 +22,13 @@ export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.reado
 // calendar we write to (domain-wide delegation on a Workspace domain).
 export async function getCalendarAccessToken(): Promise<string> {
   return getGoogleAccessToken(CALENDAR_SCOPE);
+}
+
+// Read-scope token used for enumerating calendars and reading busy time across
+// all of them (freeBusy works under either scope, but calendarList.list needs a
+// read scope).
+export async function getCalendarReadAccessToken(): Promise<string> {
+  return getGoogleAccessToken(CALENDAR_READONLY_SCOPE);
 }
 
 // Same JWT dance for any delegated scope. Each scope must also be authorised on
@@ -76,38 +87,80 @@ export interface BusyPeriod {
   end: string;
 }
 
-// Read the target calendar's busy blocks between two instants via the freeBusy
-// API, so the client can slot new events into the gaps. `timeMin`/`timeMax` are
-// RFC3339 with an offset (or Z) — the client builds them from its own clock.
+// List every calendar the impersonated user can see, returning their ids so
+// busy time can be read across all of them. Hidden calendars are skipped. Needs
+// a read scope (see getCalendarReadAccessToken). Paginates in case the account
+// has many calendars.
+export async function listBusyCalendarIds(accessToken: string): Promise<string[]> {
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const url = new URL("https://www.googleapis.com/calendar/v3/users/me/calendarList");
+    url.searchParams.set("minAccessRole", "reader");
+    url.searchParams.set("showHidden", "false");
+    url.searchParams.set("maxResults", "250");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const body = (await res.json().catch(() => null)) as
+      | {
+          items?: { id?: string; hidden?: boolean; deleted?: boolean }[];
+          nextPageToken?: string;
+          error?: { message?: string };
+        }
+      | null;
+    if (!res.ok || !body) {
+      throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+    }
+    for (const c of body.items ?? []) {
+      if (c.id && !c.hidden && !c.deleted) ids.push(c.id);
+    }
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return ids;
+}
+
+// Read busy blocks between two instants via the freeBusy API across one or more
+// calendars, so the client can slot new events into the gaps left by every
+// calendar. `timeMin`/`timeMax` are RFC3339 with an offset (or Z) — the client
+// builds them from its own clock. Busy periods from all calendars are unioned;
+// the client merges any that overlap. freeBusy caps at 50 calendars per call,
+// so the ids are chunked. A per-calendar error (e.g. one calendar the account
+// lost access to) is skipped rather than failing the whole read.
 export async function getCalendarBusy(
   accessToken: string,
   timeMin: string,
   timeMax: string,
   timeZone: string,
+  calendarIds: string[] = [process.env.GOOGLE_CALENDAR_ID ?? ALLOWED_EMAIL],
 ): Promise<BusyPeriod[]> {
-  const calendarId = process.env.GOOGLE_CALENDAR_ID ?? ALLOWED_EMAIL;
-  const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ timeMin, timeMax, timeZone, items: [{ id: calendarId }] }),
-  });
-  const body = (await res.json().catch(() => null)) as
-    | {
-        calendars?: Record<string, { busy?: BusyPeriod[]; errors?: { reason?: string }[] }>;
-        error?: { message?: string };
-      }
-    | null;
-  if (!res.ok || !body) {
-    throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+  const ids = calendarIds.length > 0 ? calendarIds : [process.env.GOOGLE_CALENDAR_ID ?? ALLOWED_EMAIL];
+  const busy: BusyPeriod[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ timeMin, timeMax, timeZone, items: chunk.map((id) => ({ id })) }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | {
+          calendars?: Record<string, { busy?: BusyPeriod[]; errors?: { reason?: string }[] }>;
+          error?: { message?: string };
+        }
+      | null;
+    if (!res.ok || !body) {
+      throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+    }
+    for (const cal of Object.values(body.calendars ?? {})) {
+      // Skip a calendar the account can't read rather than aborting the day.
+      if (cal?.errors?.length) continue;
+      for (const b of cal?.busy ?? []) busy.push({ start: b.start, end: b.end });
+    }
   }
-  const cal = body.calendars?.[calendarId];
-  if (cal?.errors?.length) {
-    throw new Error(cal.errors[0]?.reason ?? "freeBusy error");
-  }
-  return (cal?.busy ?? []).map((b) => ({ start: b.start, end: b.end }));
+  return busy;
 }
 
 // Create one event on the target calendar. Returns the new event id.
