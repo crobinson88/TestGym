@@ -12,6 +12,7 @@ import { StatusPill } from "./StatusPill";
 
 // One-tap horizons for "wake everything ticked at the same time".
 const HORIZONS: { label: string; days: number }[] = [
+  { label: "1 day", days: 1 },
   { label: "3 days", days: 3 },
   { label: "1 week", days: 7 },
   { label: "2 weeks", days: 14 },
