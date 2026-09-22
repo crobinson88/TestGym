@@ -19,24 +19,32 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
 import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
+import { addDays } from "@/lib/utils";
 import {
   DEFAULT_DURATION_MIN,
   DEFAULT_END_MINUTES,
   DEFAULT_START_MINUTES,
   DURATION_STEP_MIN,
   MAX_DURATION_MIN,
+  MINUTES_PER_DAY,
   MIN_DURATION_MIN,
+  SPAN_DAY_OPTIONS,
   applyCandidateOrder,
+  busyForDay,
   clampDuration,
   collectCalendarCandidates,
+  dayOffsetOf,
   googleCalendarDayUrl,
   groupCandidates,
   matchesCandidateQuery,
+  minuteOfDay,
   minutesToTime,
   parseTimeToMinutes,
+  prettyDayLabel,
   prettyMinutes,
   reorderByStep,
   reorderForDrop,
+  scheduleDayOffsets,
   scheduleEvents,
   type BusyInterval,
   type CalendarCandidate,
@@ -67,33 +75,49 @@ function localTimeZone(): string {
   }
 }
 
-// The day's UTC window ["YYYY-MM-DDT00:00" local, next midnight local), built
-// from the browser's own clock so the offset is correct for the viewed day.
-function dayWindowUtc(date: string): { timeMin: string; timeMax: string } {
+// The UTC window from local midnight of `date` to local midnight `days` days
+// later, built from the browser's own clock so the offset is right for each day.
+function spanWindowUtc(date: string, days: number): { timeMin: string; timeMax: string } {
   const [y, m, d] = date.split("-").map(Number);
   return {
     timeMin: new Date(y, m - 1, d, 0, 0, 0, 0).toISOString(),
-    timeMax: new Date(y, m - 1, d + 1, 0, 0, 0, 0).toISOString(),
+    timeMax: new Date(y, m - 1, d + days, 0, 0, 0, 0).toISOString(),
   };
 }
 
-// Convert Google's UTC busy periods into minutes-from-midnight of `date`,
-// clamped to the day, so the pure scheduler can slot around them.
+// An instant as schedule minutes — whole local days since `date` × 1440 plus
+// the local wall-clock minute — so DST changes inside the span don't skew later
+// days by an hour.
+function scheduleMinutesOf(instant: Date, date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  const dayIndex = Math.round(
+    (Date.UTC(instant.getFullYear(), instant.getMonth(), instant.getDate()) -
+      Date.UTC(y, m - 1, d)) /
+      86_400_000,
+  );
+  return dayIndex * MINUTES_PER_DAY + instant.getHours() * 60 + instant.getMinutes();
+}
+
+// Convert Google's UTC busy periods into schedule minutes of `date`, clamped to
+// the span, so the pure scheduler can slot around them.
 function toBusyMinutes(
   periods: readonly { start: string; end: string }[],
   date: string,
+  days: number,
 ): BusyInterval[] {
-  const [y, m, d] = date.split("-").map(Number);
-  const dayStart = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
-  const clamp = (n: number) => Math.max(0, Math.min(24 * 60, n));
+  const clamp = (n: number) => Math.max(0, Math.min(days * MINUTES_PER_DAY, n));
   return periods
     .map((p) => ({
-      start: clamp(Math.round((new Date(p.start).getTime() - dayStart) / 60000)),
-      end: clamp(Math.round((new Date(p.end).getTime() - dayStart) / 60000)),
+      start: clamp(scheduleMinutesOf(new Date(p.start), date)),
+      end: clamp(scheduleMinutesOf(new Date(p.end), date)),
     }))
-    // Drop empty blocks and all-day markers (which span the whole day and would
-    // otherwise shove every task past midnight).
-    .filter((b) => b.end > b.start && !(b.start <= 0 && b.end >= 24 * 60));
+    // Drop empty blocks and all-day markers (midnight to midnight, one day or
+    // several), which would otherwise shove every task off the day.
+    .filter(
+      (b) =>
+        b.end > b.start &&
+        !(b.start % MINUTES_PER_DAY === 0 && b.end - b.start >= MINUTES_PER_DAY),
+    );
 }
 
 export function CalendarSyncButton({
@@ -111,6 +135,11 @@ export function CalendarSyncButton({
   const [startTime, setStartTime] = useState(minutesToTime(DEFAULT_START_MINUTES));
   const [endTime, setEndTime] = useState(minutesToTime(DEFAULT_END_MINUTES));
   const [overrides, setOverrides] = useState<Record<string, CalendarOverride>>({});
+  // How many days to spread the schedule over; a task never splits across days.
+  const [spanDays, setSpanDays] = useState(1);
+  const [skipWeekends, setSkipWeekends] = useState(true);
+  // Which day the timeline pane is drawing, as an offset from the viewed day.
+  const [viewOffset, setViewOffset] = useState(0);
   // Hand-picked block order from dragging the day view; null = the canonical
   // Priorities → Do First → Daily Tasks → other categories order.
   const [order, setOrder] = useState<string[] | null>(null);
@@ -136,7 +165,17 @@ export function CalendarSyncButton({
   // is flagged in the list instead of spilling into the evening.
   const endMinutes = parseTimeToMinutes(endTime) ?? DEFAULT_END_MINUTES;
   const windowInvalid = endMinutes <= startMinutes;
-  const calendarUrl = googleCalendarDayUrl(snapshot_date);
+
+  const dayOffsets = useMemo(
+    () => scheduleDayOffsets(snapshot_date, spanDays, skipWeekends),
+    [snapshot_date, spanDays, skipWeekends],
+  );
+  const multiDay = dayOffsets.length > 1;
+  // Calendar days the busy read has to cover — weekends skipped still sit inside.
+  const spanLength = dayOffsets[dayOffsets.length - 1] + 1;
+  const activeOffset = dayOffsets.includes(viewOffset) ? viewOffset : 0;
+  const dateOf = (offset: number) => addDays(snapshot_date, offset);
+  const calendarUrl = googleCalendarDayUrl(dateOf(activeOffset));
 
   // Canonical order: Priorities → Do First → Daily Tasks → other categories.
   const candidates = useMemo(
@@ -154,10 +193,34 @@ export function CalendarSyncButton({
     () =>
       scheduleEvents(
         ordered.filter((c) => !excluded.has(c.id)),
-        { date: snapshot_date, startMinutes, endMinutes, busy, overrides },
+        { date: snapshot_date, startMinutes, endMinutes, days: dayOffsets, busy, overrides },
       ),
-    [ordered, excluded, snapshot_date, startMinutes, endMinutes, busy, overrides],
+    [ordered, excluded, snapshot_date, startMinutes, endMinutes, dayOffsets, busy, overrides],
   );
+
+  // The timeline draws one day at a time; these are that day's blocks and busy
+  // time, shifted to its own minutes-from-midnight.
+  const dayBase = activeOffset * MINUTES_PER_DAY;
+  const dayEvents = useMemo(
+    () =>
+      scheduled
+        .filter((e) => dayOffsetOf(e.startMinutes) === activeOffset)
+        .map((e) => ({
+          ...e,
+          startMinutes: e.startMinutes - dayBase,
+          endMinutes: e.endMinutes - dayBase,
+        })),
+    [scheduled, activeOffset, dayBase],
+  );
+  const dayBusy = useMemo(() => busyForDay(busy, activeOffset), [busy, activeOffset]);
+  const countByOffset = useMemo(() => {
+    const out = new Map<number, number>();
+    for (const e of scheduled) {
+      const off = dayOffsetOf(e.startMinutes);
+      out.set(off, (out.get(off) ?? 0) + 1);
+    }
+    return out;
+  }, [scheduled]);
 
   const byId = useMemo(
     () => new Map(scheduled.map((e) => [e.id, e])),
@@ -206,7 +269,7 @@ export function CalendarSyncButton({
     let cancelled = false;
     setBusyLoading(true);
     setBusyError(null);
-    const { timeMin, timeMax } = dayWindowUtc(snapshot_date);
+    const { timeMin, timeMax } = spanWindowUtc(snapshot_date, spanLength);
     fetch("/api/fireflies-import", {
       method: "POST",
       headers: {
@@ -225,7 +288,7 @@ export function CalendarSyncButton({
           | { busy?: { start: string; end: string }[]; error?: string }
           | null;
         if (!res.ok || !b?.busy) throw new Error(b?.error ?? `Failed (${res.status})`);
-        if (!cancelled) setBusy(toBusyMinutes(b.busy, snapshot_date));
+        if (!cancelled) setBusy(toBusyMinutes(b.busy, snapshot_date, spanLength));
       })
       .catch((e) => {
         if (cancelled) return;
@@ -238,7 +301,7 @@ export function CalendarSyncButton({
     return () => {
       cancelled = true;
     };
-  }, [open, session, snapshot_date]);
+  }, [open, session, snapshot_date, spanLength]);
 
   function openModal() {
     // The three headline groups start checked; the rest of the day's categories
@@ -247,6 +310,9 @@ export function CalendarSyncButton({
     setStartTime(minutesToTime(DEFAULT_START_MINUTES));
     setEndTime(minutesToTime(DEFAULT_END_MINUTES));
     setOverrides({});
+    setSpanDays(1);
+    setSkipWeekends(true);
+    setViewOffset(0);
     setOrder(null);
     setQuery("");
     setLengthRange(EMPTY_DURATION_RANGE);
@@ -312,6 +378,25 @@ export function CalendarSyncButton({
     });
   }
 
+  // Shrinking the span drops any pin left on a day that's no longer in it, so a
+  // block can't be booked onto a day the planner isn't showing.
+  function changeSpan(days: number, weekends: boolean) {
+    const offsets = new Set(scheduleDayOffsets(snapshot_date, days, weekends));
+    setSpanDays(days);
+    setSkipWeekends(weekends);
+    setOverrides((prev) => {
+      let changed = false;
+      const next: Record<string, CalendarOverride> = {};
+      for (const [id, o] of Object.entries(prev)) {
+        if (o.startMinutes != null && !offsets.has(dayOffsetOf(o.startMinutes))) {
+          changed = true;
+          if (o.durationMin != null) next[id] = { durationMin: o.durationMin };
+        } else next[id] = o;
+      }
+      return changed ? next : prev;
+    });
+  }
+
   function patchOverride(id: string, patch: CalendarOverride) {
     setOverrides((prev) => {
       const merged = { ...(prev[id] ?? {}), ...patch };
@@ -340,12 +425,24 @@ export function CalendarSyncButton({
       : DEFAULT_DURATION_MIN;
   }
 
+  // Where the row's start editor reads from: its pin, else where it landed,
+  // else the start of the day on view.
+  function pinnedOrPlacedStart(c: CalendarCandidate): number {
+    return overrides[c.id]?.startMinutes ?? byId.get(c.id)?.startMinutes ?? dayBase + startMinutes;
+  }
+
   function bumpDuration(c: CalendarCandidate, delta: number) {
     patchOverride(c.id, { durationMin: clampDuration(durationOf(c) + delta) });
   }
 
   // Picking a block on the timeline pulls its row up in the list, opened for
   // editing — the "find it and adjust it" path from the drawn day.
+  // "Wed, Sep 23 · 10:30 AM" once the schedule covers several days.
+  function prettyWhen(minutes: number): string {
+    const clock = prettyMinutes(minuteOfDay(minutes));
+    return multiDay ? `${prettyDayLabel(dateOf(dayOffsetOf(minutes)))} · ${clock}` : clock;
+  }
+
   function focusFromTimeline(id: string) {
     setQuery("");
     setLengthRange(EMPTY_DURATION_RANGE);
@@ -370,16 +467,17 @@ export function CalendarSyncButton({
     const event = byId.get(id);
     if (!event) return;
     setFocusedId(id);
+    const drop = dayBase + dropStartMinutes;
     if (event.pinned) {
-      patchOverride(id, { startMinutes: dropStartMinutes });
+      patchOverride(id, { startMinutes: drop });
       return;
     }
     setOrder(
       reorderForDrop(
         ordered.map((c) => c.id),
-        scheduled.filter((e) => !e.pinned),
+        scheduled.filter((e) => !e.pinned && dayOffsetOf(e.startMinutes) === activeOffset),
         id,
-        dropStartMinutes,
+        drop,
       ),
     );
   }
@@ -390,7 +488,9 @@ export function CalendarSyncButton({
     setOrder(
       reorderByStep(
         ordered.map((c) => c.id),
-        scheduled.filter((e) => !e.pinned).map((e) => e.id),
+        scheduled
+          .filter((e) => !e.pinned && dayOffsetOf(e.startMinutes) === activeOffset)
+          .map((e) => e.id),
         id,
         delta,
       ),
@@ -594,6 +694,33 @@ export function CalendarSyncButton({
                     windowInvalid ? "border-danger" : "border-line focus:border-accent"
                   }`}
                 />
+                <label htmlFor="cal-span-days">across</label>
+                <select
+                  id="cal-span-days"
+                  value={spanDays}
+                  onChange={(e) => changeSpan(Number(e.target.value), skipWeekends)}
+                  disabled={running}
+                  title="Spread the tasks over several days — each task stays on a single day"
+                  className="h-11 rounded-xl border border-line bg-surface2 px-3 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                >
+                  {SPAN_DAY_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1 ? "1 day" : `${n} days`}
+                    </option>
+                  ))}
+                </select>
+                {spanDays > 1 && (
+                  <label className="flex h-11 items-center gap-2 rounded-xl px-2 hover:bg-surface2">
+                    <input
+                      type="checkbox"
+                      checked={skipWeekends}
+                      onChange={(e) => changeSpan(spanDays, e.target.checked)}
+                      disabled={running}
+                      className="h-5 w-5 accent-accent"
+                    />
+                    Skip weekends
+                  </label>
+                )}
                 {windowInvalid && (
                   <span className="text-danger">End time must be after the start.</span>
                 )}
@@ -601,7 +728,8 @@ export function CalendarSyncButton({
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
                 <span>
                   {scheduled.length} of {candidates.length} scheduled ·{" "}
-                  {prettyMinutes(startMinutes)}–{prettyMinutes(endMinutes)}, {timelineHint}
+                  {prettyMinutes(startMinutes)}–{prettyMinutes(endMinutes)}
+                  {multiDay ? ` over ${dayOffsets.length} days` : ""}, {timelineHint}
                   {filtering
                     ? ` · showing ${visible.length}${searching ? ` matching “${query.trim()}”` : ""}${
                         lengthActive ? ` of ${describeDurationRange(lengthRange).toLowerCase()}` : ""
@@ -659,7 +787,9 @@ export function CalendarSyncButton({
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>
                     {overflow.length} task{overflow.length === 1 ? "" : "s"} won&rsquo;t fit before{" "}
-                    {prettyMinutes(endMinutes)} — highlighted below, and not added. Extend the day,
+                    {prettyMinutes(endMinutes)}
+                    {multiDay ? ` on any of the ${dayOffsets.length} days` : ""} — highlighted
+                    below, and not added. {multiDay ? "Add more days, extend" : "Extend"} the day,
                     shorten some blocks, or untick them.
                   </span>
                 </div>
@@ -804,6 +934,7 @@ export function CalendarSyncButton({
                                     onClick={() => {
                                       setFocusedId(c.id);
                                       setExpandedId(expanded ? null : c.id);
+                                      if (event) setViewOffset(dayOffsetOf(event.startMinutes));
                                     }}
                                     className="min-w-0 flex-1 py-2 text-left"
                                   >
@@ -822,9 +953,11 @@ export function CalendarSyncButton({
                                       {event?.pinned && <Pin className="h-3 w-3 text-accent" />}
                                       {doesNotFit && <AlertTriangle className="h-3 w-3" />}
                                       {event
-                                        ? `${prettyMinutes(event.startMinutes)} · ${prettyDuration(event.durationMin)}`
+                                        ? `${prettyWhen(event.startMinutes)} · ${prettyDuration(event.durationMin)}`
                                         : doesNotFit
-                                          ? `Won't fit before ${prettyMinutes(endMinutes)} · ${prettyDuration(duration)}`
+                                          ? `Won't fit before ${prettyMinutes(endMinutes)}${
+                                              multiDay ? " on any day" : ""
+                                            } · ${prettyDuration(duration)}`
                                           : "Not scheduled"}
                                     </span>
                                   </button>
@@ -848,14 +981,39 @@ export function CalendarSyncButton({
                                   <div className="mb-1 ml-9 mr-1 space-y-3 rounded-xl border border-line bg-surface2/60 p-3">
                                     <div className="flex items-center gap-2">
                                       <span className="w-14 shrink-0 text-xs text-muted">Start</span>
+                                      {multiDay && (
+                                        <select
+                                          value={dayOffsetOf(pinnedOrPlacedStart(c))}
+                                          onChange={(e) => {
+                                            const off = Number(e.target.value);
+                                            patchOverride(c.id, {
+                                              startMinutes:
+                                                off * MINUTES_PER_DAY +
+                                                minuteOfDay(pinnedOrPlacedStart(c)),
+                                            });
+                                          }}
+                                          disabled={running}
+                                          aria-label={`Day for ${c.title}`}
+                                          className="h-11 rounded-xl border border-line bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                        >
+                                          {dayOffsets.map((off) => (
+                                            <option key={off} value={off}>
+                                              {prettyDayLabel(dateOf(off))}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      )}
                                       <input
                                         type="time"
-                                        value={minutesToTime(
-                                          overrides[c.id]?.startMinutes ?? event?.startMinutes ?? startMinutes,
-                                        )}
+                                        value={minutesToTime(minuteOfDay(pinnedOrPlacedStart(c)))}
                                         onChange={(e) => {
                                           const mins = parseTimeToMinutes(e.target.value);
-                                          if (mins != null) patchOverride(c.id, { startMinutes: mins });
+                                          if (mins != null)
+                                            patchOverride(c.id, {
+                                              startMinutes:
+                                                dayOffsetOf(pinnedOrPlacedStart(c)) * MINUTES_PER_DAY +
+                                                mins,
+                                            });
                                         }}
                                         disabled={running}
                                         aria-label={`Start time for ${c.title}`}
@@ -946,19 +1104,51 @@ export function CalendarSyncButton({
                 }`}
               >
                 <div className="mb-1 flex items-center justify-between text-xs text-muted">
-                  <span className="text-sm font-medium text-text">Your day</span>
-                  <span>{prettyDuration(scheduled.reduce((n, e) => n + e.durationMin, 0))}</span>
+                  <span className="text-sm font-medium text-text">
+                    {multiDay ? prettyDayLabel(dateOf(activeOffset)) : "Your day"}
+                  </span>
+                  <span>
+                    {prettyDuration(dayEvents.reduce((n, e) => n + e.durationMin, 0))}
+                    {multiDay &&
+                      ` · ${prettyDuration(scheduled.reduce((n, e) => n + e.durationMin, 0))} total`}
+                  </span>
                 </div>
+                {multiDay && (
+                  <div
+                    role="tablist"
+                    aria-label="Day to show"
+                    className="mb-2 flex gap-1 overflow-x-auto pb-1"
+                  >
+                    {dayOffsets.map((off) => (
+                      <button
+                        key={off}
+                        type="button"
+                        role="tab"
+                        aria-selected={off === activeOffset}
+                        onClick={() => setViewOffset(off)}
+                        className={`flex h-11 shrink-0 flex-col items-center justify-center rounded-xl border px-3 text-[11px] leading-tight ${
+                          off === activeOffset
+                            ? "border-accent text-accent"
+                            : "border-line text-muted hover:text-text"
+                        }`}
+                      >
+                        <span className="font-medium">{prettyDayLabel(dateOf(off))}</span>
+                        <span>{countByOffset.get(off) ?? 0} tasks</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <p className="mb-3 text-xs text-muted">
-                  Drag a block by its handle to reorder your day — everything else shifts to fit.
-                  Nothing is booked after {prettyMinutes(endMinutes)}.
+                  Drag a block by its handle to reorder {multiDay ? "this day" : "your day"} —
+                  everything else shifts to fit. Nothing is booked after {prettyMinutes(endMinutes)}
+                  {multiDay ? ", and a task never splits across days" : ""}.
                 </p>
-                {scheduled.length === 0 && busy.length === 0 ? (
+                {dayEvents.length === 0 && dayBusy.length === 0 ? (
                   <p className="py-8 text-center text-xs text-muted">Nothing scheduled.</p>
                 ) : (
                   <DayTimeline
-                    events={scheduled}
-                    busy={busy}
+                    events={dayEvents}
+                    busy={dayBusy}
                     fromMinutes={startMinutes}
                     untilMinutes={windowInvalid ? null : endMinutes}
                     focusedId={focusedId}

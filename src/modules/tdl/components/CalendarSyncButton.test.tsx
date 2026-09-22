@@ -165,3 +165,18 @@ describe("CalendarSyncButton length range", () => {
     expect(screen.getByRole("button", { name: /^Select these 2$/ })).toBeTruthy();
   });
 });
+
+describe("CalendarSyncButton across several days", () => {
+  it("moves a task that won't fit today onto the next day, whole", () => {
+    openModal();
+    fireEvent.change(screen.getByLabelText("and"), { target: { value: "11:00" } });
+    const longRow = () => list().getByText("Long prio").closest("li") as HTMLElement;
+    expect(longRow().textContent).toMatch(/won't fit before 11:00 AM/i);
+    const before = scheduledCount();
+
+    fireEvent.change(screen.getByLabelText("across"), { target: { value: "2" } });
+    expect(longRow().textContent).toMatch(/Tue, Jul 28 · 9:00 AM · 2h/);
+    expect(scheduledCount()).toBe(before + 1);
+    expect(screen.getByRole("tab", { name: /Jul 28/ })).toBeTruthy();
+  });
+});

@@ -41,6 +41,68 @@ export const DEFAULT_END_HOUR = 19;
 export const DEFAULT_START_MINUTES = DEFAULT_START_HOUR * 60;
 export const DEFAULT_END_MINUTES = DEFAULT_END_HOUR * 60;
 
+// How many days the modal can spread a schedule over, and the choices offered.
+export const MINUTES_PER_DAY = 24 * 60;
+export const SPAN_DAY_OPTIONS = [1, 2, 3, 5, 7, 10] as const;
+export const MAX_SPAN_DAYS = 14;
+
+// The days a multi-day schedule books onto, as offsets from the viewed day:
+// `count` days starting with the viewed day itself, stepping over Saturdays and
+// Sundays when `skipWeekends` is set. The viewed day is always day 0, even when
+// it is a weekend — it's the day you opened the planner from.
+export function scheduleDayOffsets(
+  date: string,
+  count: number,
+  skipWeekends: boolean,
+): number[] {
+  const want = Math.min(MAX_SPAN_DAYS, Math.max(1, Math.round(count) || 1));
+  const out = [0];
+  for (let off = 1; out.length < want && off < want * 3 + 7; off++) {
+    if (skipWeekends && isWeekend(addDays(date, off))) continue;
+    out.push(off);
+  }
+  return out;
+}
+
+function isWeekend(date: string): boolean {
+  const [y, m, d] = date.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+// Which day (offset from the viewed day) a schedule minute falls on, and the
+// minute within that day. Schedule minutes run continuously from the viewed
+// day's midnight — 1500 is 1:00 AM the next day.
+export function dayOffsetOf(minutes: number): number {
+  return Math.floor(minutes / MINUTES_PER_DAY);
+}
+
+export function minuteOfDay(minutes: number): number {
+  return minutes - dayOffsetOf(minutes) * MINUTES_PER_DAY;
+}
+
+// Short day label for the multi-day tabs and rows: "Tue, Sep 22".
+export function prettyDayLabel(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  if (!y || !m || !d) return date;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+// Busy time clipped to one day of the schedule and shifted to that day's own
+// minutes-from-midnight, for drawing that day's timeline.
+export function busyForDay(busy: readonly BusyInterval[], offset: number): BusyInterval[] {
+  const from = offset * MINUTES_PER_DAY;
+  const to = from + MINUTES_PER_DAY;
+  return busy
+    .filter((b) => b.end > from && b.start < to)
+    .map((b) => ({ start: Math.max(b.start, from) - from, end: Math.min(b.end, to) - from }));
+}
+
 // Bounds for a hand-adjusted block length.
 export const MIN_DURATION_MIN = 5;
 export const MAX_DURATION_MIN = 12 * 60;
@@ -240,12 +302,14 @@ export function groupCandidates(
 // flow in the back-to-back chain.
 export interface CalendarOverride {
   durationMin?: number | null;
+  // Schedule minutes (see dayOffsetOf), so a pin carries its day too.
   startMinutes?: number | null;
 }
 
 export interface ScheduledEvent extends CalendarCandidate {
   durationMin: number;
-  // Minutes-from-midnight of the viewed day, for the timeline drawing.
+  // Schedule minutes from the viewed day's midnight — past 1440 on a
+  // multi-day schedule (dayOffsetOf / minuteOfDay split it back out).
   startMinutes: number;
   endMinutes: number;
   // True when the user pinned this block rather than letting it flow.
@@ -335,6 +399,13 @@ function localDateTime(date: string, minutesFromMidnight: number): string {
 // and the cursor doesn't move, so a shorter task further down the list can
 // still take the tail of the day. A pinned block is explicit intent and is
 // always placed, even if the user pinned it past the end of the window.
+//
+// `days` spreads the schedule over several days (offsets from `date`, see
+// scheduleDayOffsets), each with the same start–end window. A block goes on the
+// earliest day it fits whole — never split across days — and each day keeps its
+// own cursor, so a long task that spills to tomorrow doesn't stop a short one
+// behind it taking the tail of today. Anything that fits on none of the days is
+// the overflow.
 export function scheduleEvents(
   candidates: readonly CalendarCandidate[],
   opts: {
@@ -342,6 +413,7 @@ export function scheduleEvents(
     startHour?: number;
     startMinutes?: number;
     endMinutes?: number | null;
+    days?: readonly number[];
     defaultDurationMin?: number;
     busy?: readonly BusyInterval[];
     overrides?: Readonly<Record<string, CalendarOverride>>;
@@ -377,14 +449,24 @@ export function scheduleEvents(
 
   const busy = mergeBusy([...(opts.busy ?? []), ...pinnedBusy]);
   const limit = opts.endMinutes ?? null;
-  let cursor = startMinutes;
+  const days = opts.days && opts.days.length > 0 ? opts.days : [0];
+  // Without an end time a single day runs on unbounded (the old back-to-back
+  // chain); with several days each one still has to close at midnight.
+  const lanes = days.map((off) => {
+    const base = off * MINUTES_PER_DAY;
+    const end = limit != null ? base + limit : days.length > 1 ? base + MINUTES_PER_DAY : null;
+    return { cursor: base + startMinutes, limit: end };
+  });
   for (const c of candidates) {
     if (placed.has(c.id)) continue;
     const duration = durationOf(c);
-    const start = nextFreeStart(cursor, duration, busy, limit);
-    if (start == null) continue;
-    placed.set(c.id, { start, duration });
-    cursor = start + duration;
+    for (const lane of lanes) {
+      const start = nextFreeStart(lane.cursor, duration, busy, lane.limit);
+      if (start == null) continue;
+      placed.set(c.id, { start, duration });
+      lane.cursor = start + duration;
+      break;
+    }
   }
 
   return candidates
@@ -534,8 +616,14 @@ export function reorderForDrop(
 
   const rest = order.filter((id) => id !== draggedId);
   const at = anchor ? rest.indexOf(anchor.id) : -1;
-  if (at < 0) return [...rest, draggedId];
-  return [...rest.slice(0, at), draggedId, ...rest.slice(at)];
+  if (at >= 0) return [...rest.slice(0, at), draggedId, ...rest.slice(at)];
+  // Past every block shown: land straight after the last of them rather than
+  // at the very end of the list, so the block stays on the day it was dropped
+  // on instead of queueing behind every other day's tasks.
+  const last = others[others.length - 1];
+  const after = last ? rest.indexOf(last.id) : -1;
+  if (after < 0) return [...rest, draggedId];
+  return [...rest.slice(0, after + 1), draggedId, ...rest.slice(after + 1)];
 }
 
 // Keyboard equivalent of a drag: swap a block one slot earlier (delta < 0) or
