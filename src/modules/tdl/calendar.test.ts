@@ -22,6 +22,10 @@ import {
   prettyHourLabel,
   prettyMinutes,
   scheduleEvents,
+  scheduleDayOffsets,
+  busyForDay,
+  dayOffsetOf,
+  minuteOfDay,
   timelineRange,
 } from "./calendar";
 
@@ -866,5 +870,144 @@ describe("googleCalendarDayUrl", () => {
 
   it("falls back to the calendar root for an unparseable date", () => {
     expect(googleCalendarDayUrl("not-a-date")).toBe("https://calendar.google.com/calendar/r");
+  });
+});
+
+describe("scheduleDayOffsets", () => {
+  // 2026-09-25 is a Friday.
+  it("is just the viewed day for a one-day span", () => {
+    expect(scheduleDayOffsets("2026-09-25", 1, true)).toEqual([0]);
+  });
+
+  it("runs straight through the weekend when told to", () => {
+    expect(scheduleDayOffsets("2026-09-25", 3, false)).toEqual([0, 1, 2]);
+  });
+
+  it("steps over Saturday and Sunday", () => {
+    expect(scheduleDayOffsets("2026-09-25", 3, true)).toEqual([0, 3, 4]);
+  });
+
+  it("keeps a weekend viewed day as day 0", () => {
+    expect(scheduleDayOffsets("2026-09-26", 2, true)).toEqual([0, 2]);
+  });
+});
+
+describe("scheduleEvents across several days", () => {
+  const c = (id: string, minutes: number) => ({
+    id,
+    title: id,
+    timeEstimateMin: minutes,
+    source: "priorities" as const,
+    sourceLabel: "Priority",
+  });
+  const DAY = 24 * 60;
+
+  it("spills what doesn't fit today onto the next day", () => {
+    const events = scheduleEvents([c("a", 60), c("b", 60), c("c", 60)], {
+      date: "2026-09-22",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      days: [0, 1],
+    });
+    expect(events.map((e) => [e.id, e.startMinutes])).toEqual([
+      ["a", 9 * 60],
+      ["b", 10 * 60],
+      ["c", DAY + 9 * 60],
+    ]);
+    expect(events[2].startDateTime).toBe("2026-09-23T09:00:00");
+    expect(events[2].endDateTime).toBe("2026-09-23T10:00:00");
+  });
+
+  it("never splits a task across days", () => {
+    // 90m left today, the 2h task goes whole onto tomorrow.
+    const events = scheduleEvents([c("a", 30), c("b", 120)], {
+      date: "2026-09-22",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      days: [0, 1],
+    });
+    const b = events.find((e) => e.id === "b")!;
+    expect(dayOffsetOf(b.startMinutes)).toBe(1);
+    expect(dayOffsetOf(b.endMinutes - 1)).toBe(1);
+  });
+
+  it("lets a short task behind a spilled one take today's tail", () => {
+    const events = scheduleEvents([c("a", 60), c("b", 120), c("c", 30)], {
+      date: "2026-09-22",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      days: [0, 1],
+    });
+    const at = Object.fromEntries(events.map((e) => [e.id, e.startMinutes]));
+    expect(at).toEqual({ a: 9 * 60, c: 10 * 60, b: DAY + 9 * 60 });
+  });
+
+  it("skips over the days not in the span and around each day's busy time", () => {
+    const events = scheduleEvents([c("a", 120), c("b", 60)], {
+      date: "2026-09-25",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      days: [0, 3],
+      busy: [{ start: 3 * DAY + 9 * 60, end: 3 * DAY + 10 * 60 }],
+    });
+    expect(events.map((e) => [e.id, e.startDateTime])).toEqual([
+      ["a", "2026-09-25T09:00:00"],
+      ["b", "2026-09-28T10:00:00"],
+    ]);
+  });
+
+  it("reports as overflow what fits on none of the days", () => {
+    const events = scheduleEvents([c("a", 120), c("b", 120), c("c", 120)], {
+      date: "2026-09-22",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      days: [0, 1],
+    });
+    expect(events.map((e) => e.id)).toEqual(["a", "b"]);
+  });
+
+  it("places a pin on the day it names", () => {
+    const events = scheduleEvents([c("a", 30)], {
+      date: "2026-09-22",
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      days: [0, 1],
+      overrides: { a: { startMinutes: DAY + 14 * 60 } },
+    });
+    expect(events[0].startDateTime).toBe("2026-09-23T14:00:00");
+  });
+});
+
+describe("busyForDay / minuteOfDay", () => {
+  const DAY = 24 * 60;
+  it("clips busy time to one day and shifts it to that day's clock", () => {
+    const busy = [
+      { start: 600, end: 660 },
+      { start: DAY - 60, end: DAY + 60 },
+      { start: DAY + 600, end: DAY + 700 },
+    ];
+    expect(busyForDay(busy, 1)).toEqual([
+      { start: 0, end: 60 },
+      { start: 600, end: 700 },
+    ]);
+  });
+
+  it("splits schedule minutes back into day + clock", () => {
+    expect(dayOffsetOf(DAY + 90)).toBe(1);
+    expect(minuteOfDay(DAY + 90)).toBe(90);
+  });
+});
+
+describe("reorderForDrop past the last block of a day", () => {
+  it("lands straight after that day's last block, not at the end of the list", () => {
+    const placed = [
+      { id: "a", startMinutes: 540, endMinutes: 570 },
+      { id: "b", startMinutes: 570, endMinutes: 600 },
+    ];
+    expect(reorderForDrop(["a", "b", "tomorrow"], placed, "a", 700)).toEqual([
+      "b",
+      "a",
+      "tomorrow",
+    ]);
   });
 });
