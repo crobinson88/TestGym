@@ -28,7 +28,6 @@ import {
   LISTENING_SIZES,
   LISTENING_SPEEDS,
   LISTENING_WORDS_PER_ROUND,
-  MAX_TEST_SIZE,
   MIN_TEST_SIZE,
   parseCountInput,
   STUDY_MODES,
@@ -162,7 +161,6 @@ export default function FrenchHome() {
               type="number"
               inputMode="numeric"
               min={MIN_TEST_SIZE}
-              max={MAX_TEST_SIZE}
               step={1}
               value={countText}
               onChange={(e) => typeCount(e.target.value)}
