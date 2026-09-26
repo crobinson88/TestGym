@@ -13,15 +13,13 @@ export const TEST_SIZE = 10;
 // can be typed in alongside these presets.
 export const TEST_SIZES = [5, 10, 15, 20] as const;
 
-// Bounds on a test length, whether preset or typed in. Generators cap at their
-// pool size, so the upper bound here is just a guard rail.
+// No upper bound on a test length — generators cap at their pool size.
 export const MIN_TEST_SIZE = 1;
-export const MAX_TEST_SIZE = 50;
 
 // Coerce a (possibly user-supplied) count into a sane test length.
 export function clampCount(n: number | null | undefined): number {
   if (!n || !Number.isFinite(n)) return TEST_SIZE;
-  return Math.min(MAX_TEST_SIZE, Math.max(MIN_TEST_SIZE, Math.floor(n)));
+  return Math.max(MIN_TEST_SIZE, Math.floor(n));
 }
 
 // Parse a typed question count into a clamped test length, or null while the

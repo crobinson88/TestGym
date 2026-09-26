@@ -472,9 +472,9 @@ describe("clampCount", () => {
     expect(clampCount(12.9)).toBe(12);
   });
 
-  it("clamps to the guard-rail bounds", () => {
+  it("floors at 1 with no upper cap", () => {
     expect(clampCount(-3)).toBe(1);
-    expect(clampCount(999)).toBe(50);
+    expect(clampCount(1000)).toBe(1000);
   });
 });
 
@@ -493,8 +493,8 @@ describe("parseCountInput", () => {
     expect(parseCountInput(" 12 ")).toBe(12);
   });
 
-  it("clamps a typed count to the guard-rail bounds", () => {
-    expect(parseCountInput("999")).toBe(50);
+  it("accepts a large typed count with no upper cap", () => {
+    expect(parseCountInput("1000")).toBe(1000);
   });
 });
 

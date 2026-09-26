@@ -34,7 +34,6 @@ export {
   TEST_SIZE,
   TEST_SIZES,
   MIN_TEST_SIZE,
-  MAX_TEST_SIZE,
 } from "./quiz";
 export type { Question, VocabDirection, ConjTense } from "./quiz";
 export { SCENARIOS, sendChat } from "./chat";
