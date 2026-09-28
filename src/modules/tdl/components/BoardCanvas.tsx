@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/Input";
 import type { LocalTdlBoardList } from "@/lib/db";
 import { createBoardList, reorderBoardLists, seedDefaultLists } from "../boardLists";
 import { useCommentCounts } from "../comments";
+import { useWorkstreams } from "../workstreams";
 import { applyCardPositions, moveItemToBoardList } from "../repo";
 import {
   groupCardsByList,
@@ -69,6 +70,11 @@ export function BoardCanvas({
   const [newLabel, setNewLabel] = useState("");
   const [seeding, setSeeding] = useState(false);
   const commentCounts = useCommentCounts();
+  const workstreams = useWorkstreams(cfg.key);
+  const workstreamLabels = useMemo(
+    () => new Map((workstreams ?? []).map((w) => [w.id, w.label])),
+    [workstreams],
+  );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -223,6 +229,7 @@ export function BoardCanvas({
               lists={lists}
               takenRanks={takenRanks}
               commentCounts={commentCounts}
+              workstreamLabels={workstreamLabels}
               focusedId={focusedId}
               selecting={selecting}
               selectedIds={selectedIds}

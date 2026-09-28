@@ -158,6 +158,7 @@ function carryRow(prev: LocalTdlItem, toDate: string, ts: string): LocalTdlItem 
     notes: prev.notes,
     images: [],
     board_list_id: prev.board_list_id ?? null,
+    workstream_id: prev.workstream_id ?? null,
     origin_item_id: prev.id,
     origin_snapshot_date: prev.origin_snapshot_date ?? prev.snapshot_date,
     created_at: ts,

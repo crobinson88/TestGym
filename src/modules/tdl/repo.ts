@@ -37,6 +37,7 @@ export interface CreateItemInput {
   is_reluctant?: boolean;
   reluctance_reason?: string | null;
   board_list_id?: string | null;
+  workstream_id?: string | null;
   last_worked_at?: string | null;
   notes?: string | null;
   images?: string[];
@@ -87,6 +88,7 @@ export async function createItem(input: CreateItemInput): Promise<LocalTdlItem> 
     notes: input.notes ?? null,
     images: input.images ?? [],
     board_list_id: input.board_list_id ?? null,
+    workstream_id: input.workstream_id ?? null,
     origin_item_id: input.origin_item_id ?? null,
     origin_snapshot_date: input.origin_snapshot_date ?? null,
     created_at: ts,
@@ -115,10 +117,19 @@ export async function updateItem(
     patchLastWorked: patch.last_worked_at,
     now: ts,
   });
+  // Workstreams belong to one category, so a move to another category drops it
+  // back to ungrouped unless the patch names a workstream in the new one.
+  const workstream_id =
+    patch.workstream_id !== undefined
+      ? patch.workstream_id
+      : nextSection !== existing.section
+        ? null
+        : (existing.workstream_id ?? null);
   const updated: LocalTdlItem = {
     ...existing,
     ...patch,
     section: nextSection,
+    workstream_id,
     status: nextStatus,
     last_worked_at,
     updated_at: ts,

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock,
   FolderInput,
+  Layers,
   MoreVertical,
   Pause,
   Pencil,
@@ -29,6 +30,7 @@ import {
   unsnoozeItems,
 } from "../repo";
 import { isSnoozed } from "../snooze";
+import { WorkstreamMenuItems } from "./WorkstreamMenuItems";
 
 // The per-item "More" menu, shared by the list rows and the board cards so both
 // surfaces offer exactly the same actions. The host owns rename, the detail
@@ -65,10 +67,14 @@ export function ItemActionsMenu({
 }) {
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [grouping, setGrouping] = useState(false);
 
   function setOpen(next: boolean) {
     setMenu(next);
-    if (!next) setMoving(false);
+    if (!next) {
+      setMoving(false);
+      setGrouping(false);
+    }
     onOpenChange?.(next);
   }
 
@@ -171,6 +177,25 @@ export function ItemActionsMenu({
                 </button>
               );
             })}
+          <button
+            type="button"
+            onClick={() => setGrouping((v) => !v)}
+            aria-expanded={grouping}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+          >
+            <Layers className="h-4 w-4" /> Workstream
+            <ChevronRight className={cn("ml-auto h-4 w-4 transition-transform", grouping && "rotate-90")} />
+          </button>
+          {grouping && (
+            <WorkstreamMenuItems
+              item={item}
+              targetIds={targetIds}
+              onDone={() => {
+                afterAction();
+                setOpen(false);
+              }}
+            />
+          )}
           {snoozed ? (
             <button
               type="button"

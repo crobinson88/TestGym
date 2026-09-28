@@ -29,6 +29,7 @@ function makeItem(over: Partial<TdlItemRow> = {}, section: TdlSection = "follow_
     notes: null,
     images: [],
     board_list_id: null,
+    workstream_id: null,
     origin_item_id: null,
     origin_snapshot_date: null,
     created_at: ts,

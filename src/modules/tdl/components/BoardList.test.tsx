@@ -38,6 +38,12 @@ vi.mock("../comments", () => ({
   deleteComment: vi.fn(),
 }));
 
+vi.mock("../workstreams", () => ({
+  useWorkstreams: () => [],
+  setItemsWorkstream: vi.fn(),
+  createWorkstream: vi.fn(),
+}));
+
 vi.mock("../storage", () => ({
   tdlSignedUrlMap: vi.fn(async () => ({})),
   uploadTdlImages: vi.fn(async () => []),
@@ -83,6 +89,7 @@ function item(over: Partial<LocalTdlItem> = {}): LocalTdlItem {
     notes: null,
     images: [],
     board_list_id: "list-doing",
+    workstream_id: null,
     origin_item_id: null,
     origin_snapshot_date: null,
     created_at: "2026-09-01T00:00:00.000Z",

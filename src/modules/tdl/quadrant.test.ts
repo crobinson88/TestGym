@@ -30,6 +30,7 @@ function item(quadrant: TdlQuadrant | null, over: Partial<LocalTdlItem> = {}): L
     notes: null,
     images: [],
     board_list_id: null,
+    workstream_id: null,
     origin_item_id: null,
     origin_snapshot_date: null,
     created_at: "2026-07-16T08:00:00.000Z",

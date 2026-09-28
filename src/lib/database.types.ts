@@ -113,6 +113,18 @@ export interface TdlCategoryRow {
 // User-managed rows, one set per category (`category_key` is a
 // tdl_categories.key). Only the Board layout reads them; the List layout is
 // unaffected.
+// Workstreams — named sub-groups inside one category (`category_key` is a
+// tdl_categories.key). The List layout groups a column's items under them.
+export interface TdlWorkstreamRow {
+  id: string;
+  category_key: string;
+  label: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface TdlBoardListRow {
   id: string;
   category_key: string;
@@ -187,6 +199,9 @@ export interface TdlItemRow {
   // it has never been placed — which reads as the category's first list.
   // Carried forward day to day.
   board_list_id: string | null;
+  // The workstream (tdl_workstreams.id) this item is sub-grouped under inside
+  // its category, or null when ungrouped. Carried forward day to day.
+  workstream_id: string | null;
   origin_item_id: string | null;
   origin_snapshot_date: string | null;
   created_at: string;
@@ -640,6 +655,11 @@ export type Database = {
           body: string;
         };
         Update: Partial<TdlCommentRow>;
+      };
+      tdl_workstreams: {
+        Row: TdlWorkstreamRow;
+        Insert: Partial<TdlWorkstreamRow> & { id: string; category_key: string; label: string };
+        Update: Partial<TdlWorkstreamRow>;
       };
       tdl_board_lists: {
         Row: TdlBoardListRow;

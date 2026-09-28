@@ -27,6 +27,7 @@ export function BoardList({
   lists,
   takenRanks,
   commentCounts,
+  workstreamLabels,
   focusedId,
   selecting,
   selectedIds,
@@ -47,6 +48,8 @@ export function BoardList({
   takenRanks: Set<number>;
   // Item id → comment count on its thread, for the card badges.
   commentCounts?: Map<string, number>;
+  // Workstream id → name, for the card tags.
+  workstreamLabels?: Map<string, string>;
   focusedId?: string;
   selecting?: boolean;
   selectedIds?: Set<string>;
@@ -207,6 +210,9 @@ export function BoardList({
                   lists={lists}
                   takenRanks={takenRanks}
                   commentCount={commentCounts?.get(item.id) ?? 0}
+                  workstreamLabel={
+                    item.workstream_id ? workstreamLabels?.get(item.workstream_id) : undefined
+                  }
                   indicate={indicateCardId === item.id}
                   focused={focusedId === item.id}
                   selecting={selecting}

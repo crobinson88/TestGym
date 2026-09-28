@@ -48,6 +48,8 @@ export interface BoardCardProps {
   takenRanks: Set<number>;
   // Comments on this card's roll-forward chain, for the badge.
   commentCount?: number;
+  // The card's workstream name, shown as a tag; omitted when ungrouped.
+  workstreamLabel?: string;
   focused?: boolean;
   selecting?: boolean;
   selected?: boolean;
@@ -125,6 +127,7 @@ function BoardCardBase({
   lists,
   takenRanks,
   commentCount = 0,
+  workstreamLabel,
   marker,
   drag,
 }: BoardCardProps & { marker?: "flame" | "rank"; drag: DragBinding }) {
@@ -258,6 +261,14 @@ function BoardCardBase({
           )}
 
           <div className="mt-1 flex flex-wrap items-center gap-1">
+            {workstreamLabel && (
+              <span
+                className="max-w-[160px] truncate rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent"
+                title={`Workstream: ${workstreamLabel}`}
+              >
+                {workstreamLabel}
+              </span>
+            )}
             {quadrant && (
               <span
                 className={cn(
