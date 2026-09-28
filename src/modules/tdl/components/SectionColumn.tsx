@@ -11,6 +11,7 @@ import {
   Clock,
   FolderMinus,
   GripVertical,
+  Layers,
   MoreVertical,
   Plus,
 } from "lucide-react";
@@ -28,6 +29,10 @@ import {
 } from "../repo";
 import { sectionStatusCounts } from "../hooks";
 import { ItemRow } from "./ItemRow";
+import type { LocalTdlWorkstream } from "@/lib/db";
+import { createWorkstream } from "../workstreams";
+import { groupByWorkstream } from "../workstreamGroups";
+import { WorkstreamGroupHeader } from "./WorkstreamGroupHeader";
 import { TaskComposer } from "./TaskComposer";
 
 // Section (category) columns become sortable on the desktop board; their
@@ -62,6 +67,7 @@ export function SectionColumn({
   onBulkActed,
   onArchive,
   bulkSections,
+  workstreams = [],
 }: {
   cfg: SectionConfig;
   categories: SectionConfig[];
@@ -85,8 +91,15 @@ export function SectionColumn({
   // just this column's key; the virtual Uncategorised column stands in for every
   // orphaned key at once, so it passes several.
   bulkSections?: string[];
+  // This category's workstreams. When there are any, the dated items are
+  // sub-grouped under them (each still split by Eisenhower quadrant).
+  workstreams?: LocalTdlWorkstream[];
 }) {
   const [adding, setAdding] = useState(false);
+  // The workstream whose inline composer is open (from its header's "+").
+  const [addingIn, setAddingIn] = useState<string | null>(null);
+  const [collapsedWorkstreams, setCollapsedWorkstreams] = useState<Set<string>>(new Set());
+  const [newWorkstream, setNewWorkstream] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   // Category-level bulk actions are two-step: pick one, then confirm against a
   // count read from the store (never the search-filtered column).
@@ -110,6 +123,20 @@ export function SectionColumn({
 
   const bulkKeys = bulkSections ?? (cfg.key === UNCATEGORISED_KEY ? [] : [cfg.key]);
   const canBulk = bulkKeys.length > 0;
+
+  const toggleWorkstream = (key: string) =>
+    setCollapsedWorkstreams((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  async function commitNewWorkstream() {
+    const label = newWorkstream?.trim();
+    setNewWorkstream(null);
+    if (label) await createWorkstream(cfg.key, label);
+  }
 
   function closeMenu() {
     setMenu(false);
@@ -174,12 +201,92 @@ export function SectionColumn({
   ].filter((c) => c.key === "open" || c.n > 0);
 
   const recurringIds = recurring.map((r) => r.id);
-  // Dated items are broken into the Eisenhower matrix. One SortableContext still
-  // spans every dated item (in quadrant-display order) so drag-reorder keeps
-  // working across the sub-groups; the visual grouping is purely presentational.
-  const datedGroups = groupByQuadrant(dated);
-  const datedIds = datedGroups.flatMap((g) => g.items.map((i) => i.id));
+  // Dated items are sub-grouped by workstream (when the category has any), then
+  // broken into the Eisenhower matrix inside each. One SortableContext still
+  // spans every dated item (in display order) so drag-reorder keeps working
+  // across the sub-groups; the visual grouping is purely presentational.
+  const hasWorkstreams = workstreams.length > 0;
+  const wsGroups = hasWorkstreams
+    ? groupByWorkstream(dated, workstreams, { includeEmpty: !forceExpanded })
+    : [{ workstream: null, items: dated }];
+  const sections = wsGroups.map((g) => ({ ...g, quadrants: groupByQuadrant(g.items) }));
+  const datedIds = sections.flatMap((w) => w.quadrants.flatMap((g) => g.items.map((i) => i.id)));
   const datedIndex = new Map(datedIds.map((id, i) => [id, i]));
+
+  function renderQuadrants(
+    quadrants: ReturnType<typeof groupByQuadrant>,
+    scope: string,
+    nested: boolean,
+  ) {
+    return quadrants.map((g) => {
+      const accent = g.key ? QUADRANT_HEAD[g.key] : null;
+      const gkey = `${scope}${g.key ?? "unclassified"}`;
+      const quadCollapsed = forceExpanded ? false : collapsedQuadrants.has(gkey);
+      return (
+        <div key={gkey} data-quadrant={g.key ?? "unclassified"}>
+          <button
+            type="button"
+            onClick={() => toggleQuadrant(gkey)}
+            aria-expanded={!quadCollapsed}
+            aria-label={quadCollapsed ? `Expand ${g.label}` : `Collapse ${g.label}`}
+            className={cn(
+              "flex w-full items-center gap-2 px-3 pb-1 pt-3 text-left",
+              nested && "pl-6 pt-2",
+            )}
+          >
+            <ChevronRight
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-muted transition-transform",
+                !quadCollapsed && "rotate-90",
+              )}
+            />
+            <span
+              className={cn(
+                "h-4 w-1 shrink-0 rounded-full",
+                accent ? accent.bar : "bg-muted/40",
+              )}
+            />
+            <span
+              className={cn(
+                "font-bold uppercase tracking-wide",
+                nested ? "text-xs" : "text-sm",
+                accent ? accent.text : "text-muted",
+              )}
+            >
+              {g.label}
+            </span>
+            {g.hint && (
+              <span className="hidden text-[11px] font-medium text-muted sm:inline">
+                {g.hint}
+              </span>
+            )}
+            <span className="ml-auto rounded-full bg-surface2 px-2 py-0.5 text-xs font-semibold tabular-nums text-muted">
+              {g.items.length}
+            </span>
+          </button>
+          <ul className={cn(quadCollapsed && "hidden")}>
+            {g.items.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                categories={categories}
+                focused={focusedId === item.id}
+                takenRanks={takenRanks}
+                index={recurring.length + (datedIndex.get(item.id) ?? 0) + 1}
+                selecting={selecting}
+                selected={selectedIds?.has(item.id)}
+                selectedIds={selectedIds}
+                onToggleSelect={onToggleSelect}
+                onBulkActed={onBulkActed}
+              />
+            ))}
+          </ul>
+        </div>
+      );
+    });
+  }
+
+  const liveWorkstreamCount = sections.filter((w) => w.workstream).length;
 
   return (
     <section
@@ -255,7 +362,7 @@ export function SectionColumn({
             </span>
           ))}
         </div>
-        {(canBulk || onArchive) && (
+        {(canBulk || onArchive || canAdd) && (
           <div className="relative shrink-0">
             <button
               type="button"
@@ -270,6 +377,19 @@ export function SectionColumn({
               <>
                 <div className="fixed inset-0 z-30" onClick={closeMenu} aria-hidden />
                 <div className="absolute right-0 top-7 z-40 min-w-[220px] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
+                  {canAdd && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewWorkstream("");
+                        closeMenu();
+                        if (collapsed) onToggleCollapse?.();
+                      }}
+                      className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left text-sm hover:bg-surface2"
+                    >
+                      <Layers className="h-4 w-4" /> New workstream
+                    </button>
+                  )}
                   {canBulk && (
                     <>
                       {bulkMode === "archive" ? (
@@ -374,68 +494,69 @@ export function SectionColumn({
           data-dated-section={cfg.key}
           className={cn("min-h-[40px]", isCollapsed && "hidden")}
         >
-          {datedGroups.map((g) => {
-            const accent = g.key ? QUADRANT_HEAD[g.key] : null;
-            const gkey = g.key ?? "unclassified";
-            const quadCollapsed = forceExpanded ? false : collapsedQuadrants.has(gkey);
-            return (
-            <div key={gkey} data-quadrant={gkey}>
-              <button
-                type="button"
-                onClick={() => toggleQuadrant(gkey)}
-                aria-expanded={!quadCollapsed}
-                aria-label={quadCollapsed ? `Expand ${g.label}` : `Collapse ${g.label}`}
-                className="flex w-full items-center gap-2 px-3 pb-1 pt-3 text-left"
-              >
-                <ChevronRight
-                  className={cn(
-                    "h-3.5 w-3.5 shrink-0 text-muted transition-transform",
-                    !quadCollapsed && "rotate-90",
-                  )}
-                />
-                <span
-                  className={cn(
-                    "h-4 w-1 shrink-0 rounded-full",
-                    accent ? accent.bar : "bg-muted/40",
-                  )}
-                />
-                <span
-                  className={cn(
-                    "text-sm font-bold uppercase tracking-wide",
-                    accent ? accent.text : "text-muted",
-                  )}
-                >
-                  {g.label}
-                </span>
-                {g.hint && (
-                  <span className="hidden text-[11px] font-medium text-muted sm:inline">
-                    {g.hint}
-                  </span>
-                )}
-                <span className="ml-auto rounded-full bg-surface2 px-2 py-0.5 text-xs font-semibold tabular-nums text-muted">
-                  {g.items.length}
-                </span>
-              </button>
-              <ul className={cn(quadCollapsed && "hidden")}>
-                {g.items.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    categories={categories}
-                    focused={focusedId === item.id}
-                    takenRanks={takenRanks}
-                    index={recurring.length + (datedIndex.get(item.id) ?? 0) + 1}
-                    selecting={selecting}
-                    selected={selectedIds?.has(item.id)}
-                    selectedIds={selectedIds}
-                    onToggleSelect={onToggleSelect}
-                    onBulkActed={onBulkActed}
-                  />
-                ))}
-              </ul>
+          {newWorkstream != null && (
+            <div className="flex items-center gap-1.5 border-b border-line/60 px-3 py-1.5">
+              <Layers className="h-3.5 w-3.5 shrink-0 text-accent" />
+              <input
+                autoFocus
+                value={newWorkstream}
+                onChange={(e) => setNewWorkstream(e.target.value)}
+                onBlur={() => void commitNewWorkstream()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitNewWorkstream();
+                  if (e.key === "Escape") setNewWorkstream(null);
+                }}
+                placeholder="New workstream name"
+                aria-label="New workstream name"
+                className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-sm text-text outline-none focus:border-accent"
+              />
             </div>
-            );
-          })}
+          )}
+          {!hasWorkstreams
+            ? renderQuadrants(sections[0].quadrants, "", false)
+            : sections.map((w, wi) => {
+                const wkey = w.workstream?.id ?? "none";
+                const wsCollapsed = forceExpanded ? false : collapsedWorkstreams.has(wkey);
+                return (
+                  <div key={wkey} data-workstream-group={wkey}>
+                    <WorkstreamGroupHeader
+                      workstream={w.workstream}
+                      count={w.items.length}
+                      doneCount={w.items.filter((i) => i.status === "done").length}
+                      collapsed={wsCollapsed}
+                      onToggle={() => toggleWorkstream(wkey)}
+                      onAdd={
+                        canAdd
+                          ? () => {
+                              setAddingIn(wkey);
+                              if (wsCollapsed) toggleWorkstream(wkey);
+                            }
+                          : undefined
+                      }
+                      isFirst={wi === 0}
+                      isLast={wi === liveWorkstreamCount - 1}
+                    />
+                    <div className={cn(wsCollapsed && "hidden")}>
+                      {w.items.length === 0 && addingIn !== wkey && (
+                        <div className="px-6 py-2 text-xs text-muted/70">No tasks yet.</div>
+                      )}
+                      {renderQuadrants(w.quadrants, `${wkey}:`, true)}
+                      {addingIn === wkey && (
+                        <div className="px-3 py-2">
+                          <TaskComposer
+                            snapshot_date={snapshot_date}
+                            categories={categories}
+                            fixedSection={cfg}
+                            defaultWorkstreamId={w.workstream?.id ?? null}
+                            collapseWhenEmpty
+                            onCancel={() => setAddingIn(null)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
         </div>
       </SortableContext>
 

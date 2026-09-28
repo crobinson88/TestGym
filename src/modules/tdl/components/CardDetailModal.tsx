@@ -7,6 +7,8 @@ import { MAX_PRIORITY_RANK, cycleStatus, moveItemToBoardList, setPriorityRank, s
 import { QUADRANTS, QUADRANT_BY_KEY } from "../quadrant";
 import type { TdlQuadrant } from "@/lib/database.types";
 import { useThreadId } from "../comments";
+import { setItemsWorkstream, useWorkstreams } from "../workstreams";
+import { NO_WORKSTREAM_LABEL } from "../workstreamGroups";
 import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import { CardComments } from "./CardComments";
@@ -36,6 +38,10 @@ export function CardDetailModal({
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const threadId = useThreadId(item);
+  const workstreams = useWorkstreams(item.section);
+  const currentWorkstream = workstreams?.some((w) => w.id === item.workstream_id)
+    ? item.workstream_id!
+    : "";
   const currentList =
     lists.find((l) => l.id === item.board_list_id)?.id ?? lists[0]?.id ?? "";
 
@@ -117,6 +123,26 @@ export function CardDetailModal({
                   {lists.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {workstreams && workstreams.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs text-muted">
+                Workstream
+                <select
+                  value={currentWorkstream}
+                  onChange={(e) =>
+                    void setItemsWorkstream([item.id], e.target.value || null, item.section)
+                  }
+                  aria-label="Workstream"
+                  className="h-9 max-w-[180px] rounded-lg border border-line bg-surface px-2 text-sm text-text outline-none focus:border-accent"
+                >
+                  <option value="">{NO_WORKSTREAM_LABEL}</option>
+                  {workstreams.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.label}
                     </option>
                   ))}
                 </select>

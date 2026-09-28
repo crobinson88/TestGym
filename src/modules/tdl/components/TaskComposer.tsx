@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -7,6 +7,8 @@ import { QUADRANTS } from "../quadrant";
 import type { TdlQuadrant } from "@/lib/database.types";
 import { validateDraft } from "../composer";
 import { createItem } from "../repo";
+import { useWorkstreams } from "../workstreams";
+import { NO_WORKSTREAM_LABEL } from "../workstreamGroups";
 import { ImageEditor } from "./ImageEditor";
 
 // The new-task form. Used twice: at the foot of a category column (the section
@@ -18,6 +20,7 @@ export function TaskComposer({
   categories,
   fixedSection,
   boardListId,
+  defaultWorkstreamId,
   defaultSectionKey,
   autoFocus = true,
   collapseWhenEmpty = false,
@@ -32,6 +35,9 @@ export function TaskComposer({
   fixedSection?: SectionConfig;
   // Board View only: the list lane the new card lands in.
   boardListId?: string;
+  // The workstream the composer starts on — set when adding from inside a
+  // workstream group. Still changeable in the picker.
+  defaultWorkstreamId?: string | null;
   // The category the picker opens on (and falls back to when the current pick
   // goes away). Ignored when `fixedSection` is set.
   defaultSectionKey?: string;
@@ -54,6 +60,8 @@ export function TaskComposer({
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [showDetails, setShowDetails] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [workstreamId, setWorkstreamId] = useState<string | null>(defaultWorkstreamId ?? null);
   const [errors, setErrors] = useState({
     title: false,
     estimate: false,
@@ -76,6 +84,12 @@ export function TaskComposer({
     const fallback = categories.find((c) => c.key === defaultSectionKey) ?? categories[0];
     setSectionKey(fallback.key);
   }, [fixedSection, categories, sectionKey, defaultSectionKey]);
+
+  const workstreams = useWorkstreams(cfg?.key ?? null);
+  // A workstream belongs to one category, so a pick that isn't one of the
+  // current category's (category changed, or it was deleted) reads as none.
+  const effectiveWorkstreamId =
+    workstreamId && workstreams?.some((w) => w.id === workstreamId) ? workstreamId : null;
 
   const requiresEstimate = cfg?.hasTimeEstimate ?? false;
 
@@ -121,6 +135,7 @@ export function TaskComposer({
       notes: notes.trim() ? notes.trim() : null,
       images,
       board_list_id: boardListId ?? null,
+      workstream_id: effectiveWorkstreamId,
     });
     onCreated?.(v.title, cfg!);
     // Keep the composer open for the next quick add, collapsing details again.
@@ -133,7 +148,7 @@ export function TaskComposer({
   }
 
   return (
-    <div className="space-y-2">
+    <div ref={rootRef} className="space-y-2">
       {!fixedSection && (
         <div>
           <select
@@ -169,7 +184,10 @@ export function TaskComposer({
           if (errors.title) setErrors((p) => ({ ...p, title: false }));
         }}
         onKeyDown={onFieldKeyDown}
-        onBlur={() => {
+        onBlur={(e) => {
+          // Tabbing/clicking into the composer's own fields (the workstream
+          // picker) isn't "done adding".
+          if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
           if (collapseWhenEmpty && !showDetails && !draft.trim()) cancel();
         }}
         placeholder="New task..."
@@ -178,6 +196,21 @@ export function TaskComposer({
         className={cn("h-9 text-sm", errors.title && "border-danger")}
       />
       {errors.title && <div className="text-xs text-danger">Give the task a title to save.</div>}
+      {workstreams && workstreams.length > 0 && (
+        <select
+          value={effectiveWorkstreamId ?? ""}
+          onChange={(e) => setWorkstreamId(e.currentTarget.value || null)}
+          aria-label="Workstream"
+          className="h-9 w-full cursor-pointer rounded-xl border border-line bg-surface px-3 text-sm text-text outline-none focus:border-accent"
+        >
+          <option value="">{NO_WORKSTREAM_LABEL}</option>
+          {workstreams.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.label}
+            </option>
+          ))}
+        </select>
+      )}
       {requiresEstimate && (
         <div>
           <div className="flex items-center gap-2">

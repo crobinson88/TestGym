@@ -68,7 +68,7 @@ import {
   reorderPriorities,
   reorderSection,
   setPriorityRank,
-  setQuadrant,
+  updateItem,
   snoozeItems,
   usedRanks,
 } from "../repo";
@@ -87,6 +87,8 @@ import { DurationFilter } from "../components/DurationFilter";
 import { ViewToggle } from "../components/ViewToggle";
 import { BoardCanvas } from "../components/BoardCanvas";
 import { BoardCategoryPicker } from "../components/BoardCategoryPicker";
+import { useWorkstreamsByCategory } from "../workstreams";
+import { dropClassifyPatch } from "../workstreamGroups";
 
 // Collapsed columns persist per device across days (a UI preference, not synced
 // domain data — the module keeps ephemeral UI local). The Priorities mirror
@@ -135,6 +137,7 @@ export default function DayView() {
   const snoozedItems = useSnoozedItems();
   const categories = useCategories();
   const categoryRows = useCategoryRows();
+  const workstreamsByCategory = useWorkstreamsByCategory();
   // Map category key → persisted row id, so a board column drag can write
   // sort_order via reorderCategories (which keys off row ids). Empty until the
   // categories table has synced — column dragging stays off before then.
@@ -328,13 +331,11 @@ export default function DayView() {
     const overItem = bundle.items.find((i) => i.id === overId);
 
     // Drag-to-classify: dropping a dated item onto another dated item adopts
-    // that item's Eisenhower quadrant. Recurring items sit outside the matrix.
-    if (overItem && !activeItem.is_recurring && !overItem.is_recurring) {
-      const targetQuadrant = overItem.eisenhower_quadrant ?? null;
-      if ((activeItem.eisenhower_quadrant ?? null) !== targetQuadrant) {
-        void setQuadrant(activeId, targetQuadrant);
-      }
-    }
+    // that item's Eisenhower quadrant and workstream. Recurring items sit
+    // outside the matrix.
+    const classify = overItem && !activeItem.is_recurring && !overItem.is_recurring
+      ? dropClassifyPatch(activeItem, overItem)
+      : {};
 
     const sourceSection = activeItem.section;
     const targetSection = overItem?.section ?? sourceSection;
@@ -348,12 +349,13 @@ export default function DayView() {
     const orderedIds = [...targetList.map((i) => i.id)];
     orderedIds.splice(Math.max(0, insertAt), 0, activeId);
 
-    if (sourceSection !== targetSection) {
-      void moveItem(activeId, targetSection, insertAt);
-      void reorderSection(date, targetSection, isRecurring, orderedIds);
-    } else {
-      void reorderSection(date, targetSection, isRecurring, orderedIds);
-    }
+    void (async () => {
+      if (sourceSection !== targetSection) {
+        await moveItem(activeId, targetSection, insertAt);
+      }
+      if (Object.keys(classify).length > 0) await updateItem(activeId, classify);
+      await reorderSection(date, targetSection, isRecurring, orderedIds);
+    })();
   }
 
   if (!bundle) {
@@ -674,6 +676,7 @@ export default function DayView() {
                       bulkSections={
                         cfg.key === UNCATEGORISED_KEY ? orphanSections : [cfg.key]
                       }
+                      workstreams={workstreamsByCategory?.get(cfg.key)}
                     />
                   );
                 })}

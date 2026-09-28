@@ -20,6 +20,7 @@ import type {
   TipRow,
   TdlCategoryRow,
   TdlBoardListRow,
+  TdlWorkstreamRow,
   TdlCommentRow,
   TdlDayRow,
   TdlItemRow,
@@ -103,6 +104,10 @@ export interface LocalTdlBoardList extends TdlBoardListRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalTdlWorkstream extends TdlWorkstreamRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalTdlComment extends TdlCommentRow {
   sync_status: SyncStatus;
 }
@@ -172,6 +177,7 @@ export class GymDB extends Dexie {
   tdl_categories!: Table<LocalTdlCategory, string>;
   tdl_board_lists!: Table<LocalTdlBoardList, string>;
   tdl_comments!: Table<LocalTdlComment, string>;
+  tdl_workstreams!: Table<LocalTdlWorkstream, string>;
   share_trades!: Table<LocalShareTrade, string>;
   stocks!: Table<LocalStock, string>;
   forecasts!: Table<LocalForecast, string>;
@@ -394,6 +400,21 @@ export class GymDB extends Dexie {
       tdl_comments:
         "id, thread_id, item_id, [thread_id+created_at], updated_at, sync_status, deleted_at",
     });
+    this.version(30)
+      .stores({
+        tdl_workstreams:
+          "id, category_key, [category_key+sort_order], updated_at, sync_status, deleted_at",
+        tdl_items:
+          "id, snapshot_date, [snapshot_date+section+position], board_list_id, workstream_id, updated_at, sync_status, deleted_at, is_archived",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("tdl_items")
+          .toCollection()
+          .modify((row: LocalTdlItem) => {
+            if (row.workstream_id === undefined) row.workstream_id = null;
+          });
+      });
   }
 }
 
