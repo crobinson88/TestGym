@@ -21,6 +21,7 @@ import type {
   TdlCategoryRow,
   TdlBoardListRow,
   TdlWorkstreamRow,
+  TdlCompletionRow,
   TdlCommentRow,
   TdlDayRow,
   TdlItemRow,
@@ -112,6 +113,10 @@ export interface LocalTdlComment extends TdlCommentRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalTdlCompletion extends TdlCompletionRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalShareTrade extends ShareTradeRow {
   sync_status: SyncStatus;
   sync_attempts: number;
@@ -178,6 +183,7 @@ export class GymDB extends Dexie {
   tdl_board_lists!: Table<LocalTdlBoardList, string>;
   tdl_comments!: Table<LocalTdlComment, string>;
   tdl_workstreams!: Table<LocalTdlWorkstream, string>;
+  tdl_completions!: Table<LocalTdlCompletion, string>;
   share_trades!: Table<LocalShareTrade, string>;
   stocks!: Table<LocalStock, string>;
   forecasts!: Table<LocalForecast, string>;
@@ -413,6 +419,19 @@ export class GymDB extends Dexie {
           .toCollection()
           .modify((row: LocalTdlItem) => {
             if (row.workstream_id === undefined) row.workstream_id = null;
+          });
+      });
+    this.version(31)
+      .stores({
+        tdl_completions:
+          "id, thread_id, week_start, completed_on, workstream_id, updated_at, sync_status, deleted_at",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("tdl_workstreams")
+          .toCollection()
+          .modify((row: LocalTdlWorkstream) => {
+            if (row.completed_at === undefined) row.completed_at = null;
           });
       });
   }

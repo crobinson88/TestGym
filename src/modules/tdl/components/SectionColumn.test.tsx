@@ -8,6 +8,11 @@ import type { LocalTdlWorkstream } from "@/lib/db";
 
 const createWorkstream = vi.fn();
 
+vi.mock("../completions", () => ({
+  completeItems: vi.fn(),
+  completeWorkstream: vi.fn(),
+}));
+
 vi.mock("../repo", () => ({
   archiveCategoryItems: vi.fn(),
   countCategoryItems: vi.fn(async () => 0),
@@ -59,6 +64,7 @@ function ws(id: string, label: string, sort_order: number): LocalTdlWorkstream {
     category_key: "product",
     label,
     sort_order,
+    completed_at: null,
     created_at: "",
     updated_at: "",
     deleted_at: null,

@@ -521,6 +521,7 @@ export function SectionColumn({
                   <div key={wkey} data-workstream-group={wkey}>
                     <WorkstreamGroupHeader
                       workstream={w.workstream}
+                      snapshot_date={snapshot_date}
                       count={w.items.length}
                       doneCount={w.items.filter((i) => i.status === "done").length}
                       collapsed={wsCollapsed}

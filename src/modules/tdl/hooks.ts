@@ -4,6 +4,8 @@ import { todayIsoDate } from "@/lib/utils";
 import { SECTIONS } from "./sections";
 import { isSnoozed } from "./snooze";
 import { reluctantCounts } from "./reluctance";
+import { chainIndexOf, rootItemId } from "./chain";
+import { loggedThreadIds } from "./completed";
 import type { LocalTdlDay, LocalTdlItem, TdlStatus } from "./types";
 
 export interface DayBundle {
@@ -54,11 +56,21 @@ export function useDay(snapshot_date?: string): DayBundle | undefined {
   }, [snapshot_date]);
 }
 
+// Archived items, minus the ones sent to the Completed list — completing a task
+// archives it, and the Completed list is where it lives from then on, so listing
+// it here too would offer a second, conflicting way to put it back.
 export function useArchivedItems(): LocalTdlItem[] | undefined {
   return useLiveQuery(async () => {
-    const rows = await db.tdl_items.toArray();
+    const [rows, completions] = await Promise.all([
+      db.tdl_items.toArray(),
+      db.tdl_completions.toArray(),
+    ]);
+    const logged = loggedThreadIds(completions);
+    const byId = chainIndexOf(rows);
+    const isLogged = (r: LocalTdlItem) =>
+      logged.has(rootItemId({ id: r.id, origin_item_id: r.origin_item_id }, byId));
     return rows
-      .filter((r) => r.is_archived && !r.deleted_at)
+      .filter((r) => r.is_archived && !r.deleted_at && !isLogged(r))
       .sort(
         (a, b) =>
           b.snapshot_date.localeCompare(a.snapshot_date) ||

@@ -4,38 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 // outbox poke; only the pure helpers are under test here.
 vi.mock("@/lib/sync", () => ({ syncEngine: { drain: () => Promise.resolve() } }));
 
-import { rootItemId, sortComments, type ChainLink } from "./comments";
+import { sortComments } from "./comments";
 import type { LocalTdlComment } from "@/lib/db";
-
-function chain(...links: [string, string | null][]): Map<string, ChainLink> {
-  return new Map(links.map(([id, origin_item_id]) => [id, { id, origin_item_id }]));
-}
 
 const comment = (id: string, created_at: string, deleted_at: string | null = null) =>
   ({ id, created_at, deleted_at, thread_id: "t", item_id: "i", body: id }) as LocalTdlComment;
-
-describe("rootItemId", () => {
-  it("walks a roll-forward chain back to the first row", () => {
-    const byId = chain(["d1", null], ["d2", "d1"], ["d3", "d2"]);
-    expect(rootItemId(byId.get("d3")!, byId)).toBe("d1");
-  });
-
-  it("is the row itself when it never rolled forward", () => {
-    const byId = chain(["only", null]);
-    expect(rootItemId(byId.get("only")!, byId)).toBe("only");
-  });
-
-  it("stops at the oldest row still held locally", () => {
-    // d1 was purged; d2 is as far back as we can see, so it anchors the thread.
-    const byId = chain(["d2", "d1"], ["d3", "d2"]);
-    expect(rootItemId(byId.get("d3")!, byId)).toBe("d2");
-  });
-
-  it("does not loop on a cyclic chain", () => {
-    const byId = chain(["a", "b"], ["b", "a"]);
-    expect(rootItemId(byId.get("a")!, byId)).toBe("b");
-  });
-});
 
 describe("sortComments", () => {
   it("is oldest first and drops deleted ones", () => {

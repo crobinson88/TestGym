@@ -120,6 +120,10 @@ export interface TdlWorkstreamRow {
   category_key: string;
   label: string;
   sort_order: number;
+  // Set when the workstream was sent to the Completed list: it drops out of the
+  // pickers but keeps its items and its history, so it is stood down with a
+  // timestamp rather than soft-deleted.
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -139,6 +143,37 @@ export interface TdlBoardListRow {
 // it rolls forward, comments hang off the *chain*: `thread_id` is the root row
 // of that chain (see rootItemId), so a thread stays readable on tomorrow's
 // card. `item_id` is the row the comment was actually written on.
+export type TdlCompletionKind = "item" | "workstream";
+
+// One item swept up by a completed workstream, snapshotted so the entry still
+// reads right after the rows themselves are archived or deleted.
+export interface TdlSweptItem {
+  item_id: string;
+  title: string;
+}
+
+export interface TdlCompletionRow {
+  id: string;
+  kind: TdlCompletionKind;
+  // The roll-forward chain root for an item, the workstream id for a
+  // workstream. Unique among live rows, so nothing can be logged twice.
+  thread_id: string;
+  source_item_id: string | null;
+  workstream_id: string | null;
+  category_key: string | null;
+  // Snapshots: the log survives the task being renamed or deleted later.
+  title: string;
+  completed_on: string;
+  // Monday of completed_on, so weekly grouping is an index hit.
+  week_start: string;
+  time_estimate_min: number | null;
+  swept_items: TdlSweptItem[];
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface TdlCommentRow {
   id: string;
   thread_id: string;
@@ -660,6 +695,17 @@ export type Database = {
         Row: TdlWorkstreamRow;
         Insert: Partial<TdlWorkstreamRow> & { id: string; category_key: string; label: string };
         Update: Partial<TdlWorkstreamRow>;
+      };
+      tdl_completions: {
+        Row: TdlCompletionRow;
+        Insert: Partial<TdlCompletionRow> & {
+          id: string;
+          thread_id: string;
+          title: string;
+          completed_on: string;
+          week_start: string;
+        };
+        Update: Partial<TdlCompletionRow>;
       };
       tdl_board_lists: {
         Row: TdlBoardListRow;

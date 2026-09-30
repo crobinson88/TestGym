@@ -3,6 +3,7 @@ import {
   Archive,
   BellOff,
   Check,
+  CheckCheck,
   ChevronRight,
   Clock,
   FolderInput,
@@ -29,6 +30,7 @@ import {
   setReluctantItems,
   unsnoozeItems,
 } from "../repo";
+import { completeItems } from "../completions";
 import { isSnoozed } from "../snooze";
 import { WorkstreamMenuItems } from "./WorkstreamMenuItems";
 
@@ -36,6 +38,10 @@ import { WorkstreamMenuItems } from "./WorkstreamMenuItems";
 // surfaces offer exactly the same actions. The host owns rename, the detail
 // panel and the snooze calendar (each needs to render inside its own layout),
 // so those are callbacks; everything else acts here.
+// "Complete" sends the task to the Completed list — the week's log of finished
+// work — which also marks it done and archives it, so it leaves the board and
+// stops rolling forward. A recurring task resets every day and is never
+// finished, so it isn't offered.
 export function ItemActionsMenu({
   item,
   categories,
@@ -217,6 +223,18 @@ export function ItemActionsMenu({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
             >
               <Clock className="h-4 w-4" /> Snooze
+            </button>
+          )}
+          {!item.is_recurring && (
+            <button
+              type="button"
+              onClick={() => {
+                void completeItems(targetIds).then(afterAction);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-sm text-success hover:bg-surface2"
+            >
+              <CheckCheck className="h-4 w-4" /> Complete
             </button>
           )}
           <button

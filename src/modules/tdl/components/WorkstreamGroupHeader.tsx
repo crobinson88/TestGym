@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  CheckCheck,
   ChevronRight,
   Layers,
   MoreHorizontal,
@@ -11,14 +12,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LocalTdlWorkstream } from "@/lib/db";
+import { completeWorkstream } from "../completions";
 import { deleteWorkstream, moveWorkstream, renameWorkstream } from "../workstreams";
 import { NO_WORKSTREAM_LABEL } from "../workstreamGroups";
 
 // The header over one workstream's items inside a category column: collapse
 // chevron, name, count, an add-task shortcut and a small menu (rename, move
-// up/down, delete). `workstream` null is the ungrouped bucket — no menu.
+// up/down, complete, delete). `workstream` null is the ungrouped bucket — no
+// menu. "Complete workstream" sends it to the Completed list with a snapshot of
+// the tasks it closes, and each of those tasks is marked done + archived.
 export function WorkstreamGroupHeader({
   workstream,
+  snapshot_date,
   count,
   doneCount,
   collapsed,
@@ -28,6 +33,8 @@ export function WorkstreamGroupHeader({
   isLast,
 }: {
   workstream: LocalTdlWorkstream | null;
+  // The day being viewed — the day a completion here is credited to.
+  snapshot_date: string;
   count: number;
   doneCount: number;
   collapsed: boolean;
@@ -40,11 +47,13 @@ export function WorkstreamGroupHeader({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(workstream?.label ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmComplete, setConfirmComplete] = useState(false);
   const label = workstream?.label ?? NO_WORKSTREAM_LABEL;
 
   function closeMenu() {
     setMenu(false);
     setConfirmDelete(false);
+    setConfirmComplete(false);
   }
 
   async function commitRename() {
@@ -159,6 +168,25 @@ export function WorkstreamGroupHeader({
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2 disabled:text-muted/50 disabled:hover:bg-transparent"
                 >
                   <ArrowDown className="h-4 w-4" /> Move down
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!confirmComplete) {
+                      setConfirmComplete(true);
+                      return;
+                    }
+                    void completeWorkstream(workstream.id, snapshot_date);
+                    closeMenu();
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-sm text-success hover:bg-surface2"
+                >
+                  <CheckCheck className="h-4 w-4" />
+                  {confirmComplete
+                    ? count > 0
+                      ? `Complete? Closes ${count} task${count === 1 ? "" : "s"}`
+                      : "Complete? Nothing to close"
+                    : "Complete workstream"}
                 </button>
                 <button
                   type="button"
