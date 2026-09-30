@@ -25,6 +25,7 @@ export type SyncTable =
   | "tdl_board_lists"
   | "tdl_comments"
   | "tdl_workstreams"
+  | "tdl_completions"
   | "time_tasks"
   | "time_allocations"
   | "share_trades"
@@ -52,6 +53,7 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   "tdl_workstreams",
   "tdl_items",
   "tdl_days",
+  "tdl_completions",
   "time_tasks",
   "time_allocations",
   "share_trades",
@@ -82,6 +84,7 @@ export const DEXIE_TABLE: Record<SyncTable, string> = {
   tdl_board_lists: "tdl_board_lists",
   tdl_comments: "tdl_comments",
   tdl_workstreams: "tdl_workstreams",
+  tdl_completions: "tdl_completions",
   time_tasks: "timeTasks",
   time_allocations: "timeAllocations",
   share_trades: "share_trades",

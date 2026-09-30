@@ -20,6 +20,7 @@ import type {
   LocalTdlBoardList,
   LocalTdlComment,
   LocalTdlWorkstream,
+  LocalTdlCompletion,
   LocalTdlDay,
   LocalTdlItem,
   LocalTimeAllocation,
@@ -41,6 +42,7 @@ type PendingRow =
   | LocalTdlBoardList
   | LocalTdlComment
   | LocalTdlWorkstream
+  | LocalTdlCompletion
   | LocalTimeTask
   | LocalTimeAllocation
   | LocalShareTrade
@@ -88,6 +90,7 @@ const PK_BY_TABLE: Record<SyncTable, string> = {
   tdl_board_lists: "id",
   tdl_comments: "id",
   tdl_workstreams: "id",
+  tdl_completions: "id",
   time_tasks: "id",
   time_allocations: "id",
   share_trades: "id",
@@ -150,6 +153,9 @@ async function loadPending(db: GymDB, table: SyncTable, limit: number): Promise<
   }
   if (table === "tdl_workstreams") {
     return db.tdl_workstreams.where("sync_status").equals("pending").limit(limit).toArray();
+  }
+  if (table === "tdl_completions") {
+    return db.tdl_completions.where("sync_status").equals("pending").limit(limit).toArray();
   }
   if (table === "time_tasks") {
     return db.timeTasks.where("sync_status").equals("pending").limit(limit).toArray();

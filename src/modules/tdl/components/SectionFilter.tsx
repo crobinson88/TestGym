@@ -1,16 +1,23 @@
 import { cn } from "@/lib/utils";
-import type { SectionGroup } from "../grouping";
+import type { SectionConfig } from "../sections";
 
-// Category chips over the Archive and Snoozed lists: tap one to narrow the view
-// to that section, tap it again (or "All") to widen back out. Counts come from
-// the already-grouped items so they track the search box.
+// Anything already bucketed per category: `SectionGroup` (items) and the
+// Completed list's week entries both satisfy it — only the count is read here.
+export interface FilterGroup {
+  cfg: SectionConfig;
+  items: readonly unknown[];
+}
+
+// Category chips over the Archive, Snoozed and Completed lists: tap one to
+// narrow the view to that section, tap it again (or "All") to widen back out.
+// Counts come from the already-grouped rows so they track the search box.
 export function SectionFilter({
   groups,
   total,
   value,
   onChange,
 }: {
-  groups: SectionGroup[];
+  groups: readonly FilterGroup[];
   total: number;
   value: string | null;
   onChange: (key: string | null) => void;

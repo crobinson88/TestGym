@@ -10,6 +10,10 @@ const cycleStatus = vi.fn();
 const renameBoardList = vi.fn();
 const deleteBoardList = vi.fn();
 
+vi.mock("../completions", () => ({
+  completeItems: vi.fn(),
+}));
+
 vi.mock("../repo", () => ({
   cycleStatus: (...a: unknown[]) => cycleStatus(...a),
   snoozeItems: vi.fn(),

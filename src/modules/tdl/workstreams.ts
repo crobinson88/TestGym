@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { LocalTdlWorkstream } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import { reorderIds, sortWorkstreams } from "./workstreamGroups";
+import { openWorkstreams } from "./completions";
 
 // Workstreams sub-group a category's items (e.g. "Billing revamp" and
 // "Onboarding" under Product). Each category owns its own set; an item points
@@ -18,10 +19,12 @@ function pokeOutbox() {
 }
 
 // Every category's workstreams, keyed by category key — one live query for the
-// whole day view rather than one per column.
+// whole day view rather than one per column. Completed workstreams are left out:
+// they've been sent to the Completed list, so they drop off the board and out of
+// the pickers while keeping their items and their history.
 export function useWorkstreamsByCategory(): Map<string, LocalTdlWorkstream[]> | undefined {
   return useLiveQuery(async () => {
-    const rows = sortWorkstreams(await db.tdl_workstreams.toArray());
+    const rows = sortWorkstreams(openWorkstreams(await db.tdl_workstreams.toArray()));
     const byCategory = new Map<string, LocalTdlWorkstream[]>();
     for (const row of rows) {
       const arr = byCategory.get(row.category_key) ?? [];
@@ -36,7 +39,7 @@ export function useWorkstreams(categoryKey: string | null): LocalTdlWorkstream[]
   return useLiveQuery(async () => {
     if (!categoryKey) return [];
     const rows = await db.tdl_workstreams.where("category_key").equals(categoryKey).toArray();
-    return sortWorkstreams(rows);
+    return sortWorkstreams(openWorkstreams(rows));
   }, [categoryKey]);
 }
 
@@ -46,6 +49,8 @@ export async function createWorkstream(
 ): Promise<LocalTdlWorkstream> {
   const trimmed = label.trim();
   if (!trimmed) throw new Error("createWorkstream: label required");
+  // Completed workstreams still hold a sort slot, so count them here — a new
+  // one goes after everything, not on top of a finished neighbour.
   const live = sortWorkstreams(
     await db.tdl_workstreams.where("category_key").equals(categoryKey).toArray(),
   );
@@ -56,6 +61,7 @@ export async function createWorkstream(
     category_key: categoryKey,
     label: trimmed,
     sort_order,
+    completed_at: null,
     created_at: ts,
     updated_at: ts,
     deleted_at: null,

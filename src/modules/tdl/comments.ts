@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { LocalTdlComment } from "@/lib/db";
 import { syncEngine } from "@/lib/sync";
 import type { LocalTdlItem } from "./types";
+import { chainIndexOf, rootItemId, type ChainLink } from "./chain";
 
 const nowIso = () => new Date().toISOString();
 
@@ -13,37 +14,11 @@ function pokeOutbox() {
   }
 }
 
-export interface ChainLink {
-  id: string;
-  origin_item_id: string | null;
-}
-
-// The id a card's comment thread hangs off: the first row of its roll-forward
-// chain. A task gets a fresh row every day it carries over, so anchoring on the
-// row id would lose the thread overnight; anchoring on the chain root keeps it.
-// Walks `origin_item_id` up through the rows we hold, stopping at the last one
-// we can see (a chain whose start has been purged still resolves consistently)
-// and guarding against a cycle.
-export function rootItemId(item: ChainLink, byId: Map<string, ChainLink>): string {
-  const seen = new Set<string>([item.id]);
-  let current = item;
-  while (current.origin_item_id) {
-    const parent = byId.get(current.origin_item_id);
-    if (!parent || seen.has(parent.id)) break;
-    seen.add(parent.id);
-    current = parent;
-  }
-  return current.id;
-}
-
 // The thread id for one card, resolved against every item in the local store.
 export function useThreadId(item: LocalTdlItem | null): string | undefined {
   return useLiveQuery(async () => {
     if (!item) return undefined;
-    const rows = await db.tdl_items.toArray();
-    const byId = new Map<string, ChainLink>(
-      rows.map((r) => [r.id, { id: r.id, origin_item_id: r.origin_item_id }]),
-    );
+    const byId = chainIndexOf(await db.tdl_items.toArray());
     return rootItemId({ id: item.id, origin_item_id: item.origin_item_id }, byId);
   }, [item?.id, item?.origin_item_id]);
 }

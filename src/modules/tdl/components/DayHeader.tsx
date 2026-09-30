@@ -1,4 +1,4 @@
-import { Archive, ChevronLeft, ChevronRight, Clock, Tags } from "lucide-react";
+import { Archive, CheckCheck, ChevronLeft, ChevronRight, Clock, Tags } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { addDays, prettyDate, todayIsoDate } from "@/lib/utils";
@@ -8,12 +8,14 @@ import { useCategories } from "../categories";
 import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { isSnoozed } from "../snooze";
 import { CalendarSyncButton } from "./CalendarSyncButton";
+import { CloseOutWeekButton } from "./CloseOutWeekButton";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 import { ResetStatusesButton } from "./ResetStatusesButton";
 import { RollForwardButton } from "./RollForwardButton";
 import { SuggestReluctantButton } from "./SuggestReluctantButton";
 import { SuggestSnoozeButton } from "./SuggestSnoozeButton";
 import { TargetPies } from "./TargetPies";
+import { useWeekCompletedCount } from "../completions";
 
 export function DayHeader({
   snapshot_date,
@@ -30,6 +32,7 @@ export function DayHeader({
   const c = dayCompletion(completionItems);
   const today = todayIsoDate();
   const categories = useCategories();
+  const completedThisWeek = useWeekCompletedCount(snapshot_date);
 
   const liveKeys = new Set(categories.map((s) => s.key));
   const openBySection = new Map<string, number>();
@@ -106,6 +109,21 @@ export function DayHeader({
           <Button
             size="icon"
             variant="ghost"
+            onClick={() => onNavigate("completed")}
+            aria-label={`Completed list — ${completedThisWeek ?? 0} this week`}
+            title={`Completed — ${completedThisWeek ?? 0} this week`}
+            className="relative h-10 w-10 shrink-0"
+          >
+            <CheckCheck className="h-5 w-5" />
+            {(completedThisWeek ?? 0) > 0 && (
+              <span className="absolute right-0.5 top-0.5 rounded-full bg-success/20 px-1 text-[10px] font-semibold tabular-nums text-success">
+                {completedThisWeek}
+              </span>
+            )}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
             onClick={() => onNavigate("archive")}
             aria-label="Archived items"
             className="h-10 w-10 shrink-0"
@@ -145,6 +163,7 @@ export function DayHeader({
         <SuggestSnoozeButton snapshot_date={snapshot_date} items={items} />
         <SuggestReluctantButton snapshot_date={snapshot_date} items={items} />
         <ResetStatusesButton snapshot_date={snapshot_date} items={items} />
+        <CloseOutWeekButton snapshot_date={snapshot_date} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {chipCategories.map((s) => (
