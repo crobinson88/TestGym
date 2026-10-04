@@ -11,6 +11,10 @@
 //     Google Calendar from a client-supplied, already-scheduled event list.
 //  3. action:"workstream-triage" — Gmail → Claude → `workstreams` rows for the
 //     desktop Command Center. Same reason it lives here: no function slots left.
+//  4. action:"email-review" — every configured mailbox → Claude → candidate
+//     tasks handed back for the user to rule on. Writes NOTHING; the browser
+//     creates the tasks and the ledger rows once the pass is confirmed. Same
+//     budget reason again: api/ is at exactly 12 functions.
 import {
   authedUser,
   json,
@@ -26,10 +30,12 @@ import {
   getCalendarReadAccessToken,
   listBusyCalendarIds,
 } from "./_gcal.js";
+import { collectReviewCandidates } from "./_gmail.js";
 import { triageInbox } from "./_workstreams.js";
 
-// Listing is quick; the calendar branch loops a handful of REST calls. 60s covers
-// both comfortably.
+// Listing is quick; the calendar branch loops a handful of REST calls, and the
+// review branch reads several mailboxes and calls Claude once per mailbox. 60s
+// covers them all.
 export const maxDuration = 60;
 
 type CalendarEventInput = {
@@ -69,6 +75,8 @@ export async function POST(request: Request): Promise<Response> {
     if (body?.action === "calendar-sync") return handleCalendarSync(body);
     if (body?.action === "calendar-busy") return handleCalendarBusy(body);
     if (body?.action === "workstream-triage") return json(await triageInbox(supabase), 200);
+    if (body?.action === "email-review")
+      return json(await collectReviewCandidates(supabase), 200);
 
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);

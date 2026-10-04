@@ -13,6 +13,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { env, type Db } from "./_fireflies.js";
+import { fetchMessages, type GmailMessage } from "./_gmail.js";
 import { GMAIL_READONLY_SCOPE, getGoogleAccessToken } from "./_gcal.js";
 
 const MODEL = "claude-sonnet-4-6";
@@ -20,104 +21,18 @@ const MODEL = "claude-sonnet-4-6";
 // each message is one Gmail GET, then a single Claude call over the batch.
 const MAX_MESSAGES = 15;
 const GMAIL_QUERY = "is:unread newer_than:2d -category:promotions -category:social";
-const MAX_BODY_CHARS = 2000;
 
 export interface TriageOutcome {
   scanned: number;
   logged: number;
 }
 
-interface GmailMessage {
-  id: string;
-  threadId: string;
-  from: string;
-  subject: string;
-  snippet: string;
-  body: string;
-}
-
-type GmailPart = {
-  mimeType?: string;
-  body?: { data?: string; size?: number };
-  parts?: GmailPart[];
-};
-
-function headerValue(
-  headers: { name?: string; value?: string }[] | undefined,
-  name: string,
-): string {
-  const hit = headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase());
-  return hit?.value ?? "";
-}
-
-// Gmail nests the readable text arbitrarily deep in a MIME tree; walk it and
-// take the first text/plain leaf, falling back to stripped HTML.
-function extractBody(payload: GmailPart | undefined): string {
-  if (!payload) return "";
-  const decode = (data?: string) =>
-    data ? Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8") : "";
-
-  const walk = (part: GmailPart, wanted: string): string => {
-    if (part.mimeType === wanted && part.body?.data) return decode(part.body.data);
-    for (const child of part.parts ?? []) {
-      const found = walk(child, wanted);
-      if (found) return found;
-    }
-    return "";
-  };
-
-  const plain = walk(payload, "text/plain");
-  if (plain) return plain;
-  const html = walk(payload, "text/html");
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-}
-
-async function gmailFetch<T>(token: string, path: string): Promise<T> {
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const body = (await res.json().catch(() => null)) as
-    | (T & { error?: { message?: string } })
-    | null;
-  if (!res.ok || !body) {
-    throw new Error(body?.error?.message ?? `Gmail API ${res.status}`);
-  }
-  return body;
-}
-
+// The Command Center triages the user's own mailbox only — the delegated
+// default subject — while the to-do review pass fans out over every configured
+// account. Message reading itself is shared (see _gmail.ts).
 export async function fetchUnread(): Promise<GmailMessage[]> {
   const token = await getGoogleAccessToken(GMAIL_READONLY_SCOPE);
-  const list = await gmailFetch<{ messages?: { id: string; threadId: string }[] }>(
-    token,
-    `messages?q=${encodeURIComponent(GMAIL_QUERY)}&maxResults=${MAX_MESSAGES}`,
-  );
-  const ids = list.messages ?? [];
-
-  const messages = await Promise.all(
-    ids.map(async (m) => {
-      try {
-        const full = await gmailFetch<{
-          id: string;
-          threadId: string;
-          snippet?: string;
-          payload?: GmailPart & { headers?: { name?: string; value?: string }[] };
-        }>(token, `messages/${m.id}?format=full`);
-        return {
-          id: full.id,
-          threadId: full.threadId,
-          from: headerValue(full.payload?.headers, "From"),
-          subject: headerValue(full.payload?.headers, "Subject"),
-          snippet: full.snippet ?? "",
-          body: extractBody(full.payload).slice(0, MAX_BODY_CHARS),
-        } satisfies GmailMessage;
-      } catch (e) {
-        // One unreadable message must not sink the whole triage run.
-        console.warn("gmail message fetch failed", m.id, e);
-        return null;
-      }
-    }),
-  );
-  return messages.filter((m): m is GmailMessage => m !== null);
+  return fetchMessages(token, GMAIL_QUERY, MAX_MESSAGES);
 }
 
 const Triage = z.object({

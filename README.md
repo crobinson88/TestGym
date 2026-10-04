@@ -180,6 +180,56 @@ There's no public webhook for Claude web or Cowork sessions, so those rows are
 added by hand with **+ Web session** (optionally with the claude.ai link) and
 their status is edited from the table.
 
+## Email review (to-do list)
+
+Review the mail sitting in your accounts and decide, one email at a time, what
+becomes a task. "Review email" sits in the to-do list's day header on today.
+
+- Nothing is written until you confirm the pass, so Undo is free and closing the
+  modal half-way leaves everything as it was.
+- **Add to to-do** creates a task on the day (title editable, category
+  remembered) with the sender, subject, mailbox, the ask and a link back to the
+  thread in its notes.
+- **Not a task** keeps that thread out of future passes. **Decide later** writes
+  nothing, so it comes back next time.
+
+### Mailboxes inside theglassmarket.co
+
+Already covered by the Google service account that does the calendar sync — it
+just needs the `gmail.readonly` scope authorised on its client id in Workspace
+admin. Add the mailbox as a row:
+
+```sql
+insert into email_accounts (label, address, auth_mode)
+values ('Sales', 'sales@theglassmarket.co', 'delegated');
+```
+
+### Mailboxes outside the domain (personal Gmail, another company)
+
+Domain-wide delegation stops at the Workspace boundary, so each outside mailbox
+grants access itself, once:
+
+1. In Google Cloud, enable the **Gmail API** and create an OAuth client of type
+   **Desktop app**. Put its id and secret in `.env.local` as
+   `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`, and in the Vercel env
+   (the server needs them to refresh the token).
+2. While the app is in **Testing**, add each mailbox under *OAuth consent screen
+   → Test users*, or its refresh token will expire after 7 days.
+3. Run, once per mailbox, and sign in **as that mailbox**:
+
+   ```
+   npm run gmail:auth -- --label "Personal"
+   ```
+
+   It opens the consent screen, catches the redirect on localhost, and stores
+   that mailbox's refresh token on its `email_accounts` row with the service-role
+   key. The token never reaches the browser.
+
+Re-running it re-grants the same mailbox rather than adding a duplicate. If a
+grant is revoked, the review pass names that mailbox and says to run it again.
+
+Scope is read-only throughout: nothing is ever marked read, moved or replied to.
+
 ## Re-import from Excel (rare)
 
 `scripts/import.py` is a placeholder. The 1,456 historicals are already loaded. If you ever add new rows to the spreadsheet, call the `public.bulk_load_sets(payload jsonb)` Postgres function — it's idempotent on `(exercise_id, performed_at, weight, reps)`, so re-running is safe.
