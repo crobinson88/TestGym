@@ -101,13 +101,43 @@ describe("recentFoods", () => {
 });
 
 describe("foodLibrary", () => {
-  it("holds every distinct title incl. today, deduped, newest first", () => {
+  it("holds every distinct title incl. today, deduped, A–Z", () => {
     const lib = foodLibrary([
       entry({ name: "Oats", entry_date: "2026-07-14", created_at: "2026-07-14T08:00:00.000Z" }),
       entry({ name: "Latte", entry_date: "2026-07-16", created_at: "2026-07-16T09:00:00.000Z" }),
       entry({ name: "oats", entry_date: "2026-07-16", created_at: "2026-07-16T08:00:00.000Z" }),
     ]);
     expect(lib.map((f) => f.name)).toEqual(["Latte", "oats"]);
+    // The newest log of a repeated title still supplies the macros.
+    expect(lib.find((f) => f.name === "oats")?.lastDate).toBe("2026-07-16");
+  });
+
+  it("sorts by name, not by when the food was last logged", () => {
+    const lib = foodLibrary([
+      entry({ name: "Zucchini", created_at: "2026-07-16T09:00:00.000Z" }),
+      entry({ name: "apple", created_at: "2026-07-15T09:00:00.000Z" }),
+      entry({ name: "Banana", created_at: "2026-07-14T09:00:00.000Z" }),
+    ]);
+    expect(lib.map((f) => f.name)).toEqual(["apple", "Banana", "Zucchini"]);
+  });
+
+  it("orders numbers in a title numerically", () => {
+    const lib = foodLibrary([
+      entry({ name: "Shake 10", created_at: "2026-07-16T09:00:00.000Z" }),
+      entry({ name: "Shake 2", created_at: "2026-07-15T09:00:00.000Z" }),
+    ]);
+    expect(lib.map((f) => f.name)).toEqual(["Shake 2", "Shake 10"]);
+  });
+
+  it("takes the first N alphabetically when limited", () => {
+    const lib = foodLibrary(
+      [
+        entry({ name: "Oats", created_at: "2026-07-14T08:00:00.000Z" }),
+        entry({ name: "Latte", created_at: "2026-07-16T08:00:00.000Z" }),
+      ],
+      { limit: 1 },
+    );
+    expect(lib.map((f) => f.name)).toEqual(["Latte"]);
   });
 });
 
