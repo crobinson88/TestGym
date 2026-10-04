@@ -1,14 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Camera, Check, ChevronLeft, ImagePlus, Library, Loader2, Sparkles, Trash2 } from "lucide-react";
+import {
+  Camera,
+  Check,
+  ChevronLeft,
+  ImagePlus,
+  Library,
+  Loader2,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { todayIsoDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useFoodEntries, useFoodEntry } from "../hooks";
-import { foodLibrary, type LibraryFood } from "../compute";
+import { foodLibrary, searchLibrary, type LibraryFood } from "../compute";
 import { estimateFoodPhoto, estimateFoodText } from "../photo";
+
+// How many foods the library shows before a search is needed to reach the rest.
+const LIBRARY_PREVIEW = 24;
 
 export default function AddFoodEntry() {
   const navigate = useNavigate();
@@ -29,6 +43,7 @@ export default function AddFoodEntry() {
   const [estimating, setEstimating] = useState(false);
   const [estimatingText, setEstimatingText] = useState(false);
   const [estimateNote, setEstimateNote] = useState<string | null>(null);
+  const [librarySearch, setLibrarySearch] = useState("");
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
 
@@ -99,12 +114,23 @@ export default function AddFoodEntry() {
   // The food library: every distinct food ever logged (a food is saved here
   // the first time its title is logged), so a repeat meal can be re-logged with
   // one tap. Hidden while editing an existing entry.
-  const library = editing ? [] : foodLibrary(allEntries ?? [], { limit: 24 });
+  const fullLibrary = useMemo(
+    () => (editing ? [] : foodLibrary(allEntries ?? [])),
+    [editing, allEntries],
+  );
+  // Idle the list stays capped so the page opens short; a search reaches the
+  // whole history, which is the only way to get at an older food by name.
+  const query = librarySearch.trim();
+  const library = query
+    ? searchLibrary(fullLibrary, query)
+    : fullLibrary.slice(0, LIBRARY_PREVIEW);
+  const hiddenCount = query ? 0 : fullLibrary.length - library.length;
 
   function pickFood(food: LibraryFood) {
     setName(food.name);
     setCalories(String(food.calories));
     setProtein(String(food.protein));
+    setLibrarySearch("");
     setError(null);
     setEstimateNote(null);
   }
@@ -223,10 +249,37 @@ export default function AddFoodEntry() {
           </div>
         )}
 
-        {!editing && library.length > 0 && (
+        {!editing && fullLibrary.length > 0 && (
           <div className="rounded-2xl border border-line bg-surface p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
               <Library className="h-3.5 w-3.5 text-accent" /> Library
+              <span className="ml-auto normal-case tracking-normal">
+                {query ? `${library.length} of ${fullLibrary.length}` : fullLibrary.length}
+              </span>
+            </div>
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                placeholder="Search your foods…"
+                aria-label="Search the food library"
+                enterKeyHint="search"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={`h-11 bg-surface2 pl-9 text-sm ${librarySearch ? "pr-11" : ""}`}
+              />
+              {librarySearch && (
+                <button
+                  type="button"
+                  onClick={() => setLibrarySearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-muted hover:text-text"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
             <ul className="flex flex-wrap gap-2">
               {library.map((food) => (
@@ -245,6 +298,16 @@ export default function AddFoodEntry() {
                 </li>
               ))}
             </ul>
+            {library.length === 0 && (
+              <p className="py-1 text-sm text-muted">
+                No food matches “{query}”. Type it in below to log it as a new food.
+              </p>
+            )}
+            {hiddenCount > 0 && (
+              <p className="pt-2 text-xs text-muted">
+                +{hiddenCount} more — search to find them.
+              </p>
+            )}
           </div>
         )}
 

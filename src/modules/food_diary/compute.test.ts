@@ -16,6 +16,7 @@ import {
   lbToKg,
   mifflinBmr,
   recentFoods,
+  searchLibrary,
   sumEntries,
 } from "./compute";
 
@@ -272,5 +273,31 @@ describe("dailyBalance", () => {
     const b = dailyBalance({ intake: 2000, baseline: null, exercise: 473 });
     expect(b.burn).toBeNull();
     expect(b.net).toBeNull();
+  });
+});
+
+describe("searchLibrary", () => {
+  const foods = [
+    { name: "Kize Concepts Peanut Butter Chocolate", calories: 200, protein: 7, lastDate: "2026-10-01" },
+    { name: "Peanut M&M's (full bag, 3 servings)", calories: 480, protein: 9, lastDate: "2026-09-30" },
+    { name: "Green Apple", calories: 85, protein: 0, lastDate: "2026-09-29" },
+  ];
+
+  it("returns everything for an empty query, in the given order", () => {
+    expect(searchLibrary(foods, "")).toEqual(foods);
+    expect(searchLibrary(foods, "   ")).toEqual(foods);
+  });
+
+  it("matches a substring of the name, case-insensitively", () => {
+    expect(searchLibrary(foods, "APPLE").map((f) => f.name)).toEqual(["Green Apple"]);
+    expect(searchLibrary(foods, "peanut")).toHaveLength(2);
+  });
+
+  it("requires every token to match, in any order or position", () => {
+    expect(searchLibrary(foods, "pea butter").map((f) => f.name)).toEqual([
+      "Kize Concepts Peanut Butter Chocolate",
+    ]);
+    expect(searchLibrary(foods, "butter kize")).toHaveLength(1);
+    expect(searchLibrary(foods, "peanut pear")).toEqual([]);
   });
 });
