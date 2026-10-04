@@ -251,3 +251,16 @@ export function dailyBalance(input: {
   const net = burn == null ? null : burn - intake;
   return { intake, baseline, exercise, burn, net };
 }
+
+// Free-text search over the food library: every whitespace-separated token of
+// the query must appear somewhere in the food's name (case-insensitive
+// substring), so "pea butter" finds "Kize Concepts Peanut Butter Chocolate".
+// An empty query matches everything, leaving the caller's default ordering.
+export function searchLibrary(foods: LibraryFood[], query: string): LibraryFood[] {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return foods;
+  return foods.filter((food) => {
+    const name = food.name.toLowerCase();
+    return tokens.every((t) => name.includes(t));
+  });
+}
