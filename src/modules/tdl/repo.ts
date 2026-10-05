@@ -6,6 +6,7 @@ import { todayIsoDate } from "@/lib/utils";
 import { isResettable } from "./snooze";
 import { selectCategoryTargets } from "./grouping";
 import { nextLastWorkedAt } from "./age";
+import { coerceStatus, nextStatus, statusCycleFor } from "./status";
 import type { TdlItemRow, TdlSection, TdlStatus } from "./types";
 import type { TdlQuadrant } from "@/lib/database.types";
 
@@ -17,10 +18,7 @@ function pokeOutbox() {
   }
 }
 
-function coerceStatus(section: TdlSection, status: TdlStatus): TdlStatus {
-  if (status === "ready_for_testing" && section !== "product") return "worked_today";
-  return status;
-}
+export { statusCycleFor, nextStatus };
 
 export interface CreateItemInput {
   snapshot_date: string;
@@ -151,24 +149,6 @@ export async function deleteItem(id: string): Promise<void> {
     sync_status: "pending",
   });
   pokeOutbox();
-}
-
-const STANDARD_CYCLE: TdlStatus[] = ["open", "worked_today", "done"];
-const PRODUCT_CYCLE: TdlStatus[] = ["open", "worked_today", "ready_for_testing", "done"];
-
-// Only the Product category exposes the "ready for testing" step; every other
-// category (including user-created ones) uses the standard cycle.
-export function statusCycleFor(section: TdlSection): TdlStatus[] {
-  return section === "product" ? PRODUCT_CYCLE : STANDARD_CYCLE;
-}
-
-export function nextStatus(section: TdlSection, current: TdlStatus): TdlStatus {
-  const cycle = statusCycleFor(section);
-  // Paused and cancelled sit outside the cycle; tapping the pill resumes them.
-  if (current === "cancelled" || current === "paused") return "open";
-  const i = cycle.indexOf(current);
-  if (i === -1) return "open";
-  return cycle[(i + 1) % cycle.length];
 }
 
 export async function cycleStatus(id: string): Promise<LocalTdlItem | null> {
