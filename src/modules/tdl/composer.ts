@@ -72,3 +72,20 @@ export function resolveQuickAddCategory(
   );
   return initial?.key ?? categories[0]?.key ?? "";
 }
+
+export function loadQuickAddCategory(): string | null {
+  try {
+    return localStorage.getItem(QUICK_ADD_CATEGORY_STORAGE_KEY);
+  } catch {
+    // ignore unavailable storage — fall back to the initial default
+    return null;
+  }
+}
+
+export function rememberQuickAddCategory(key: string) {
+  try {
+    localStorage.setItem(QUICK_ADD_CATEGORY_STORAGE_KEY, key);
+  } catch {
+    // ignore storage failures — the pick still holds for the session
+  }
+}
