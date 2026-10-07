@@ -3,25 +3,12 @@ import { Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import type { SectionConfig } from "../sections";
-import { QUICK_ADD_CATEGORY_STORAGE_KEY, resolveQuickAddCategory } from "../composer";
+import {
+  loadQuickAddCategory,
+  rememberQuickAddCategory,
+  resolveQuickAddCategory,
+} from "../composer";
 import { TaskComposer } from "./TaskComposer";
-
-function loadQuickAddCategory(): string | null {
-  try {
-    return localStorage.getItem(QUICK_ADD_CATEGORY_STORAGE_KEY);
-  } catch {
-    // ignore unavailable storage — fall back to the initial default
-    return null;
-  }
-}
-
-function rememberQuickAddCategory(key: string) {
-  try {
-    localStorage.setItem(QUICK_ADD_CATEGORY_STORAGE_KEY, key);
-  } catch {
-    // ignore storage failures — the pick still holds for the session
-  }
-}
 
 // Add a task from the top of the board without scrolling to its column: the
 // same fields as a column composer plus the category picker.
