@@ -56,7 +56,9 @@ export interface ReviewTally {
 
 // A thread is ruled once per mailbox, so the same thread in two accounts is two
 // candidates.
-export function candidateKey(c: Pick<EmailCandidate, "accountId" | "threadId">): string {
+export function candidateKey(
+  c: Pick<EmailCandidate, "accountId" | "threadId">,
+): string {
   return `${c.accountId}:${c.threadId}`;
 }
 
@@ -67,7 +69,9 @@ export function candidateKey(c: Pick<EmailCandidate, "accountId" | "threadId">):
 // Applied to ONE page, not the accumulated queue: pages arrive as the user
 // works through them, and re-sorting everything would shuffle cards they have
 // not reached yet (see appendCandidates).
-export function orderCandidates(candidates: readonly EmailCandidate[]): EmailCandidate[] {
+export function orderCandidates(
+  candidates: readonly EmailCandidate[],
+): EmailCandidate[] {
   const seen = new Set<string>();
   const unique = candidates.filter((c) => {
     const key = candidateKey(c);
@@ -94,7 +98,10 @@ export function appendCandidates(
   page: readonly EmailCandidate[],
 ): EmailCandidate[] {
   const held = new Set(queue.map(candidateKey));
-  return [...queue, ...orderCandidates(page).filter((c) => !held.has(candidateKey(c)))];
+  return [
+    ...queue,
+    ...orderCandidates(page).filter((c) => !held.has(candidateKey(c))),
+  ];
 }
 
 export function suggestedCount(candidates: readonly EmailCandidate[]): number {
@@ -129,7 +136,10 @@ export function reviewNotes(c: EmailCandidate): string {
 
 // The title that actually lands, after an edit and after trimming. Falls back
 // through the suggestion and the subject so a task is never created untitled.
-export function resolveTitle(c: EmailCandidate, edited: string | null | undefined): string {
+export function resolveTitle(
+  c: EmailCandidate,
+  edited: string | null | undefined,
+): string {
   return edited?.trim() || c.title.trim() || c.subject.trim() || "(no subject)";
 }
 
@@ -181,4 +191,50 @@ export function describeReview(rulings: readonly ReviewRuling[]): string {
     later > 0 ? `${later} left for later` : null,
   ].filter(Boolean);
   return parts.join(", ");
+}
+
+// --- Swipe-left-to-skip ------------------------------------------------------
+//
+// The pass is a queue worked one-handed on a phone, so the commonest ruling —
+// "not a task" — also comes off a leftward swipe on the card. The geometry is
+// pure so the thresholds are testable without a touch device. Nothing is
+// written until Confirm and Undo is free, so a mis-swipe costs nothing, which
+// is what makes a gesture an acceptable way to reach a ruling at all.
+
+// Until the pointer has moved this far the gesture has not declared itself and
+// the modal body keeps the scroll.
+export const SWIPE_SLOP_PX = 10;
+// How far left the card must travel to commit: a share of its own width, with
+// a floor so a narrow card still takes a deliberate pull.
+export const SWIPE_COMMIT_RATIO = 0.3;
+export const SWIPE_COMMIT_MIN_PX = 72;
+// How long the committed card takes to leave before the next one is seeded.
+export const SWIPE_EXIT_MS = 160;
+
+export function swipeThreshold(width: number): number {
+  return Math.max(SWIPE_COMMIT_MIN_PX, width * SWIPE_COMMIT_RATIO);
+}
+
+// The card only moves left: there is nothing revealed on the other side, so a
+// rightward drag is held at rest rather than rubber-banding the layout.
+export function swipeOffset(dx: number): number {
+  return dx < 0 ? dx : 0;
+}
+
+// Whether a gesture has declared itself horizontal. A tie, and anything
+// vertical-dominant, stays with the scroller.
+export function isHorizontalSwipe(dx: number, dy: number): boolean {
+  return Math.abs(dx) > SWIPE_SLOP_PX && Math.abs(dx) > Math.abs(dy);
+}
+
+export function swipeCommitted(dx: number, width: number): boolean {
+  return swipeOffset(dx) <= -swipeThreshold(width);
+}
+
+// How far through the pull the user is, 0 → 1, for fading in the affordance
+// behind the card.
+export function swipeProgress(dx: number, width: number): number {
+  const threshold = swipeThreshold(width);
+  if (threshold <= 0) return 0;
+  return Math.min(1, Math.abs(swipeOffset(dx)) / threshold);
 }

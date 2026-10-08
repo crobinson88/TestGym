@@ -5,7 +5,13 @@ import type { LocalTdlItem } from "../types";
 import { StatusPassButton } from "./StatusPassButton";
 
 const updateItem = vi.fn();
-vi.mock("../repo", () => ({ updateItem: (...a: unknown[]) => updateItem(...a) }));
+const archiveItem = vi.fn();
+const setPriorityRank = vi.fn();
+vi.mock("../repo", () => ({
+  updateItem: (...a: unknown[]) => updateItem(...a),
+  archiveItem: (...a: unknown[]) => archiveItem(...a),
+  setPriorityRank: (...a: unknown[]) => setPriorityRank(...a),
+}));
 
 const CATEGORIES: SectionConfig[] = [
   {
@@ -62,8 +68,10 @@ function item(over: Partial<LocalTdlItem> = {}): LocalTdlItem {
 }
 
 beforeEach(() => {
-  updateItem.mockReset();
-  updateItem.mockResolvedValue(null);
+  for (const fn of [updateItem, archiveItem, setPriorityRank]) {
+    fn.mockReset();
+    fn.mockResolvedValue(null);
+  }
 });
 
 function openFlow(items: LocalTdlItem[]) {
@@ -73,8 +81,15 @@ function openFlow(items: LocalTdlItem[]) {
 
 describe("StatusPassButton", () => {
   it("disables the button when nothing is in flight", () => {
-    render(<StatusPassButton snapshot_date={DAY} items={[item({ status: "done" })]} />);
-    expect(screen.getByRole("button", { name: "Nothing to update" })).toBeDisabled();
+    render(
+      <StatusPassButton
+        snapshot_date={DAY}
+        items={[item({ status: "done" })]}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Nothing to update" }),
+    ).toBeDisabled();
   });
 
   it("shows one card at a time, priorities first", () => {
@@ -89,24 +104,43 @@ describe("StatusPassButton", () => {
 
   it("offers the standard cycle plus paused and cancelled", () => {
     openFlow([item()]);
-    for (const label of ["Open", "In progress", "Done", "Paused", "Cancelled"]) {
-      expect(screen.getByRole("button", { name: new RegExp(`^${label}`) })).toBeTruthy();
+    for (const label of [
+      "Open",
+      "In progress",
+      "Done",
+      "Paused",
+      "Cancelled",
+    ]) {
+      expect(
+        screen.getByRole("button", { name: new RegExp(`^${label}`) }),
+      ).toBeTruthy();
     }
-    expect(screen.queryByRole("button", { name: /^Ready for testing/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Ready for testing/ }),
+    ).toBeNull();
   });
 
   it("offers ready-for-testing on a Product card", () => {
     openFlow([item({ section: "product" })]);
-    expect(screen.getByRole("button", { name: /^Ready for testing/ })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /^Ready for testing/ }),
+    ).toBeTruthy();
   });
 
   it("sets the status of the shown card and advances", async () => {
-    openFlow([item({ id: "a", title: "First" }), item({ id: "b", title: "Second", position: 1 })]);
+    openFlow([
+      item({ id: "a", title: "First" }),
+      item({ id: "b", title: "Second", position: 1 }),
+    ]);
     fireEvent.click(screen.getByRole("button", { name: /^Done/ }));
-    await waitFor(() => expect(updateItem).toHaveBeenCalledWith("a", { status: "done" }));
+    await waitFor(() =>
+      expect(updateItem).toHaveBeenCalledWith("a", { status: "done" }),
+    );
     expect(screen.getByText("Second")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Paused/ }));
-    await waitFor(() => expect(updateItem).toHaveBeenCalledWith("b", { status: "paused" }));
+    await waitFor(() =>
+      expect(updateItem).toHaveBeenCalledWith("b", { status: "paused" }),
+    );
   });
 
   it("includes recurring dailies, which triage leaves out", () => {
@@ -116,7 +150,10 @@ describe("StatusPassButton", () => {
   });
 
   it("skips without writing and advances", async () => {
-    openFlow([item({ id: "a", title: "First" }), item({ id: "b", title: "Second", position: 1 })]);
+    openFlow([
+      item({ id: "a", title: "First" }),
+      item({ id: "b", title: "Second", position: 1 }),
+    ]);
     fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
     await waitFor(() => expect(screen.getByText("Second")).toBeTruthy());
     expect(updateItem).not.toHaveBeenCalled();
@@ -132,7 +169,12 @@ describe("StatusPassButton", () => {
 
   it("undoes the last ruling, restoring the status and its last-worked stamp", async () => {
     openFlow([
-      item({ id: "a", title: "First", status: "worked_today", last_worked_at: "2026-09-14T10:00:00.000Z" }),
+      item({
+        id: "a",
+        title: "First",
+        status: "worked_today",
+        last_worked_at: "2026-09-14T10:00:00.000Z",
+      }),
       item({ id: "b", title: "Second", position: 1 }),
     ]);
     fireEvent.click(screen.getByRole("button", { name: /^Done/ }));
@@ -157,21 +199,110 @@ describe("StatusPassButton", () => {
   });
 
   it("summarises the pass and reports it on close", async () => {
-    openFlow([item({ id: "a", title: "First" }), item({ id: "b", title: "Second", position: 1 })]);
+    openFlow([
+      item({ id: "a", title: "First" }),
+      item({ id: "b", title: "Second", position: 1 }),
+    ]);
     fireEvent.click(screen.getByRole("button", { name: /^Done/ }));
     await waitFor(() => expect(screen.getByText("Second")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
     await waitFor(() => expect(screen.getByText("Pass complete")).toBeTruthy());
-    expect(screen.getByText("Updated 1 task · 1 done · 1 skipped")).toBeTruthy();
+    expect(
+      screen.getByText("Updated 1 task · 1 done · 1 skipped"),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(screen.getByText("Updated 1 task · 1 done · 1 skipped")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByText("Updated 1 task · 1 done · 1 skipped"),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("archives the shown card and advances", async () => {
+    openFlow([
+      item({ id: "a", title: "First" }),
+      item({ id: "b", title: "Second", position: 1 }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /Archive/ }));
+    await waitFor(() => expect(archiveItem).toHaveBeenCalledWith("a"));
+    expect(updateItem).not.toHaveBeenCalled();
+    expect(screen.getByText("Second")).toBeTruthy();
+  });
+
+  it("undoes an archive by putting the flag back", async () => {
+    openFlow([item({ id: "a", title: "First" })]);
+    fireEvent.click(screen.getByRole("button", { name: /Archive/ }));
+    await waitFor(() => expect(screen.getByText("Pass complete")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Undo last decision" }));
+    await waitFor(() =>
+      expect(updateItem).toHaveBeenCalledWith("a", { is_archived: false }),
+    );
+    expect(screen.getByText("First")).toBeTruthy();
+  });
+
+  it("ranks the shown card without advancing the pass", async () => {
+    openFlow([
+      item({ id: "a", title: "First" }),
+      item({ id: "b", title: "Second", position: 1 }),
+    ]);
+    fireEvent.change(screen.getByLabelText("Priority rank"), {
+      target: { value: "2" },
+    });
+    await waitFor(() => expect(setPriorityRank).toHaveBeenCalledWith("a", 2));
+    expect(screen.getByText("First")).toBeTruthy();
+    expect(screen.getByText("1 of 2")).toBeTruthy();
+    expect(screen.getByText("P2")).toBeTruthy();
+  });
+
+  it("disables ranks another task on the day already holds", () => {
+    openFlow([
+      item({ id: "p1", title: "First", priority_rank: 1 }),
+      item({ id: "p3", title: "Second", priority_rank: 3, position: 1 }),
+    ]);
+    const picker = screen.getByLabelText("Priority rank") as HTMLSelectElement;
+    const optionFor = (v: string) =>
+      Array.from(picker.options).find((o) => o.value === v);
+    expect(optionFor("3")?.disabled).toBe(true);
+    // Its own rank stays pickable, so re-confirming it is never blocked.
+    expect(optionFor("1")?.disabled).toBe(false);
+    expect(optionFor("2")?.disabled).toBe(false);
+  });
+
+  it("carries a rank set on a skipped card into the summary", async () => {
+    openFlow([item({ id: "a", title: "First" })]);
+    fireEvent.change(screen.getByLabelText("Priority rank"), {
+      target: { value: "1" },
+    });
+    await waitFor(() => expect(setPriorityRank).toHaveBeenCalledWith("a", 1));
+    fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+    await waitFor(() => expect(screen.getByText("Pass complete")).toBeTruthy());
+    expect(screen.getByText("Updated 1 task · 1 prioritised")).toBeTruthy();
+  });
+
+  it("undoes a rank alongside the ruling it rode with", async () => {
+    openFlow([item({ id: "a", title: "First", priority_rank: 4 })]);
+    fireEvent.change(screen.getByLabelText("Priority rank"), {
+      target: { value: "1" },
+    });
+    await waitFor(() => expect(setPriorityRank).toHaveBeenCalledWith("a", 1));
+    fireEvent.click(screen.getByRole("button", { name: /^Done/ }));
+    await waitFor(() => expect(screen.getByText("Pass complete")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Undo last decision" }));
+    await waitFor(() => expect(setPriorityRank).toHaveBeenCalledWith("a", 4));
+    expect(updateItem).toHaveBeenCalledWith("a", {
+      status: "open",
+      last_worked_at: null,
+    });
   });
 
   it("holds the queue still while its own writes land", async () => {
     const { rerender } = render(
       <StatusPassButton
         snapshot_date={DAY}
-        items={[item({ id: "a", title: "First" }), item({ id: "b", title: "Second", position: 1 })]}
+        items={[
+          item({ id: "a", title: "First" }),
+          item({ id: "b", title: "Second", position: 1 }),
+        ]}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Statuses · 2/ }));
