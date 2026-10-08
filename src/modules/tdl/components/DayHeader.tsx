@@ -9,6 +9,7 @@ import { UNCATEGORISED, UNCATEGORISED_KEY } from "../sections";
 import { isSnoozed } from "../snooze";
 import { CalendarSyncButton } from "./CalendarSyncButton";
 import { CloseOutWeekButton } from "./CloseOutWeekButton";
+import { EmailReviewButton } from "./EmailReviewButton";
 import { ImportMeetingsButton } from "./ImportMeetingsButton";
 import { ResetStatusesButton } from "./ResetStatusesButton";
 import { RollForwardButton } from "./RollForwardButton";
@@ -160,6 +161,7 @@ export function DayHeader({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {snapshot_date === today && <ImportMeetingsButton />}
+        {snapshot_date === today && <EmailReviewButton snapshot_date={snapshot_date} />}
         <CalendarSyncButton snapshot_date={snapshot_date} items={items} categories={categories} />
         <RollForwardButton toDate={snapshot_date} />
         <TriageButton snapshot_date={snapshot_date} items={items} />

@@ -34,17 +34,21 @@ export async function getCalendarReadAccessToken(): Promise<string> {
 // Same JWT dance for any delegated scope. Each scope must also be authorised on
 // the service account's client id in Workspace admin, or the exchange 401s with
 // "unauthorized_client".
-export async function getGoogleAccessToken(scope: string): Promise<string> {
+// `subject` impersonates one specific mailbox, defaulting to the user's own.
+// Delegation only reaches mailboxes inside the Workspace domain; an outside
+// account (personal Gmail, another domain) needs its own OAuth refresh token
+// instead — see accessTokenFor in _gmail.ts.
+export async function getGoogleAccessToken(scope: string, subject?: string): Promise<string> {
   const clientEmail = env("GOOGLE_SA_CLIENT_EMAIL");
   // The private key is stored with literal "\n" in env vars; restore newlines.
   const privateKey = env("GOOGLE_SA_PRIVATE_KEY").replace(/\\n/g, "\n");
-  const subject = process.env.GOOGLE_CALENDAR_SUBJECT ?? ALLOWED_EMAIL;
+  const impersonate = subject?.trim() || process.env.GOOGLE_CALENDAR_SUBJECT || ALLOWED_EMAIL;
 
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
   const claim = {
     iss: clientEmail,
-    sub: subject,
+    sub: impersonate,
     scope,
     aud: "https://oauth2.googleapis.com/token",
     iat: now,

@@ -616,6 +616,29 @@ export interface FoodGoalRow {
   deleted_at: string | null;
 }
 
+// One ruling per reviewed email thread, written as an email review pass is
+// confirmed. `email_accounts` is deliberately absent from this type: it holds
+// each outside mailbox's OAuth refresh token and is readable only by the
+// service-role key on the server, so the browser has no business with it.
+export type EmailRuling = "added" | "skipped";
+
+export interface EmailReviewRow {
+  id: string;
+  account_id: string;
+  thread_id: string;
+  ruling: EmailRuling;
+  sender: string | null;
+  subject: string | null;
+  // The task the thread became, for an "added" ruling.
+  item_id: string | null;
+  reviewed_at: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -830,6 +853,16 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<WorkstreamRow>;
+      };
+      email_reviews: {
+        Row: EmailReviewRow;
+        Insert: Omit<EmailReviewRow, "created_at" | "updated_at" | "user_id" | "reviewed_at"> & {
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+          reviewed_at?: string;
+        };
+        Update: Partial<EmailReviewRow>;
       };
     };
   };
