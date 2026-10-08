@@ -4,7 +4,9 @@ import {
   describeStatusPass,
   isNoOp,
   isStatusPassCandidate,
+  rankChanged,
   summariseStatusPass,
+  wroteAnything,
   type StatusDecision,
 } from "./statusPass";
 import type { LocalTdlItem, TdlStatus } from "./types";
@@ -45,13 +47,40 @@ function item(over: Partial<LocalTdlItem> = {}): LocalTdlItem {
   } as LocalTdlItem;
 }
 
-function decision(action: StatusDecision["action"], before: TdlStatus = "open"): StatusDecision {
+function decision(
+  action: StatusDecision["action"],
+  before: TdlStatus = "open",
+  over: Partial<StatusDecision> = {},
+): StatusDecision {
   return {
     id: "row-1",
     title: "Call Sam",
     action,
-    before: { status: before, last_worked_at: null },
+    before: {
+      status: before,
+      last_worked_at: null,
+      is_archived: false,
+      priority_rank: null,
+    },
+    ...over,
   };
+}
+
+// A card whose rank was moved while it was up, with `action` ruling it after.
+function ranked(
+  action: StatusDecision["action"],
+  rank: number | null,
+  was: number | null = null,
+) {
+  return decision(action, "open", {
+    rank,
+    before: {
+      status: "open",
+      last_worked_at: null,
+      is_archived: false,
+      priority_rank: was,
+    },
+  });
 }
 
 describe("isStatusPassCandidate", () => {
@@ -62,9 +91,12 @@ describe("isStatusPassCandidate", () => {
     },
   );
 
-  it.each(["done", "cancelled"] as const)("leaves a settled %s task out", (status) => {
-    expect(isStatusPassCandidate(item({ status }), DAY)).toBe(false);
-  });
+  it.each(["done", "cancelled"] as const)(
+    "leaves a settled %s task out",
+    (status) => {
+      expect(isStatusPassCandidate(item({ status }), DAY)).toBe(false);
+    },
+  );
 
   it("includes recurring tasks, unlike triage", () => {
     expect(isStatusPassCandidate(item({ is_recurring: true }), DAY)).toBe(true);
@@ -72,12 +104,18 @@ describe("isStatusPassCandidate", () => {
 
   it("leaves out anything off the board", () => {
     expect(isStatusPassCandidate(item({ is_archived: true }), DAY)).toBe(false);
-    expect(isStatusPassCandidate(item({ deleted_at: `${DAY}T09:00:00.000Z` }), DAY)).toBe(false);
-    expect(isStatusPassCandidate(item({ snoozed_until: "2026-09-20" }), DAY)).toBe(false);
+    expect(
+      isStatusPassCandidate(item({ deleted_at: `${DAY}T09:00:00.000Z` }), DAY),
+    ).toBe(false);
+    expect(
+      isStatusPassCandidate(item({ snoozed_until: "2026-09-20" }), DAY),
+    ).toBe(false);
   });
 
   it("takes a snooze that has already woken", () => {
-    expect(isStatusPassCandidate(item({ snoozed_until: "2026-09-15" }), DAY)).toBe(true);
+    expect(
+      isStatusPassCandidate(item({ snoozed_until: "2026-09-15" }), DAY),
+    ).toBe(true);
   });
 });
 
@@ -118,7 +156,10 @@ describe("collectStatusQueue", () => {
   });
 
   it("carries the days-since-progress for each card", () => {
-    const queue = collectStatusQueue([item({ origin_snapshot_date: "2026-09-13" })], DAY);
+    const queue = collectStatusQueue(
+      [item({ origin_snapshot_date: "2026-09-13" })],
+      DAY,
+    );
     expect(queue[0].stale).toBe(3);
   });
 
@@ -139,6 +180,38 @@ describe("isNoOp", () => {
   it("is false for a real change", () => {
     expect(isNoOp(item({ status: "open" }), "done")).toBe(false);
   });
+
+  it("never treats an archive as a no-op", () => {
+    expect(isNoOp(item({ status: "open" }), "archive")).toBe(false);
+  });
+});
+
+describe("rankChanged", () => {
+  it("is false when the picker was never touched", () => {
+    expect(rankChanged(decision("done"))).toBe(false);
+  });
+
+  it("is false when the rank it already held was re-picked", () => {
+    expect(rankChanged(ranked("skip", 3, 3))).toBe(false);
+  });
+
+  it("is true for a new rank and for a cleared one", () => {
+    expect(rankChanged(ranked("skip", 2))).toBe(true);
+    expect(rankChanged(ranked("skip", null, 4))).toBe(true);
+  });
+});
+
+describe("wroteAnything", () => {
+  it("is false for a bare skip and for re-picking the current status", () => {
+    expect(wroteAnything(decision("skip"))).toBe(false);
+    expect(wroteAnything(decision("open", "open"))).toBe(false);
+  });
+
+  it("is true for a status change, an archive, or a rank set on its own", () => {
+    expect(wroteAnything(decision("done"))).toBe(true);
+    expect(wroteAnything(decision("archive"))).toBe(true);
+    expect(wroteAnything(ranked("skip", 1))).toBe(true);
+  });
 });
 
 describe("summariseStatusPass", () => {
@@ -150,11 +223,60 @@ describe("summariseStatusPass", () => {
       decision("skip"),
       decision("open", "open"),
     ]);
-    expect(t).toEqual({ updated: 3, skipped: 2, byStatus: { done: 2, worked_today: 1 } });
+    expect(t).toEqual({
+      updated: 3,
+      skipped: 2,
+      archived: 0,
+      prioritised: 0,
+      byStatus: { done: 2, worked_today: 1 },
+    });
   });
 
   it("is all zeroes for an empty pass", () => {
-    expect(summariseStatusPass([])).toEqual({ updated: 0, skipped: 0, byStatus: {} });
+    expect(summariseStatusPass([])).toEqual({
+      updated: 0,
+      skipped: 0,
+      archived: 0,
+      prioritised: 0,
+      byStatus: {},
+    });
+  });
+
+  it("counts archives apart from the statuses set", () => {
+    const t = summariseStatusPass([
+      decision("archive"),
+      decision("archive"),
+      decision("done"),
+    ]);
+    expect(t).toEqual({
+      updated: 3,
+      skipped: 0,
+      archived: 2,
+      prioritised: 0,
+      byStatus: { done: 1 },
+    });
+  });
+
+  it("counts a card once however many of its fields moved", () => {
+    const t = summariseStatusPass([ranked("done", 1)]);
+    expect(t).toEqual({
+      updated: 1,
+      skipped: 0,
+      archived: 0,
+      prioritised: 1,
+      byStatus: { done: 1 },
+    });
+  });
+
+  it("does not call a card skipped when only its rank moved", () => {
+    const t = summariseStatusPass([ranked("skip", 2), decision("skip")]);
+    expect(t).toEqual({
+      updated: 1,
+      skipped: 1,
+      archived: 0,
+      prioritised: 1,
+      byStatus: {},
+    });
   });
 });
 
@@ -171,13 +293,33 @@ describe("describeStatusPass", () => {
 
   it("lists the statuses set, commonest first", () => {
     expect(
-      describeStatusPass([decision("done"), decision("done"), decision("worked_today")]),
+      describeStatusPass([
+        decision("done"),
+        decision("done"),
+        decision("worked_today"),
+      ]),
     ).toBe("Updated 3 tasks · 2 done, 1 in progress");
   });
 
   it("appends the skipped count only when there were skips", () => {
     expect(describeStatusPass([decision("done"), decision("skip")])).toBe(
       "Updated 1 task · 1 done · 1 skipped",
+    );
+  });
+
+  it("names archives and rank changes after the statuses", () => {
+    expect(
+      describeStatusPass([
+        decision("done"),
+        decision("archive"),
+        ranked("skip", 1),
+      ]),
+    ).toBe("Updated 3 tasks · 1 done, 1 archived, 1 prioritised");
+  });
+
+  it("counts a rank set on its own as a change, not a skip", () => {
+    expect(describeStatusPass([ranked("skip", 1), decision("skip")])).toBe(
+      "Updated 1 task · 1 prioritised · 1 skipped",
     );
   });
 });
