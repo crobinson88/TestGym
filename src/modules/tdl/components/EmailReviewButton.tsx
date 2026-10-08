@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/lib/auth";
 import { prettyDate } from "@/lib/utils";
 import { useCategories } from "../categories";
-import { QUICK_ADD_CATEGORY_STORAGE_KEY, resolveQuickAddCategory } from "../composer";
+import { loadQuickAddCategory, resolveQuickAddCategory } from "../composer";
 import { createItem } from "../repo";
 import {
   EMAIL_REVIEW_CATEGORY_STORAGE_KEY,
@@ -48,10 +48,9 @@ const PREFETCH_AHEAD = 5;
 
 function loadCategory(): string | null {
   try {
-    return (
-      localStorage.getItem(EMAIL_REVIEW_CATEGORY_STORAGE_KEY) ??
-      localStorage.getItem(QUICK_ADD_CATEGORY_STORAGE_KEY)
-    );
+    // The review pass keeps its own pick, falling back to the quick-add bar's
+    // so a first pass lands somewhere sensible rather than on category one.
+    return localStorage.getItem(EMAIL_REVIEW_CATEGORY_STORAGE_KEY) ?? loadQuickAddCategory();
   } catch {
     // ignore unavailable storage — fall back to the initial default
     return null;
