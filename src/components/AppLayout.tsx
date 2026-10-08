@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   BarChart3,
@@ -10,6 +10,7 @@ import {
   Dumbbell,
   Heart,
   History,
+  ListTodo,
   Languages,
   ListChecks,
   LayoutGrid,
@@ -24,6 +25,11 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useIsDesktop, useWorkstreamAlert } from "@/modules/workstreams/hooks";
 import { ThemeToggle } from "@/components/ThemeToggle";
+
+// Lazy so the to-do composer rides with the TDL chunk rather than the shell.
+const NewTaskDialog = lazy(() =>
+  import("@/modules/tdl/components/NewTaskDialog").then((m) => ({ default: m.NewTaskDialog })),
+);
 
 type Tab = {
   to: string;
@@ -51,6 +57,7 @@ export function AppLayout() {
   const { session, signOut } = useAuth();
   const email = session?.user?.email ?? "";
   const [logOpen, setLogOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const navigate = useNavigate();
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const isDesktop = useIsDesktop();
@@ -123,6 +130,16 @@ export function AppLayout() {
         {logOpen && (
           <>
             <button
+              onClick={() => {
+                setLogOpen(false);
+                setNewTaskOpen(true);
+              }}
+              className="flex h-14 items-center gap-3 rounded-full bg-surface px-5 text-base font-medium text-text shadow-lg ring-1 ring-line transition active:scale-[0.98]"
+            >
+              <ListTodo className="h-5 w-5 text-accent" />
+              Task
+            </button>
+            <button
               onClick={() => go("/add-cardio")}
               className="flex h-14 items-center gap-3 rounded-full bg-surface px-5 text-base font-medium text-text shadow-lg ring-1 ring-line transition active:scale-[0.98]"
             >
@@ -147,6 +164,12 @@ export function AppLayout() {
           {logOpen ? <X className="h-7 w-7" /> : <Plus className="h-7 w-7" />}
         </button>
       </div>
+
+      {newTaskOpen && (
+        <Suspense fallback={null}>
+          <NewTaskDialog onClose={() => setNewTaskOpen(false)} />
+        </Suspense>
+      )}
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 backdrop-blur">
         <div className="overflow-x-auto overscroll-x-contain pb-[max(0.5rem,env(safe-area-inset-bottom))] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

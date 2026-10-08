@@ -102,14 +102,28 @@ export type LibraryFood = RecentFood;
 // The food library: every distinct food ever logged, keyed by unique title
 // (case-insensitive, trimmed). A food joins the library the first time a new
 // title is logged; a repeat title just refreshes it (most recent macros win),
-// so the library never holds duplicate titles. Most-recently-logged first.
-// This is the whole-history view (today included) that `recentFoods` narrows
-// (excluding a day) for the "log again" picker.
+// so the library never holds duplicate titles. Listed A–Z — the library is
+// browsed by name, not by when it was last eaten, so the whole list stays
+// scannable however long it gets. This is the whole-history view (today
+// included) that `recentFoods` narrows (excluding a day) for the "log again"
+// picker, which stays most-recent-first.
 export function foodLibrary(
   entries: FoodEntryRow[],
   opts: { limit?: number } = {},
 ): LibraryFood[] {
-  return recentFoods(entries, { limit: opts.limit });
+  const foods = recentFoods(entries).sort(byName);
+  return opts.limit != null ? foods.slice(0, opts.limit) : foods;
+}
+
+// A–Z on the title, case- and accent-insensitive, with numbers compared as
+// numbers so "Shake 2" sorts before "Shake 10". Ties break on the raw title so
+// the order is stable whatever order the entries arrive in.
+function byName(a: LibraryFood, b: LibraryFood): number {
+  const cmp = a.name.localeCompare(b.name, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
+  return cmp !== 0 ? cmp : a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 }
 
 // Whether a food title is already in the library (case-insensitive, trimmed).

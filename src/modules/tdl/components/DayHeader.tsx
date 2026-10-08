@@ -16,6 +16,7 @@ import { RollForwardButton } from "./RollForwardButton";
 import { SuggestReluctantButton } from "./SuggestReluctantButton";
 import { SuggestSnoozeButton } from "./SuggestSnoozeButton";
 import { TargetPies } from "./TargetPies";
+import { StatusPassButton } from "./StatusPassButton";
 import { TriageButton } from "./TriageButton";
 import { useWeekCompletedCount } from "../completions";
 
@@ -164,6 +165,7 @@ export function DayHeader({
         <CalendarSyncButton snapshot_date={snapshot_date} items={items} categories={categories} />
         <RollForwardButton toDate={snapshot_date} />
         <TriageButton snapshot_date={snapshot_date} items={items} />
+        <StatusPassButton snapshot_date={snapshot_date} items={items} />
         <SuggestSnoozeButton snapshot_date={snapshot_date} items={items} />
         <SuggestReluctantButton snapshot_date={snapshot_date} items={items} />
         <ResetStatusesButton snapshot_date={snapshot_date} items={items} />

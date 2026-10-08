@@ -21,9 +21,6 @@ import { useFoodEntries, useFoodEntry } from "../hooks";
 import { foodLibrary, searchLibrary, type LibraryFood } from "../compute";
 import { estimateFoodPhoto, estimateFoodText } from "../photo";
 
-// How many foods the library shows before a search is needed to reach the rest.
-const LIBRARY_PREVIEW = 24;
-
 export default function AddFoodEntry() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -118,13 +115,11 @@ export default function AddFoodEntry() {
     () => (editing ? [] : foodLibrary(allEntries ?? [])),
     [editing, allEntries],
   );
-  // Idle the list stays capped so the page opens short; a search reaches the
-  // whole history, which is the only way to get at an older food by name.
+  // The whole library is listed A–Z (no preview cap — an alphabetical list cut
+  // short would only ever show the As), capped in height so the page still
+  // opens short; search narrows it in place.
   const query = librarySearch.trim();
-  const library = query
-    ? searchLibrary(fullLibrary, query)
-    : fullLibrary.slice(0, LIBRARY_PREVIEW);
-  const hiddenCount = query ? 0 : fullLibrary.length - library.length;
+  const library = query ? searchLibrary(fullLibrary, query) : fullLibrary;
 
   function pickFood(food: LibraryFood) {
     setName(food.name);
@@ -281,7 +276,7 @@ export default function AddFoodEntry() {
                 </button>
               )}
             </div>
-            <ul className="flex flex-wrap gap-2">
+            <ul className="flex max-h-64 flex-wrap gap-2 overflow-y-auto overscroll-contain">
               {library.map((food) => (
                 <li key={food.name}>
                   <button
@@ -301,11 +296,6 @@ export default function AddFoodEntry() {
             {library.length === 0 && (
               <p className="py-1 text-sm text-muted">
                 No food matches “{query}”. Type it in below to log it as a new food.
-              </p>
-            )}
-            {hiddenCount > 0 && (
-              <p className="pt-2 text-xs text-muted">
-                +{hiddenCount} more — search to find them.
               </p>
             )}
           </div>

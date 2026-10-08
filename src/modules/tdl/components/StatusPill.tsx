@@ -1,16 +1,8 @@
 import { cn } from "@/lib/utils";
+import { statusLabel } from "../status";
 import type { TdlSection, TdlStatus } from "../types";
 
-const LABELS: Record<TdlStatus, string> = {
-  open: "Open",
-  worked_today: "In progress",
-  ready_for_testing: "Ready for testing",
-  paused: "Paused",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-
-const CLASSES: Record<TdlStatus, string> = {
+export const STATUS_CLASSES: Record<TdlStatus, string> = {
   open: "bg-surface2 text-muted border border-line",
   worked_today: "bg-accent/15 text-accent border border-accent/40",
   ready_for_testing: "bg-sky-500/15 text-sky-400 border border-sky-500/40",
@@ -32,8 +24,8 @@ export function StatusPill({
   compact?: boolean;
   className?: string;
 }) {
-  const label = status === "ready_for_testing" && section !== "product" ? LABELS.worked_today : LABELS[status];
-  const cls = CLASSES[status];
+  const label = statusLabel(status, section);
+  const cls = STATUS_CLASSES[status];
   const sizing = compact ? "h-7 px-2 text-[11px]" : "h-9 px-3 text-xs";
   if (!onClick) {
     return (
