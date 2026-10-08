@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendCandidates,
   candidateKey,
   describeReview,
   ledgerRows,
@@ -198,5 +199,34 @@ describe("summariseReview / describeReview", () => {
 
   it("singularises one task", () => {
     expect(describeReview([ruling({ action: "add" })])).toBe("1 task added");
+  });
+});
+
+describe("appendCandidates", () => {
+  it("orders each page on its own and adds it to the end", () => {
+    const first = orderCandidates([
+      candidate({ threadId: "a", suggested: true, receivedAt: "2026-10-01T09:00:00.000Z" }),
+    ]);
+    const page = [
+      candidate({ threadId: "b", suggested: false, receivedAt: "2026-10-05T09:00:00.000Z" }),
+      candidate({ threadId: "c", suggested: true, receivedAt: "2026-10-04T09:00:00.000Z" }),
+    ];
+    // "c" leads its own page, but neither page member jumps ahead of "a".
+    expect(appendCandidates(first, page).map((c) => c.threadId)).toEqual(["a", "c", "b"]);
+  });
+
+  it("drops a thread that straddles two pages", () => {
+    const first = appendCandidates([], [candidate({ threadId: "a" })]);
+    const second = appendCandidates(first, [
+      candidate({ threadId: "a" }),
+      candidate({ threadId: "b" }),
+    ]);
+    expect(second.map((c) => c.threadId)).toEqual(["a", "b"]);
+  });
+
+  it("never reorders cards the user may already have passed", () => {
+    let queue = appendCandidates([], [candidate({ threadId: "a", suggested: false })]);
+    queue = appendCandidates(queue, [candidate({ threadId: "b", suggested: true })]);
+    expect(queue.map((c) => c.threadId)).toEqual(["a", "b"]);
   });
 });

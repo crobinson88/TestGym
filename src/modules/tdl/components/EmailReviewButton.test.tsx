@@ -16,7 +16,8 @@ vi.mock("../repo", () => ({
 const fetchEmailCandidates = vi.fn();
 const recordEmailReviews = vi.fn(async (_rows: Record<string, unknown>[]) => undefined);
 vi.mock("../emailReviewApi", () => ({
-  fetchEmailCandidates: (token: string) => fetchEmailCandidates(token),
+  fetchEmailCandidates: (token: string, cursors?: Record<string, string | null>) =>
+    fetchEmailCandidates(token, cursors),
   recordEmailReviews: (rows: Record<string, unknown>[]) => recordEmailReviews(rows),
 }));
 
@@ -52,7 +53,16 @@ function candidate(over: Partial<EmailCandidate> = {}): EmailCandidate {
 }
 
 function result(over: Partial<ReviewFetch> = {}): ReviewFetch {
-  return { accounts: [], candidates: [candidate()], scanned: 1, errors: [], ...over };
+  return {
+    accounts: [],
+    candidates: [candidate()],
+    scanned: 1,
+    matched: 1,
+    cursors: {},
+    done: true,
+    errors: [],
+    ...over,
+  };
 }
 
 async function openPass(fetchResult: ReviewFetch) {
@@ -170,5 +180,54 @@ describe("EmailReviewButton", () => {
 
     expect(recordEmailReviews).not.toHaveBeenCalled();
     expect(screen.getByText(/1 decision discarded/i)).toBeTruthy();
+  });
+});
+
+describe("EmailReviewButton paging", () => {
+  it("walks the next page as the user nears the end, passing the cursor back", async () => {
+    fetchEmailCandidates
+      .mockResolvedValueOnce(
+        result({
+          candidates: [candidate({ threadId: "t1" })],
+          scanned: 1,
+          matched: 1400,
+          cursors: { "acct-1": "page-2" },
+          done: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        result({
+          candidates: [candidate({ threadId: "t2", subject: "Invoice" })],
+          scanned: 1,
+          matched: 1400,
+          cursors: {},
+          done: true,
+        }),
+      );
+
+    render(<EmailReviewButton snapshot_date={DAY} />);
+    fireEvent.click(screen.getByRole("button", { name: /review email/i }));
+
+    // The prefetch fires off the back of the first page (one card is well
+    // inside PREFETCH_AHEAD), carrying the cursor it was handed.
+    await waitFor(() => expect(fetchEmailCandidates).toHaveBeenCalledTimes(2));
+    expect(fetchEmailCandidates.mock.calls[0][1]).toBeUndefined();
+    expect(fetchEmailCandidates.mock.calls[1][1]).toEqual({ "acct-1": "page-2" });
+
+    // Both pages are in one queue, in page order.
+    await waitFor(() => expect(screen.getByText("1 of 2")).toBeTruthy());
+  });
+
+  it("states the size of the window rather than implying the inbox is handled", async () => {
+    await openPass(result({ matched: 1400, scanned: 20, done: false, cursors: {} }));
+    expect(screen.getByText(/~1,400 emails addressed to you/i)).toBeTruthy();
+    expect(screen.getByText(/20 read so far/i)).toBeTruthy();
+  });
+
+  it("stops fetching once the window is exhausted", async () => {
+    await openPass(result({ done: true, cursors: {} }));
+    fireEvent.click(screen.getByRole("button", { name: /not a task/i }));
+    await waitFor(() => expect(screen.getByText(/pass complete/i)).toBeTruthy());
+    expect(fetchEmailCandidates).toHaveBeenCalledTimes(1);
   });
 });

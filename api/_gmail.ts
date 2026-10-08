@@ -20,13 +20,22 @@ import { GMAIL_READONLY_SCOPE, getGoogleAccessToken } from "./_gcal.js";
 const MODEL = "claude-sonnet-4-6";
 const MAX_BODY_CHARS = 2000;
 
-// The review pass shows read mail too — the question is "is this a task?", not
-// "have I opened it?" — so it windows on age rather than unread state.
-export const REVIEW_QUERY = "in:inbox newer_than:7d -category:promotions -category:social";
-// Per mailbox. Each message is one Gmail GET, then a single Claude call over the
-// batch, and several mailboxes run at once: keep the fan-out inside the
-// function's 60s ceiling.
-export const REVIEW_MAX_MESSAGES = 25;
+// Everything addressed to the user in the last week, read or unread — the
+// question is "is this a task?", not "have I opened it?". Deliberately NOT
+// narrowed to the Primary tab: `to:me` is the chosen signal. It does not
+// exclude bulk mail (newsletters put your address in To: as well), so at a few
+// hundred mails a day this window runs to four figures, which is why the pass
+// is paged rather than fetched whole.
+export const REVIEW_QUERY = "in:inbox to:me newer_than:7d";
+// Per mailbox, PER REQUEST. Each message is one Gmail GET and then one Claude
+// call over the page, several mailboxes at once — this is what keeps a single
+// invocation inside the function's 60s ceiling and the model's context. The
+// client walks the next page as the user nears the end of this one.
+export const REVIEW_PAGE_SIZE = 20;
+// An all-ruled stretch of inbox would otherwise return an empty page and read
+// as "nothing left"; walk this many pages looking for something unruled before
+// giving up on the request.
+const MAX_SKIP_PAGES = 5;
 
 export interface EmailAccount {
   id: string;
@@ -163,16 +172,31 @@ export function newestPerThread(messages: readonly GmailMessage[]): GmailMessage
   return [...byThread.values()].sort((a, b) => (b.receivedAt ?? "").localeCompare(a.receivedAt ?? ""));
 }
 
+export interface FetchResult {
+  messages: GmailMessage[];
+  // How many messages the query matched in the mailbox, per Gmail's own
+  // estimate — usually far more than one page. Carried all the way to the UI so
+  // the size of what is waiting is stated rather than implied.
+  matched: number;
+  // Gmail's page token for the next slice, or null at the end of the window.
+  nextPageToken: string | null;
+}
+
 export async function fetchMessages(
   token: string,
   query: string,
   max: number,
-): Promise<GmailMessage[]> {
-  const list = await gmailFetch<{ messages?: { id: string; threadId: string }[] }>(
-    token,
-    `messages?q=${encodeURIComponent(query)}&maxResults=${max}`,
-  );
+  pageToken?: string | null,
+): Promise<FetchResult> {
+  const page = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+  const list = await gmailFetch<{
+    messages?: { id: string; threadId: string }[];
+    resultSizeEstimate?: number;
+    nextPageToken?: string;
+  }>(token, `messages?q=${encodeURIComponent(query)}&maxResults=${max}${page}`);
   const ids = list.messages ?? [];
+  const matched = list.resultSizeEstimate ?? ids.length;
+  const nextPageToken = list.nextPageToken ?? null;
 
   const messages = await Promise.all(
     ids.map(async (m) => {
@@ -201,7 +225,11 @@ export async function fetchMessages(
       }
     }),
   );
-  return messages.filter((m): m is GmailMessage => m !== null);
+  return {
+    messages: messages.filter((m): m is GmailMessage => m !== null),
+    matched,
+    nextPageToken,
+  };
 }
 
 // One candidate email, as handed to the review UI. The suggestion is advice,
@@ -223,10 +251,22 @@ export interface ReviewCandidate {
   action: string;
 }
 
+// Where each mailbox got to, keyed by account id. Handed back to the client and
+// returned on the next request, so the pass walks the window a page at a time
+// without the server holding any state between calls.
+export type ReviewCursors = Record<string, string | null>;
+
 export interface ReviewOutcome {
   accounts: PublicAccount[];
   candidates: ReviewCandidate[];
+  // Read and put through classification in THIS request.
   scanned: number;
+  // How much the window holds in total, per Gmail's estimate.
+  matched: number;
+  // Where to resume. An empty object means every mailbox reached the end of its
+  // window — the one honest "that is all of it".
+  cursors: ReviewCursors;
+  done: boolean;
   // Per-mailbox failures, so one dead grant does not look like an empty inbox.
   errors: { accountId: string; label: string; message: string }[];
 }
@@ -302,27 +342,52 @@ function gmailUrl(threadId: string): string {
   return `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
 }
 
-// Gather what is waiting to be reviewed across every active mailbox. Writes
+// Gather the next slice of what is waiting across every active mailbox. Writes
 // nothing: the user rules on each candidate and only then does anything land,
 // the same propose-then-confirm rule the snooze and roll-forward flows follow.
-export async function collectReviewCandidates(supabase: Db): Promise<ReviewOutcome> {
+//
+// Paged, because the chosen window (everything addressed to the user in the
+// last week) runs to four figures at a few hundred mails a day. One request
+// reads one page per mailbox; `cursors` carries where each one got to. The
+// review is therefore a queue the user works until they stop, not a batch they
+// must finish.
+export async function collectReviewCandidates(
+  supabase: Db,
+  cursors: ReviewCursors = {},
+): Promise<ReviewOutcome> {
   const accounts = await listAccounts(supabase);
   const errors: ReviewOutcome["errors"] = [];
 
   const perAccount = await Promise.all(
-    accounts.map(async (account): Promise<{ scanned: number; candidates: ReviewCandidate[] }> => {
+    accounts.map(async (account): Promise<{
+      scanned: number;
+      matched: number;
+      candidates: ReviewCandidate[];
+      cursor: string | null;
+    }> => {
       try {
         const token = await accessTokenFor(account);
-        const fetched = await fetchMessages(
-          token,
-          account.search_query?.trim() || REVIEW_QUERY,
-          REVIEW_MAX_MESSAGES,
-        );
-
+        const query = account.search_query?.trim() || REVIEW_QUERY;
         const seen = await reviewedThreads(supabase, account.id);
-        const fresh = newestPerThread(fetched).filter((m) => !seen.has(m.threadId));
-        const suggestions = await suggestForMessages(fresh);
 
+        let pageToken: string | null = cursors[account.id] ?? null;
+        let scanned = 0;
+        let matched = 0;
+        let fresh: GmailMessage[] = [];
+
+        // Walk past pages that are entirely already-ruled rather than handing
+        // back an empty page, which the user would read as an empty inbox.
+        for (let page = 0; page < MAX_SKIP_PAGES; page++) {
+          const result = await fetchMessages(token, query, REVIEW_PAGE_SIZE, pageToken);
+          scanned += result.messages.length;
+          if (page === 0) matched = result.matched;
+          pageToken = result.nextPageToken;
+
+          fresh = newestPerThread(result.messages).filter((m) => !seen.has(m.threadId));
+          if (fresh.length > 0 || !pageToken) break;
+        }
+
+        const suggestions = await suggestForMessages(fresh);
         const candidates = fresh.map((m, i) => {
           const s = suggestions.get(i);
           return {
@@ -341,25 +406,37 @@ export async function collectReviewCandidates(supabase: Db): Promise<ReviewOutco
             action: s?.action?.trim() || "",
           } satisfies ReviewCandidate;
         });
-        return { scanned: fetched.length, candidates };
+
+        return { scanned, matched, candidates, cursor: pageToken };
       } catch (e) {
         // One mailbox failing (revoked grant, unauthorised scope) must not sink
-        // the others; the UI names the mailbox that could not be read.
+        // the others; the UI names the mailbox that could not be read. Its
+        // cursor is dropped, so a retry restarts that mailbox rather than
+        // skipping the slice the failure swallowed.
         console.warn("email review failed for account", account.address, e);
         errors.push({
           accountId: account.id,
           label: account.label,
           message: e instanceof Error ? e.message : "could not be read",
         });
-        return { scanned: 0, candidates: [] };
+        return { scanned: 0, matched: 0, candidates: [], cursor: null };
       }
     }),
   );
+
+  const nextCursors: ReviewCursors = {};
+  accounts.forEach((account, i) => {
+    const cursor = perAccount[i].cursor;
+    if (cursor) nextCursors[account.id] = cursor;
+  });
 
   return {
     accounts: accounts.map(publicAccount),
     candidates: perAccount.flatMap((a) => a.candidates),
     scanned: perAccount.reduce((n, a) => n + a.scanned, 0),
+    matched: perAccount.reduce((n, a) => n + a.matched, 0),
+    cursors: nextCursors,
+    done: Object.keys(nextCursors).length === 0,
     errors,
   };
 }

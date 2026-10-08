@@ -63,6 +63,10 @@ export function candidateKey(c: Pick<EmailCandidate, "accountId" | "threadId">):
 // Claude's picks first — they are what the pass is really for — then newest
 // first inside each group so a stale thread is not the first thing in front of
 // you. Mail with no date sorts last rather than jumping the queue.
+//
+// Applied to ONE page, not the accumulated queue: pages arrive as the user
+// works through them, and re-sorting everything would shuffle cards they have
+// not reached yet (see appendCandidates).
 export function orderCandidates(candidates: readonly EmailCandidate[]): EmailCandidate[] {
   const seen = new Set<string>();
   const unique = candidates.filter((c) => {
@@ -79,6 +83,18 @@ export function orderCandidates(candidates: readonly EmailCandidate[]): EmailCan
     if (at !== bt) return bt.localeCompare(at);
     return a.subject.localeCompare(b.subject);
   });
+}
+
+// The queue is append-only: each page is ordered on its own and added to the
+// end. A thread can also straddle two Gmail pages, and it is not in the ledger
+// until the pass is confirmed, so an already-queued key is dropped here rather
+// than shown twice.
+export function appendCandidates(
+  queue: readonly EmailCandidate[],
+  page: readonly EmailCandidate[],
+): EmailCandidate[] {
+  const held = new Set(queue.map(candidateKey));
+  return [...queue, ...orderCandidates(page).filter((c) => !held.has(candidateKey(c)))];
 }
 
 export function suggestedCount(candidates: readonly EmailCandidate[]): number {

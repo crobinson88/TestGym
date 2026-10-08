@@ -32,7 +32,7 @@ export interface TriageOutcome {
 // account. Message reading itself is shared (see _gmail.ts).
 export async function fetchUnread(): Promise<GmailMessage[]> {
   const token = await getGoogleAccessToken(GMAIL_READONLY_SCOPE);
-  return fetchMessages(token, GMAIL_QUERY, MAX_MESSAGES);
+  return (await fetchMessages(token, GMAIL_QUERY, MAX_MESSAGES)).messages;
 }
 
 const Triage = z.object({

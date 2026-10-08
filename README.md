@@ -185,6 +185,14 @@ their status is edited from the table.
 Review the mail sitting in your accounts and decide, one email at a time, what
 becomes a task. "Review email" sits in the to-do list's day header on today.
 
+- Pulls `in:inbox to:me newer_than:7d` — everything addressed to you in the last
+  week, read or unread. Set `email_accounts.search_query` to override per
+  mailbox.
+- At a few hundred mails a day that window is four figures, so the pass is a
+  **paged queue you work until you stop**, not a batch to finish: it loads 20 at
+  a time per mailbox and fetches the next batch as you near the end. The header
+  always shows how big the window is and how much of it has been read, so
+  stopping early never looks like a handled inbox.
 - Nothing is written until you confirm the pass, so Undo is free and closing the
   modal half-way leaves everything as it was.
 - **Add to to-do** creates a task on the day (title editable, category

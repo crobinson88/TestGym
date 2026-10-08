@@ -5,10 +5,17 @@ import { supabase } from "@/lib/supabase";
 import type { Database } from "@/lib/database.types";
 import type { EmailCandidate, LedgerRow } from "./emailReview";
 
+export type ReviewCursors = Record<string, string | null>;
+
 export interface ReviewFetch {
   accounts: { id: string; label: string; address: string }[];
   candidates: EmailCandidate[];
   scanned: number;
+  matched: number;
+  // Where each mailbox got to; passed straight back to load the next page.
+  cursors: ReviewCursors;
+  // Every mailbox reached the end of its window.
+  done: boolean;
   // One entry per mailbox that could not be read, so a revoked grant does not
   // read as an empty inbox.
   errors: { accountId: string; label: string; message: string }[];
@@ -27,11 +34,14 @@ async function readJson<T>(res: Response): Promise<{ parsed: T | null; text: str
 
 // Multiplexed onto the meeting-import endpoint: api/ is at Vercel's Hobby-plan
 // 12-function cap. Returns candidates only — nothing is written server-side.
-export async function fetchEmailCandidates(token: string): Promise<ReviewFetch> {
+export async function fetchEmailCandidates(
+  token: string,
+  cursors: ReviewCursors = {},
+): Promise<ReviewFetch> {
   const res = await fetch("/api/fireflies-import", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "email-review" }),
+    body: JSON.stringify({ action: "email-review", cursors }),
   });
   const { parsed, text } = await readJson<Partial<ReviewFetch> & { error?: string }>(res);
   if (!res.ok || !parsed) {
@@ -42,6 +52,11 @@ export async function fetchEmailCandidates(token: string): Promise<ReviewFetch> 
     accounts: parsed.accounts ?? [],
     candidates: parsed.candidates ?? [],
     scanned: parsed.scanned ?? 0,
+    matched: parsed.matched ?? 0,
+    cursors: parsed.cursors ?? {},
+    // Absent `done` is treated as finished: better to end the pass than to
+    // loop fetching pages that never come.
+    done: parsed.done ?? true,
     errors: parsed.errors ?? [],
   };
 }

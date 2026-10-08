@@ -13,8 +13,10 @@
 //     desktop Command Center. Same reason it lives here: no function slots left.
 //  4. action:"email-review" — every configured mailbox → Claude → candidate
 //     tasks handed back for the user to rule on. Writes NOTHING; the browser
-//     creates the tasks and the ledger rows once the pass is confirmed. Same
-//     budget reason again: api/ is at exactly 12 functions.
+//     creates the tasks and the ledger rows once the pass is confirmed. Paged:
+//     one page per mailbox per request, `cursors` in and out, because the
+//     window runs to four figures. Same budget reason again: api/ is at
+//     exactly 12 functions.
 import {
   authedUser,
   json,
@@ -52,6 +54,8 @@ type CalendarSyncBody = {
   // calendar-busy window (RFC3339 with offset/Z).
   timeMin?: string;
   timeMax?: string;
+  // email-review: where each mailbox got to, from the previous response.
+  cursors?: Record<string, string | null>;
 };
 
 // The import button posts no body; request.json() then throws. Treat any parse
@@ -76,7 +80,7 @@ export async function POST(request: Request): Promise<Response> {
     if (body?.action === "calendar-busy") return handleCalendarBusy(body);
     if (body?.action === "workstream-triage") return json(await triageInbox(supabase), 200);
     if (body?.action === "email-review")
-      return json(await collectReviewCandidates(supabase), 200);
+      return json(await collectReviewCandidates(supabase, body.cursors ?? {}), 200);
 
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);

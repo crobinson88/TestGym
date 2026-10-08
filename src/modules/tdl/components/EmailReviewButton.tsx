@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -22,6 +22,7 @@ import { QUICK_ADD_CATEGORY_STORAGE_KEY, resolveQuickAddCategory } from "../comp
 import { createItem } from "../repo";
 import {
   EMAIL_REVIEW_CATEGORY_STORAGE_KEY,
+  appendCandidates,
   candidateKey,
   describeReview,
   ledgerRows,
@@ -34,7 +35,16 @@ import {
   type ReviewAction,
   type ReviewRuling,
 } from "../emailReview";
-import { fetchEmailCandidates, recordEmailReviews, type ReviewFetch } from "../emailReviewApi";
+import {
+  fetchEmailCandidates,
+  recordEmailReviews,
+  type ReviewCursors,
+  type ReviewFetch,
+} from "../emailReviewApi";
+
+// Start loading the next page once the user is this close to the end of the
+// queue, so a pass never stalls on a fetch at a few hundred mails a day.
+const PREFETCH_AHEAD = 5;
 
 function loadCategory(): string | null {
   try {
@@ -80,6 +90,12 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
   const [note, setNote] = useState<string | null>(null);
   const [fetched, setFetched] = useState<ReviewFetch | null>(null);
   const [queue, setQueue] = useState<EmailCandidate[]>([]);
+  // Paging state: where each mailbox got to, whether the window is exhausted,
+  // how much has been read so far, and whether a page is in flight.
+  const [cursors, setCursors] = useState<ReviewCursors>({});
+  const [done, setDone] = useState(true);
+  const [readSoFar, setReadSoFar] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [index, setIndex] = useState(0);
   const [rulings, setRulings] = useState<ReviewRuling[]>([]);
   // The title and category for the card on screen, seeded from the suggestion.
@@ -87,7 +103,11 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
   const [section, setSection] = useState("");
 
   const card: EmailCandidate | undefined = queue[index];
-  const finished = index >= queue.length;
+  // Out of cards AND out of window. With pages left, the queue running dry is a
+  // wait, not the end of the pass.
+  const exhausted = index >= queue.length;
+  const finished = exhausted && done;
+  const waiting = exhausted && !done;
   const tally = summariseReview(rulings);
   const saved = note !== null;
 
@@ -109,15 +129,53 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
       const ordered = orderCandidates(result.candidates);
       setFetched(result);
       setQueue(ordered);
+      setCursors(result.cursors);
+      setDone(result.done);
+      setReadSoFar(result.scanned);
       seedCard(ordered[0], "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Review failed");
       setQueue([]);
       setFetched(null);
+      setDone(true);
     } finally {
       setLoading(false);
     }
   }
+
+  // Walk the next page. Appends rather than re-sorting, so cards the user has
+  // not reached yet stay where they were.
+  async function loadMore() {
+    if (!session || loadingMore || done) return;
+    setLoadingMore(true);
+    try {
+      const result = await fetchEmailCandidates(session.access_token, cursors);
+      setQueue((prev) => {
+        const next = appendCandidates(prev, result.candidates);
+        // Seed the card if the user is sitting on an empty queue waiting.
+        if (prev.length === index && next.length > index) seedCard(next[index], section);
+        return next;
+      });
+      setCursors(result.cursors);
+      setDone(result.done);
+      setReadSoFar((n) => n + result.scanned);
+      setFetched((prev) => (prev ? { ...prev, errors: result.errors } : result));
+    } catch (e) {
+      // A failed page does not end the pass: what is already queued still
+      // stands, and the next prefetch retries from the same cursor.
+      setError(e instanceof Error ? e.message : "Could not load more email");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!open || loading || done || loadingMore || error) return;
+    if (index >= queue.length - PREFETCH_AHEAD) void loadMore();
+    // loadMore is stable enough for this guard set; re-running on queue/index
+    // movement is exactly the trigger we want.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, loading, done, loadingMore, error, index, queue.length]);
 
   function rule(action: ReviewAction) {
     if (!card || saving) return;
@@ -224,7 +282,9 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                     <h2 className="truncate text-base font-semibold">Review email</h2>
                     {queue.length > 0 && (
                       <span className="shrink-0 text-xs tabular-nums text-muted">
-                        {finished ? `${queue.length} of ${queue.length}` : `${index + 1} of ${queue.length}`}
+                        {exhausted
+                          ? `${queue.length} of ${queue.length}`
+                          : `${index + 1} of ${queue.length}${done ? "" : "+"}`}
                       </span>
                     )}
                   </div>
@@ -275,8 +335,25 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                   </p>
                 ))}
 
+                {/* How big the window is and how far into it we are. The pass
+                    is a queue you stop whenever you like, so this is progress,
+                    not a truncation warning — but it must be stated, or a
+                    pass ended early would read as a handled inbox. */}
+                {fetched && fetched.matched > 0 && (
+                  <p className="mb-3 rounded-lg border border-line bg-surface2 px-3 py-2 text-xs text-muted">
+                    ~{fetched.matched.toLocaleString()} emails addressed to you in the window ·{" "}
+                    {readSoFar.toLocaleString()} read so far, newest first
+                    {done ? " · end of the window" : " · more load as you go"}
+                  </p>
+                )}
+
                 {loading ? (
                   <p className="py-10 text-center text-sm text-muted">Reading your inbox…</p>
+                ) : waiting ? (
+                  <div className="py-10 text-center">
+                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted" />
+                    <p className="mt-3 text-sm text-muted">Loading the next batch…</p>
+                  </div>
                 ) : finished ? (
                   <div className="py-6 text-center">
                     <Check className="mx-auto h-10 w-10 text-success" />
@@ -285,7 +362,7 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                     </p>
                     <p className="mt-1 text-sm text-muted">
                       {queue.length === 0
-                        ? `${fetched?.scanned ?? 0} email${(fetched?.scanned ?? 0) === 1 ? "" : "s"} read, all of them already ruled on`
+                        ? `${readSoFar} email${readSoFar === 1 ? "" : "s"} read, all of them already ruled on`
                         : describeReview(rulings)}
                     </p>
                     {tally.added > 0 && (
@@ -414,6 +491,7 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] tabular-nums text-muted">
                     {tally.added} added · {tally.skipped} skipped · {tally.later} later
+                    {loadingMore && " · loading…"}
                   </span>
                   <Button
                     size="sm"
