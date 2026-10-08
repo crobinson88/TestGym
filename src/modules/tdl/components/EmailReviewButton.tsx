@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -22,15 +28,20 @@ import { loadQuickAddCategory, resolveQuickAddCategory } from "../composer";
 import { createItem } from "../repo";
 import {
   EMAIL_REVIEW_CATEGORY_STORAGE_KEY,
+  SWIPE_EXIT_MS,
   appendCandidates,
   candidateKey,
   describeReview,
+  isHorizontalSwipe,
   ledgerRows,
   orderCandidates,
   resolveTitle,
   reviewNotes,
   senderName,
   summariseReview,
+  swipeCommitted,
+  swipeOffset,
+  swipeProgress,
   type EmailCandidate,
   type ReviewAction,
   type ReviewRuling,
@@ -50,7 +61,10 @@ function loadCategory(): string | null {
   try {
     // The review pass keeps its own pick, falling back to the quick-add bar's
     // so a first pass lands somewhere sensible rather than on category one.
-    return localStorage.getItem(EMAIL_REVIEW_CATEGORY_STORAGE_KEY) ?? loadQuickAddCategory();
+    return (
+      localStorage.getItem(EMAIL_REVIEW_CATEGORY_STORAGE_KEY) ??
+      loadQuickAddCategory()
+    );
   } catch {
     // ignore unavailable storage — fall back to the initial default
     return null;
@@ -79,7 +93,11 @@ function receivedText(iso: string | null): string | null {
 // ruling is held here, and confirming the pass creates the tasks and the ledger
 // rows in one go. So "Undo" costs nothing, and closing the modal half-way
 // through leaves the inbox exactly as it was.
-export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) {
+export function EmailReviewButton({
+  snapshot_date,
+}: {
+  snapshot_date: string;
+}) {
   const { session } = useAuth();
   const categories = useCategories();
   const [open, setOpen] = useState(false);
@@ -100,6 +118,22 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
   // The title and category for the card on screen, seeded from the suggestion.
   const [title, setTitle] = useState("");
   const [section, setSection] = useState("");
+  // Swipe-left-to-skip. `dx` is how far the card has been dragged (0 at rest),
+  // `leaving` is the committed card on its way out — the window in which the
+  // transform animates and no further gesture is taken.
+  const [dx, setDx] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+  // Measured when a gesture starts: the commit threshold and the reveal's fade
+  // are both a share of the card's own width.
+  const [cardWidth, setCardWidth] = useState(0);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const gesture = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    horizontal: boolean;
+  } | null>(null);
+  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const card: EmailCandidate | undefined = queue[index];
   // Out of cards AND out of window. With pages left, the queue running dry is a
@@ -112,7 +146,9 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
 
   function seedCard(next: EmailCandidate | undefined, keepSection: string) {
     setTitle(next ? resolveTitle(next, null) : "");
-    setSection(resolveQuickAddCategory(keepSection || loadCategory(), categories));
+    setSection(
+      resolveQuickAddCategory(keepSection || loadCategory(), categories),
+    );
   }
 
   async function run() {
@@ -152,13 +188,16 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
       setQueue((prev) => {
         const next = appendCandidates(prev, result.candidates);
         // Seed the card if the user is sitting on an empty queue waiting.
-        if (prev.length === index && next.length > index) seedCard(next[index], section);
+        if (prev.length === index && next.length > index)
+          seedCard(next[index], section);
         return next;
       });
       setCursors(result.cursors);
       setDone(result.done);
       setReadSoFar((n) => n + result.scanned);
-      setFetched((prev) => (prev ? { ...prev, errors: result.errors } : result));
+      setFetched((prev) =>
+        prev ? { ...prev, errors: result.errors } : result,
+      );
     } catch (e) {
       // A failed page does not end the pass: what is already queued still
       // stands, and the next prefetch retries from the same cursor.
@@ -176,6 +215,14 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loading, done, loadingMore, error, index, queue.length]);
 
+  const resetSwipe = useCallback(() => {
+    if (exitTimer.current) clearTimeout(exitTimer.current);
+    exitTimer.current = null;
+    gesture.current = null;
+    setDx(0);
+    setLeaving(false);
+  }, []);
+
   function rule(action: ReviewAction) {
     if (!card || saving) return;
     if (action === "add") rememberCategory(section);
@@ -186,10 +233,69 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
     const next = index + 1;
     setIndex(next);
     seedCard(queue[next], section);
+    resetSwipe();
   }
+
+  // --- swipe left to skip ---------------------------------------------------
+  // `touch-action: pan-y` on the card leaves vertical scrolling to the browser
+  // and hands us the horizontal drags, so the gesture never fights the modal's
+  // own scroller. The slop check then keeps a near-vertical drag out of it too.
+
+  function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (saving || leaving || !card) return;
+    // A press that starts on the Gmail link is a tap on the link, not a swipe.
+    if ((e.target as HTMLElement).closest("a,button,input,select,textarea"))
+      return;
+    setCardWidth(cardRef.current?.offsetWidth ?? 0);
+    gesture.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      horizontal: false,
+    };
+  }
+
+  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const g = gesture.current;
+    if (!g || g.id !== e.pointerId) return;
+    const moveX = e.clientX - g.x;
+    const moveY = e.clientY - g.y;
+    if (!g.horizontal) {
+      if (!isHorizontalSwipe(moveX, moveY)) return;
+      g.horizontal = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    setDx(swipeOffset(moveX));
+  }
+
+  function endGesture(e: ReactPointerEvent<HTMLDivElement>) {
+    const g = gesture.current;
+    gesture.current = null;
+    if (!g || g.id !== e.pointerId) return;
+    if (!g.horizontal) return;
+    if (!swipeCommitted(dx, cardWidth)) {
+      setDx(0);
+      return;
+    }
+    // Let the card finish leaving before the next one takes its place, so the
+    // queue reads as a stack being dealt rather than content blinking.
+    setLeaving(true);
+    setDx(-(cardWidth + 48));
+    exitTimer.current = setTimeout(() => rule("skip"), SWIPE_EXIT_MS);
+  }
+
+  function cancelGesture() {
+    gesture.current = null;
+    if (!leaving) setDx(0);
+  }
+
+  // A card swiped out, then the pass closed or undone mid-flight, must not have
+  // its deferred ruling land on whatever card is up by then.
+  useEffect(() => resetSwipe, [resetSwipe]);
 
   function undo() {
     if (rulings.length === 0 || saving) return;
+    resetSwipe();
     const back = index - 1;
     setRulings((prev) => prev.slice(0, -1));
     setIndex(back);
@@ -232,21 +338,32 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
   // it would be dishonest to leave it unsaid when a pass was half-made.
   function close() {
     if (saving) return;
+    resetSwipe();
     setOpen(false);
     if (rulings.length > 0) {
-      setNote(`Closed without saving — ${rulings.length} decision${rulings.length === 1 ? "" : "s"} discarded`);
+      setNote(
+        `Closed without saving — ${rulings.length} decision${rulings.length === 1 ? "" : "s"} discarded`,
+      );
     }
     setRulings([]);
     setIndex(0);
   }
 
   const ruled = rulings.length;
-  const label = ruled > 0 && !finished ? `Review email · ${ruled}/${queue.length}` : "Review email";
+  const label =
+    ruled > 0 && !finished
+      ? `Review email · ${ruled}/${queue.length}`
+      : "Review email";
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="secondary" size="sm" onClick={() => void run()} disabled={!session || loading}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void run()}
+          disabled={!session || loading}
+        >
           {loading ? (
             <Loader2 className="mr-1 h-4 w-4 animate-spin" />
           ) : (
@@ -255,7 +372,13 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
           {loading ? "Reading inbox…" : label}
         </Button>
         {saved && (
-          <span className={note.startsWith("Closed") ? "text-xs text-warn" : "text-xs text-success"}>
+          <span
+            className={
+              note.startsWith("Closed")
+                ? "text-xs text-warn"
+                : "text-xs text-success"
+            }
+          >
             {note}
           </span>
         )}
@@ -278,7 +401,9 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <Inbox className="h-5 w-5 shrink-0 text-accent" />
-                    <h2 className="truncate text-base font-semibold">Review email</h2>
+                    <h2 className="truncate text-base font-semibold">
+                      Review email
+                    </h2>
                     {queue.length > 0 && (
                       <span className="shrink-0 text-xs tabular-nums text-muted">
                         {exhausted
@@ -340,24 +465,31 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                     pass ended early would read as a handled inbox. */}
                 {fetched && fetched.matched > 0 && (
                   <p className="mb-3 rounded-lg border border-line bg-surface2 px-3 py-2 text-xs text-muted">
-                    ~{fetched.matched.toLocaleString()} emails addressed to you in the window ·{" "}
-                    {readSoFar.toLocaleString()} read so far, newest first
+                    ~{fetched.matched.toLocaleString()} emails addressed to you
+                    in the window · {readSoFar.toLocaleString()} read so far,
+                    newest first
                     {done ? " · end of the window" : " · more load as you go"}
                   </p>
                 )}
 
                 {loading ? (
-                  <p className="py-10 text-center text-sm text-muted">Reading your inbox…</p>
+                  <p className="py-10 text-center text-sm text-muted">
+                    Reading your inbox…
+                  </p>
                 ) : waiting ? (
                   <div className="py-10 text-center">
                     <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted" />
-                    <p className="mt-3 text-sm text-muted">Loading the next batch…</p>
+                    <p className="mt-3 text-sm text-muted">
+                      Loading the next batch…
+                    </p>
                   </div>
                 ) : finished ? (
                   <div className="py-6 text-center">
                     <Check className="mx-auto h-10 w-10 text-success" />
                     <p className="mt-3 text-base font-semibold">
-                      {queue.length === 0 ? "Nothing new to review" : "Pass complete"}
+                      {queue.length === 0
+                        ? "Nothing new to review"
+                        : "Pass complete"}
                     </p>
                     <p className="mt-1 text-sm text-muted">
                       {queue.length === 0
@@ -366,49 +498,88 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                     </p>
                     {tally.added > 0 && (
                       <p className="mt-1 text-xs text-muted">
-                        Confirm to add {tally.added === 1 ? "it" : "them"} to {prettyDate(snapshot_date)}.
+                        Confirm to add {tally.added === 1 ? "it" : "them"} to{" "}
+                        {prettyDate(snapshot_date)}.
                       </p>
                     )}
                   </div>
                 ) : card ? (
                   <>
-                    <div className="rounded-xl border border-line bg-surface2 p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
-                          {card.accountLabel}
-                        </span>
-                        {card.suggested ? (
-                          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
-                            Looks like a task
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
-                            Probably not a task
-                          </span>
-                        )}
-                        {receivedText(card.receivedAt) && (
-                          <span className="text-[11px] text-muted">{receivedText(card.receivedAt)}</span>
-                        )}
-                      </div>
-                      <h3 className="mt-2 text-base font-semibold leading-snug">
-                        {card.subject || "(no subject)"}
-                      </h3>
-                      <p className="mt-1 text-xs text-muted">{senderName(card.from) || card.from}</p>
-                      {card.action && <p className="mt-2 text-sm">{card.action}</p>}
-                      {card.snippet && (
-                        <p className="mt-2 line-clamp-4 border-t border-line pt-2 text-xs text-muted">
-                          {card.snippet}
-                        </p>
-                      )}
-                      <a
-                        href={card.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-3 inline-flex items-center gap-1 text-xs text-accent"
+                    <div className="relative overflow-hidden rounded-xl">
+                      {/* Revealed behind the card as it is pulled left, so the
+                          gesture names its own ruling rather than being a
+                          trick you have to already know. */}
+                      <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-y-0 right-0 flex w-36 items-center justify-end rounded-xl bg-warn/15 pr-4"
+                        style={{ opacity: swipeProgress(dx, cardWidth) }}
                       >
-                        <ExternalLink className="h-3 w-3" />
-                        Open in Gmail
-                      </a>
+                        <span className="inline-flex items-center gap-1 text-sm font-semibold text-warn">
+                          <SkipForward className="h-4 w-4" />
+                          Not a task
+                        </span>
+                      </div>
+                      <div
+                        ref={cardRef}
+                        onPointerDown={onPointerDown}
+                        onPointerMove={onPointerMove}
+                        onPointerUp={endGesture}
+                        onPointerCancel={cancelGesture}
+                        style={{
+                          transform: `translateX(${dx}px)`,
+                          touchAction: "pan-y",
+                          // Under the finger the card tracks it exactly; on
+                          // release — snapping back or leaving — it eases.
+                          transition:
+                            dx !== 0 && !leaving
+                              ? undefined
+                              : `transform ${SWIPE_EXIT_MS}ms ease-out`,
+                        }}
+                        className="relative rounded-xl border border-line bg-surface2 p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
+                            {card.accountLabel}
+                          </span>
+                          {card.suggested ? (
+                            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                              Looks like a task
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
+                              Probably not a task
+                            </span>
+                          )}
+                          {receivedText(card.receivedAt) && (
+                            <span className="text-[11px] text-muted">
+                              {receivedText(card.receivedAt)}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="mt-2 text-base font-semibold leading-snug">
+                          {card.subject || "(no subject)"}
+                        </h3>
+                        <p className="mt-1 text-xs text-muted">
+                          {senderName(card.from) || card.from}
+                        </p>
+                        {card.action && (
+                          <p className="mt-2 text-sm">{card.action}</p>
+                        )}
+                        {card.snippet && (
+                          <p className="mt-2 line-clamp-4 border-t border-line pt-2 text-xs text-muted">
+                            {card.snippet}
+                          </p>
+                        )}
+                        <a
+                          href={card.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex items-center gap-1 text-xs text-accent"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open in Gmail
+                        </a>
+                      </div>
                     </div>
 
                     <div className="mt-4 space-y-2">
@@ -469,7 +640,8 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                       </Button>
                     </div>
                     <p className="mt-2 text-[11px] text-muted">
-                      "Not a task" keeps the thread out of future passes. "Decide later" writes
+                      Swipe the card left to skip it. "Not a task" keeps the
+                      thread out of future passes. "Decide later" writes
                       nothing, so it comes back next time.
                     </p>
                   </>
@@ -489,7 +661,8 @@ export function EmailReviewButton({ snapshot_date }: { snapshot_date: string }) 
                 </Button>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] tabular-nums text-muted">
-                    {tally.added} added · {tally.skipped} skipped · {tally.later} later
+                    {tally.added} added · {tally.skipped} skipped ·{" "}
+                    {tally.later} later
                     {loadingMore && " · loading…"}
                   </span>
                   <Button

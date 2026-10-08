@@ -14,11 +14,16 @@ vi.mock("../repo", () => ({
 }));
 
 const fetchEmailCandidates = vi.fn();
-const recordEmailReviews = vi.fn(async (_rows: Record<string, unknown>[]) => undefined);
+const recordEmailReviews = vi.fn(
+  async (_rows: Record<string, unknown>[]) => undefined,
+);
 vi.mock("../emailReviewApi", () => ({
-  fetchEmailCandidates: (token: string, cursors?: Record<string, string | null>) =>
-    fetchEmailCandidates(token, cursors),
-  recordEmailReviews: (rows: Record<string, unknown>[]) => recordEmailReviews(rows),
+  fetchEmailCandidates: (
+    token: string,
+    cursors?: Record<string, string | null>,
+  ) => fetchEmailCandidates(token, cursors),
+  recordEmailReviews: (rows: Record<string, unknown>[]) =>
+    recordEmailReviews(rows),
 }));
 
 const CATEGORIES: SectionConfig[] = [
@@ -31,7 +36,9 @@ const CATEGORIES: SectionConfig[] = [
   },
 ];
 vi.mock("../categories", () => ({ useCategories: () => CATEGORIES }));
-vi.mock("@/lib/auth", () => ({ useAuth: () => ({ session: { access_token: "tok" } }) }));
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({ session: { access_token: "tok" } }),
+}));
 
 const DAY = "2026-10-04";
 
@@ -63,6 +70,25 @@ function result(over: Partial<ReviewFetch> = {}): ReviewFetch {
     errors: [],
     ...over,
   };
+}
+
+// jsdom lays nothing out, so the card reports width 0 and the swipe falls back
+// to its pixel floor. Give it a real width so the ratio branch is the one under
+// test, and stub the pointer-capture calls jsdom does not implement.
+function swipeableCard(): HTMLElement {
+  const el = screen
+    .getByText("Ocean Rd quote")
+    .closest("[style]") as HTMLElement;
+  Object.defineProperty(el, "offsetWidth", { value: 400, configurable: true });
+  el.setPointerCapture = () => undefined;
+  el.releasePointerCapture = () => undefined;
+  return el;
+}
+
+function swipe(el: HTMLElement, dx: number, dy = 0) {
+  fireEvent.pointerDown(el, { pointerId: 1, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(el, { pointerId: 1, clientX: dx, clientY: dy });
+  fireEvent.pointerUp(el, { pointerId: 1, clientX: dx, clientY: dy });
 }
 
 async function openPass(fetchResult: ReviewFetch) {
@@ -101,7 +127,11 @@ describe("EmailReviewButton", () => {
 
     const rows = recordEmailReviews.mock.calls[0][0];
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ thread_id: "t1", ruling: "added", item_id: "item-1" });
+    expect(rows[0]).toMatchObject({
+      thread_id: "t1",
+      ruling: "added",
+      item_id: "item-1",
+    });
   });
 
   it("carries an edited title onto the task", async () => {
@@ -113,9 +143,7 @@ describe("EmailReviewButton", () => {
     fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
 
     await waitFor(() => expect(createItem).toHaveBeenCalledTimes(1));
-    expect(createItem.mock.calls[0][0].title).toBe(
-      "Call Kyp about Ocean Rd",
-    );
+    expect(createItem.mock.calls[0][0].title).toBe("Call Kyp about Ocean Rd");
   });
 
   it("records a skip without creating a task", async () => {
@@ -142,14 +170,19 @@ describe("EmailReviewButton", () => {
   it("undoes the last ruling and steps back onto that email", async () => {
     await openPass(
       result({
-        candidates: [candidate({ threadId: "t1" }), candidate({ threadId: "t2", subject: "Invoice" })],
+        candidates: [
+          candidate({ threadId: "t1" }),
+          candidate({ threadId: "t2", subject: "Invoice" }),
+        ],
         scanned: 2,
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
     expect(screen.getByText("2 of 2")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /undo last decision/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /undo last decision/i }),
+    );
     expect(screen.getByText("1 of 2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /not a task/i }));
@@ -161,12 +194,63 @@ describe("EmailReviewButton", () => {
     expect(rows.map((r) => r.ruling)).toEqual(["skipped", "skipped"]);
   });
 
+  it("skips the email on a left swipe past the threshold", async () => {
+    await openPass(
+      result({ candidates: [candidate(), candidate({ threadId: "t2" })] }),
+    );
+    swipe(swipeableCard(), -200);
+    await waitFor(() => expect(screen.getByText("2 of 2")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+    await waitFor(() => expect(recordEmailReviews).toHaveBeenCalled());
+    expect(createItem).not.toHaveBeenCalled();
+    expect(recordEmailReviews.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ thread_id: "t1", ruling: "skipped" }),
+    ]);
+  });
+
+  it("snaps back on a short pull without ruling", async () => {
+    await openPass(
+      result({ candidates: [candidate(), candidate({ threadId: "t2" })] }),
+    );
+    swipe(swipeableCard(), -80);
+    expect(screen.getByText("1 of 2")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /confirm 0/i })).toBeDisabled();
+  });
+
+  it("leaves a vertical drag to the modal's scroller", async () => {
+    await openPass(
+      result({ candidates: [candidate(), candidate({ threadId: "t2" })] }),
+    );
+    swipe(swipeableCard(), -200, 300);
+    expect(screen.getByText("1 of 2")).toBeTruthy();
+  });
+
+  it("ignores a rightward swipe", async () => {
+    await openPass(
+      result({ candidates: [candidate(), candidate({ threadId: "t2" })] }),
+    );
+    swipe(swipeableCard(), 300);
+    expect(screen.getByText("1 of 2")).toBeTruthy();
+  });
+
+  it("undoes a swipe like any other ruling", async () => {
+    await openPass(
+      result({ candidates: [candidate(), candidate({ threadId: "t2" })] }),
+    );
+    swipe(swipeableCard(), -200);
+    await waitFor(() => expect(screen.getByText("2 of 2")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Undo last decision" }));
+    expect(screen.getByText("1 of 2")).toBeTruthy();
+  });
+
   it("names a mailbox it could not read rather than showing an empty inbox", async () => {
     await openPass(
       result({
         candidates: [],
         scanned: 0,
-        errors: [{ accountId: "acct-2", label: "Personal", message: "refresh failed" }],
+        errors: [
+          { accountId: "acct-2", label: "Personal", message: "refresh failed" },
+        ],
       }),
     );
     expect(screen.getByText(/Personal could not be read/i)).toBeTruthy();
@@ -212,14 +296,18 @@ describe("EmailReviewButton paging", () => {
     // inside PREFETCH_AHEAD), carrying the cursor it was handed.
     await waitFor(() => expect(fetchEmailCandidates).toHaveBeenCalledTimes(2));
     expect(fetchEmailCandidates.mock.calls[0][1]).toBeUndefined();
-    expect(fetchEmailCandidates.mock.calls[1][1]).toEqual({ "acct-1": "page-2" });
+    expect(fetchEmailCandidates.mock.calls[1][1]).toEqual({
+      "acct-1": "page-2",
+    });
 
     // Both pages are in one queue, in page order.
     await waitFor(() => expect(screen.getByText("1 of 2")).toBeTruthy());
   });
 
   it("states the size of the window rather than implying the inbox is handled", async () => {
-    await openPass(result({ matched: 1400, scanned: 20, done: false, cursors: {} }));
+    await openPass(
+      result({ matched: 1400, scanned: 20, done: false, cursors: {} }),
+    );
     expect(screen.getByText(/~1,400 emails addressed to you/i)).toBeTruthy();
     expect(screen.getByText(/20 read so far/i)).toBeTruthy();
   });
@@ -227,7 +315,9 @@ describe("EmailReviewButton paging", () => {
   it("stops fetching once the window is exhausted", async () => {
     await openPass(result({ done: true, cursors: {} }));
     fireEvent.click(screen.getByRole("button", { name: /not a task/i }));
-    await waitFor(() => expect(screen.getByText(/pass complete/i)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/pass complete/i)).toBeTruthy(),
+    );
     expect(fetchEmailCandidates).toHaveBeenCalledTimes(1);
   });
 });

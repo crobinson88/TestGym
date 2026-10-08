@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  type EmailCandidate,
+  type ReviewRuling,
+  SWIPE_COMMIT_MIN_PX,
+  SWIPE_SLOP_PX,
   appendCandidates,
   candidateKey,
   describeReview,
+  isHorizontalSwipe,
   ledgerRows,
   orderCandidates,
   resolveTitle,
@@ -10,8 +15,10 @@ import {
   senderName,
   suggestedCount,
   summariseReview,
-  type EmailCandidate,
-  type ReviewRuling,
+  swipeCommitted,
+  swipeOffset,
+  swipeProgress,
+  swipeThreshold,
 } from "./emailReview";
 
 function candidate(over: Partial<EmailCandidate> = {}): EmailCandidate {
@@ -52,9 +59,21 @@ describe("candidateKey", () => {
 describe("orderCandidates", () => {
   it("puts Claude's picks first, newest first within each group", () => {
     const list = [
-      candidate({ threadId: "old-pick", suggested: true, receivedAt: "2026-10-01T09:00:00.000Z" }),
-      candidate({ threadId: "new-skip", suggested: false, receivedAt: "2026-10-03T09:00:00.000Z" }),
-      candidate({ threadId: "new-pick", suggested: true, receivedAt: "2026-10-03T10:00:00.000Z" }),
+      candidate({
+        threadId: "old-pick",
+        suggested: true,
+        receivedAt: "2026-10-01T09:00:00.000Z",
+      }),
+      candidate({
+        threadId: "new-skip",
+        suggested: false,
+        receivedAt: "2026-10-03T09:00:00.000Z",
+      }),
+      candidate({
+        threadId: "new-pick",
+        suggested: true,
+        receivedAt: "2026-10-03T10:00:00.000Z",
+      }),
     ];
     expect(orderCandidates(list).map((c) => c.threadId)).toEqual([
       "new-pick",
@@ -68,7 +87,10 @@ describe("orderCandidates", () => {
       candidate({ threadId: "undated", receivedAt: null }),
       candidate({ threadId: "dated", receivedAt: "2026-09-01T09:00:00.000Z" }),
     ];
-    expect(orderCandidates(list).map((c) => c.threadId)).toEqual(["dated", "undated"]);
+    expect(orderCandidates(list).map((c) => c.threadId)).toEqual([
+      "dated",
+      "undated",
+    ]);
   });
 
   it("drops a thread offered twice for the same mailbox", () => {
@@ -140,16 +162,22 @@ describe("reviewNotes", () => {
 
 describe("resolveTitle", () => {
   it("prefers the edited title", () => {
-    expect(resolveTitle(candidate(), "  Call Kyp instead ")).toBe("Call Kyp instead");
+    expect(resolveTitle(candidate(), "  Call Kyp instead ")).toBe(
+      "Call Kyp instead",
+    );
   });
 
   it("falls back through the suggestion, then the subject", () => {
-    expect(resolveTitle(candidate(), "   ")).toBe("Reply to Kyp on the Ocean Rd quote");
+    expect(resolveTitle(candidate(), "   ")).toBe(
+      "Reply to Kyp on the Ocean Rd quote",
+    );
     expect(resolveTitle(candidate({ title: "" }), null)).toBe("Ocean Rd quote");
   });
 
   it("never returns an empty title", () => {
-    expect(resolveTitle(candidate({ title: "", subject: "" }), "")).toBe("(no subject)");
+    expect(resolveTitle(candidate({ title: "", subject: "" }), "")).toBe(
+      "(no subject)",
+    );
   });
 });
 
@@ -189,8 +217,14 @@ describe("summariseReview / describeReview", () => {
       ruling({ action: "skip", candidate: candidate({ threadId: "c" }) }),
       ruling({ action: "later", candidate: candidate({ threadId: "d" }) }),
     ];
-    expect(summariseReview(rulings)).toEqual({ added: 2, skipped: 1, later: 1 });
-    expect(describeReview(rulings)).toBe("2 tasks added, 1 skipped, 1 left for later");
+    expect(summariseReview(rulings)).toEqual({
+      added: 2,
+      skipped: 1,
+      later: 1,
+    });
+    expect(describeReview(rulings)).toBe(
+      "2 tasks added, 1 skipped, 1 left for later",
+    );
   });
 
   it("says so when the pass ruled on nothing", () => {
@@ -205,14 +239,30 @@ describe("summariseReview / describeReview", () => {
 describe("appendCandidates", () => {
   it("orders each page on its own and adds it to the end", () => {
     const first = orderCandidates([
-      candidate({ threadId: "a", suggested: true, receivedAt: "2026-10-01T09:00:00.000Z" }),
+      candidate({
+        threadId: "a",
+        suggested: true,
+        receivedAt: "2026-10-01T09:00:00.000Z",
+      }),
     ]);
     const page = [
-      candidate({ threadId: "b", suggested: false, receivedAt: "2026-10-05T09:00:00.000Z" }),
-      candidate({ threadId: "c", suggested: true, receivedAt: "2026-10-04T09:00:00.000Z" }),
+      candidate({
+        threadId: "b",
+        suggested: false,
+        receivedAt: "2026-10-05T09:00:00.000Z",
+      }),
+      candidate({
+        threadId: "c",
+        suggested: true,
+        receivedAt: "2026-10-04T09:00:00.000Z",
+      }),
     ];
     // "c" leads its own page, but neither page member jumps ahead of "a".
-    expect(appendCandidates(first, page).map((c) => c.threadId)).toEqual(["a", "c", "b"]);
+    expect(appendCandidates(first, page).map((c) => c.threadId)).toEqual([
+      "a",
+      "c",
+      "b",
+    ]);
   });
 
   it("drops a thread that straddles two pages", () => {
@@ -225,8 +275,60 @@ describe("appendCandidates", () => {
   });
 
   it("never reorders cards the user may already have passed", () => {
-    let queue = appendCandidates([], [candidate({ threadId: "a", suggested: false })]);
-    queue = appendCandidates(queue, [candidate({ threadId: "b", suggested: true })]);
+    let queue = appendCandidates(
+      [],
+      [candidate({ threadId: "a", suggested: false })],
+    );
+    queue = appendCandidates(queue, [
+      candidate({ threadId: "b", suggested: true }),
+    ]);
     expect(queue.map((c) => c.threadId)).toEqual(["a", "b"]);
+  });
+});
+
+describe("swipe geometry", () => {
+  it("only lets the card travel left", () => {
+    expect(swipeOffset(-40)).toBe(-40);
+    expect(swipeOffset(0)).toBe(0);
+    expect(swipeOffset(90)).toBe(0);
+  });
+
+  it("keeps a near-vertical drag with the scroller", () => {
+    expect(isHorizontalSwipe(-30, 4)).toBe(true);
+    expect(isHorizontalSwipe(-30, 40)).toBe(false);
+    // A tie is vertical: the modal body scrolls rather than the card moving.
+    expect(isHorizontalSwipe(-30, 30)).toBe(false);
+  });
+
+  it("ignores movement inside the slop", () => {
+    expect(isHorizontalSwipe(-SWIPE_SLOP_PX, 0)).toBe(false);
+    expect(isHorizontalSwipe(-(SWIPE_SLOP_PX + 1), 0)).toBe(true);
+  });
+
+  it("takes a share of a wide card's width and a floor on a narrow one", () => {
+    expect(swipeThreshold(400)).toBe(120);
+    expect(swipeThreshold(100)).toBe(SWIPE_COMMIT_MIN_PX);
+  });
+
+  it("commits only once the card is past its threshold", () => {
+    expect(swipeCommitted(-119, 400)).toBe(false);
+    expect(swipeCommitted(-120, 400)).toBe(true);
+    expect(swipeCommitted(-500, 400)).toBe(true);
+  });
+
+  it("never commits on a rightward pull", () => {
+    expect(swipeCommitted(500, 400)).toBe(false);
+  });
+
+  it("reports progress toward the threshold, capped at the commit point", () => {
+    expect(swipeProgress(0, 400)).toBe(0);
+    expect(swipeProgress(-60, 400)).toBe(0.5);
+    expect(swipeProgress(-240, 400)).toBe(1);
+    expect(swipeProgress(40, 400)).toBe(0);
+  });
+
+  it("stays at rest when the card has not been measured yet", () => {
+    expect(swipeProgress(-50, 0)).toBeCloseTo(50 / SWIPE_COMMIT_MIN_PX);
+    expect(swipeCommitted(-10, 0)).toBe(false);
   });
 });
