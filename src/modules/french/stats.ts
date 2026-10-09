@@ -108,7 +108,11 @@ export interface VocabWordHistory {
   seen: number;
   correct: number;
   lastShownAt: string | null; // attempt started_at of the most recent showing
+  recent: boolean[]; // the last RECALL_WINDOW results, oldest first
 }
+
+// How many past showings the per-word recall strip keeps.
+export const RECALL_WINDOW = 10;
 
 // Pull the French word out of a vocab questionId (`vocab:{fr}:{direction}`). The
 // word itself never contains a colon, but join the middle defensively. Returns
@@ -132,16 +136,22 @@ export function listenKeyFromQuestionId(questionId: string): string | null {
 export function computeVocabHistory(
   attempts: readonly FrenchAttemptRow[],
 ): Map<string, VocabWordHistory> {
+  const ordered = attempts
+    .filter((a) => !a.deleted_at && a.kind === "vocab")
+    .slice()
+    .sort((a, b) => (a.started_at < b.started_at ? -1 : a.started_at > b.started_at ? 1 : 0));
+
   const map = new Map<string, VocabWordHistory>();
-  for (const a of attempts) {
-    if (a.deleted_at || a.kind !== "vocab") continue;
+  for (const a of ordered) {
     for (const d of a.details ?? []) {
       const key = vocabKeyFromQuestionId(d.questionId);
       if (!key) continue;
-      const h = map.get(key) ?? { seen: 0, correct: 0, lastShownAt: null };
+      const h = map.get(key) ?? { seen: 0, correct: 0, lastShownAt: null, recent: [] };
       h.seen += 1;
       if (d.correct) h.correct += 1;
       if (!h.lastShownAt || a.started_at > h.lastShownAt) h.lastShownAt = a.started_at;
+      h.recent.push(d.correct);
+      if (h.recent.length > RECALL_WINDOW) h.recent.shift();
       map.set(key, h);
     }
   }
@@ -154,7 +164,7 @@ export function computeVocabHistory(
 export const VOCAB_MASTERY_THRESHOLD = 0.9;
 export const VOCAB_MASTERY_MIN_SEEN = 3;
 
-export function isMastered(h: VocabWordHistory): boolean {
+export function isMastered(h: Pick<VocabWordHistory, "seen" | "correct">): boolean {
   return h.seen >= VOCAB_MASTERY_MIN_SEEN && h.correct / h.seen > VOCAB_MASTERY_THRESHOLD;
 }
 
@@ -229,7 +239,7 @@ function computeSchedules(
       }
       s.lastShownAt = day;
       s.dueOn = addDays(day, reviewIntervalDays(s.box));
-      s.mastered = isMastered({ seen: s.seen, correct: s.correct, lastShownAt: day });
+      s.mastered = isMastered({ seen: s.seen, correct: s.correct });
       map.set(key, s);
     }
   }
