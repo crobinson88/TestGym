@@ -631,6 +631,9 @@ export interface EmailReviewRow {
   subject: string | null;
   // The task the thread became, for an "added" ruling.
   item_id: string | null;
+  // What the ruling did to the mailbox itself, not just to the to-do list.
+  archived: boolean;
+  applied_labels: string[];
   reviewed_at: string;
   client_id: string | null;
   user_id: string | null;

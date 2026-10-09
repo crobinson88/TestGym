@@ -20,7 +20,13 @@ import { config as loadEnv } from "dotenv";
 
 loadEnv({ path: ".env.local" });
 
-const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+// Read AND modify: the review pass can archive a thread and apply labels, and
+// a refresh token only carries the scopes consented to when it was granted — so
+// a grant made before the write scope existed must be re-run to pick it up.
+const SCOPE = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
+].join(" ");
 
 function required(name: string): string {
   const v = process.env[name];
@@ -98,7 +104,7 @@ function awaitCode(state: string): Promise<{ code: string; redirectUri: string }
       consent.searchParams.set("prompt", "consent");
       consent.searchParams.set("state", state);
 
-      console.log("\nSign in as the mailbox you want to review, and approve read-only access:\n");
+      console.log("\nSign in as the mailbox you want to review, and approve access:\n");
       console.log(consent.toString());
       console.log("\nWaiting for the redirect…");
 

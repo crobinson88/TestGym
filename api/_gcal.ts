@@ -16,6 +16,10 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 // account's client id in Workspace admin (domain-wide delegation).
 export const CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+// Write scope, asked for ONLY by the apply path (archive / label), never by the
+// read paths — so a bug in the review pass still cannot touch the mailbox.
+// Covers creating labels, applying them, and archiving.
+export const GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 
 // Mint an OAuth access token for the calendar scope by signing a service-account
 // JWT and exchanging it at the token endpoint. `sub` impersonates the user whose

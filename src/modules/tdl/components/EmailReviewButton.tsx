@@ -27,11 +27,14 @@ import { useCategories } from "../categories";
 import { loadQuickAddCategory, resolveQuickAddCategory } from "../composer";
 import { createItem } from "../repo";
 import {
+  EMAIL_REVIEW_ARCHIVE_STORAGE_KEY,
   EMAIL_REVIEW_CATEGORY_STORAGE_KEY,
+  EMAIL_REVIEW_LABEL_STORAGE_KEY,
   SWIPE_EXIT_MS,
   appendCandidates,
   candidateKey,
   describeReview,
+  emailActions,
   isHorizontalSwipe,
   ledgerRows,
   orderCandidates,
@@ -47,6 +50,7 @@ import {
   type ReviewRuling,
 } from "../emailReview";
 import {
+  applyEmailActions,
   fetchEmailCandidates,
   recordEmailReviews,
   type ReviewCursors,
@@ -56,6 +60,10 @@ import {
 // Start loading the next page once the user is this close to the end of the
 // queue, so a pass never stalls on a fetch at a few hundred mails a day.
 const PREFETCH_AHEAD = 5;
+
+// Sentinel for the picker's "New label…" row. A real label can't be named this
+// (Gmail trims, and nothing collides with the ellipsis in practice).
+const NEW_LABEL = "__new__";
 
 function loadCategory(): string | null {
   try {
@@ -68,6 +76,41 @@ function loadCategory(): string | null {
   } catch {
     // ignore unavailable storage — fall back to the initial default
     return null;
+  }
+}
+
+function loadArchivePref(): boolean {
+  try {
+    // Off unless explicitly turned on: archiving is the one thing here that
+    // reaches into the real mailbox, so it is never the silent default.
+    return localStorage.getItem(EMAIL_REVIEW_ARCHIVE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberArchivePref(on: boolean) {
+  try {
+    localStorage.setItem(EMAIL_REVIEW_ARCHIVE_STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    // ignore storage failures — the choice still holds for this pass
+  }
+}
+
+function loadLabelPref(): string {
+  try {
+    return localStorage.getItem(EMAIL_REVIEW_LABEL_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberLabelPref(name: string) {
+  try {
+    if (name) localStorage.setItem(EMAIL_REVIEW_LABEL_STORAGE_KEY, name);
+    else localStorage.removeItem(EMAIL_REVIEW_LABEL_STORAGE_KEY);
+  } catch {
+    // ignore storage failures — the choice still holds for this pass
   }
 }
 
@@ -113,6 +156,13 @@ export function EmailReviewButton({
   const [done, setDone] = useState(true);
   const [readSoFar, setReadSoFar] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Mailbox-side choices. `archive` is a pass-wide toggle; `label` is the one
+  // applied to each ruling, both remembered per device like the category.
+  const [archive, setArchive] = useState(loadArchivePref);
+  const [gmailLabel, setGmailLabel] = useState(loadLabelPref);
+  const [newLabel, setNewLabel] = useState("");
+  // Threads Gmail refused, surfaced after the pass rather than swallowed.
+  const [applyFailures, setApplyFailures] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [rulings, setRulings] = useState<ReviewRuling[]>([]);
   // The title and category for the card on screen, seeded from the suggestion.
@@ -134,6 +184,9 @@ export function EmailReviewButton({
     horizontal: boolean;
   } | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Labels arrive with the first page only; the picker keeps whatever it saw.
+  const mailboxLabels = fetched?.labels ?? [];
 
   const card: EmailCandidate | undefined = queue[index];
   // Out of cards AND out of window. With pages left, the queue running dry is a
@@ -226,10 +279,22 @@ export function EmailReviewButton({
   function rule(action: ReviewAction) {
     if (!card || saving) return;
     if (action === "add") rememberCategory(section);
+    const chosenLabel = (newLabel.trim() || gmailLabel).trim();
+    if (action === "add" && chosenLabel) rememberLabelPref(chosenLabel);
     setRulings((prev) => [
       ...prev,
-      { candidate: card, action, title: resolveTitle(card, title), section },
+      {
+        candidate: card,
+        action,
+        title: resolveTitle(card, title),
+        section,
+        // "later" must leave the mailbox untouched — emailActions enforces it
+        // too, but not carrying the choice makes Undo read honestly as well.
+        archive: action === "later" ? false : archive,
+        labels: action === "later" || !chosenLabel ? [] : [chosenLabel],
+      },
     ]);
+    setNewLabel("");
     const next = index + 1;
     setIndex(next);
     seedCard(queue[next], section);
@@ -302,6 +367,7 @@ export function EmailReviewButton({
     const last = rulings[rulings.length - 1];
     setTitle(last.title);
     setSection(last.section);
+    setGmailLabel(last.labels[0] ?? gmailLabel);
   }
 
   // Nothing has been written until here: create one task per "add" through the
@@ -325,7 +391,22 @@ export function EmailReviewButton({
         itemIdByKey.set(candidateKey(ruling.candidate), item.id);
       }
       await recordEmailReviews(ledgerRows(rulings, itemIdByKey));
-      setNote(describeReview(rulings));
+
+      // The mailbox goes last: the tasks and the ledger are ours and always
+      // land, while Gmail can partly fail. A refusal is reported, never a
+      // reason to roll back work that already succeeded.
+      const actions = emailActions(rulings);
+      let failed: string[] = [];
+      if (actions.length > 0 && session) {
+        const results = await applyEmailActions(session.access_token, actions);
+        failed = results.filter((r) => !r.ok).map((r) => r.error ?? "failed");
+      }
+      setApplyFailures(failed);
+      setNote(
+        failed.length > 0
+          ? `${describeReview(rulings)} · ${failed.length} not updated in Gmail`
+          : describeReview(rulings),
+      );
       setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the pass");
@@ -374,7 +455,7 @@ export function EmailReviewButton({
         {saved && (
           <span
             className={
-              note.startsWith("Closed")
+              note.startsWith("Closed") || applyFailures.length > 0
                 ? "text-xs text-warn"
                 : "text-xs text-success"
             }
@@ -423,6 +504,21 @@ export function EmailReviewButton({
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
+                <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={archive}
+                    onChange={(e) => {
+                      setArchive(e.target.checked);
+                      rememberArchivePref(e.target.checked);
+                    }}
+                    className="h-4 w-4 accent-[rgb(var(--c-accent))]"
+                  />
+                  Archive in Gmail as I go
+                  <span className="text-[11px]">
+                    (applies to Add and Not a task — never to Decide later)
+                  </span>
+                </label>
                 <div
                   className="mt-2 h-1 overflow-hidden rounded-full bg-surface2"
                   role="progressbar"
@@ -606,6 +702,39 @@ export function EmailReviewButton({
                           ))}
                         </select>
                       </label>
+                      <label className="block text-xs uppercase tracking-wider text-muted">
+                        Gmail label
+                        <select
+                          value={
+                            gmailLabel === NEW_LABEL ||
+                            !gmailLabel ||
+                            mailboxLabels.some((l) => l.name === gmailLabel)
+                              ? gmailLabel
+                              : ""
+                          }
+                          onChange={(e) => {
+                            setGmailLabel(e.target.value);
+                            if (e.target.value !== NEW_LABEL) setNewLabel("");
+                          }}
+                          className="mt-1 h-11 w-full rounded-lg border border-line bg-surface px-2 text-sm text-text outline-none focus:border-accent"
+                        >
+                          <option value="">No label</option>
+                          {mailboxLabels.map((l) => (
+                            <option key={l.id} value={l.name}>
+                              {l.name}
+                            </option>
+                          ))}
+                          <option value={NEW_LABEL}>New label…</option>
+                        </select>
+                      </label>
+                      {gmailLabel === NEW_LABEL && (
+                        <Input
+                          value={newLabel}
+                          onChange={(e) => setNewLabel(e.target.value)}
+                          placeholder="Name the new label"
+                          aria-label="New label name"
+                        />
+                      )}
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">

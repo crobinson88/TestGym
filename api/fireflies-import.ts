@@ -11,6 +11,8 @@
 //     Google Calendar from a client-supplied, already-scheduled event list.
 //  3. action:"workstream-triage" — Gmail → Claude → `workstreams` rows for the
 //     desktop Command Center. Same reason it lives here: no function slots left.
+//  5. action:"email-apply" — archives / labels the threads a confirmed review
+//     pass ruled on. The only path in this file that WRITES to a mailbox.
 //  4. action:"email-review" — every configured mailbox → Claude → candidate
 //     tasks handed back for the user to rule on. Writes NOTHING; the browser
 //     creates the tasks and the ledger rows once the pass is confirmed. Paged:
@@ -32,7 +34,7 @@ import {
   getCalendarReadAccessToken,
   listBusyCalendarIds,
 } from "./_gcal.js";
-import { collectReviewCandidates } from "./_gmail.js";
+import { applyEmailActions, collectReviewCandidates } from "./_gmail.js";
 import { triageInbox } from "./_workstreams.js";
 
 // Listing is quick; the calendar branch loops a handful of REST calls, and the
@@ -56,6 +58,13 @@ type CalendarSyncBody = {
   timeMax?: string;
   // email-review: where each mailbox got to, from the previous response.
   cursors?: Record<string, string | null>;
+  // email-apply: the mailbox side of a confirmed review pass.
+  actions?: {
+    accountId?: string;
+    threadId?: string;
+    archive?: boolean;
+    labelNames?: string[];
+  }[];
 };
 
 // The import button posts no body; request.json() then throws. Treat any parse
@@ -81,6 +90,7 @@ export async function POST(request: Request): Promise<Response> {
     if (body?.action === "workstream-triage") return json(await triageInbox(supabase), 200);
     if (body?.action === "email-review")
       return json(await collectReviewCandidates(supabase, body.cursors ?? {}), 200);
+    if (body?.action === "email-apply") return handleEmailApply(supabase, body);
 
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);
@@ -98,6 +108,31 @@ export async function POST(request: Request): Promise<Response> {
     // Always answer with JSON so the client surfaces the real reason instead of
     // choking on Vercel's plain-text "A server error has occurred" 500 body.
     return json({ error: e instanceof Error ? e.message : "import failed" }, 500);
+  }
+}
+
+// Archive / label the threads of a confirmed review pass. Drops anything
+// malformed rather than guessing, and reports per-thread so a partial run is
+// honest. Auth was already checked by the caller.
+async function handleEmailApply(supabase: Db, body: CalendarSyncBody): Promise<Response> {
+  const actions = (body.actions ?? [])
+    .filter((a): a is { accountId: string; threadId: string; archive?: boolean; labelNames?: string[] } =>
+      Boolean(a?.accountId && a.threadId),
+    )
+    .map((a) => ({
+      accountId: a.accountId,
+      threadId: a.threadId,
+      archive: a.archive === true,
+      labelNames: (a.labelNames ?? []).filter((n) => typeof n === "string" && n.trim()),
+    }))
+    // Nothing to do for a thread that is neither archived nor labelled.
+    .filter((a) => a.archive || a.labelNames.length > 0);
+
+  if (actions.length === 0) return json({ results: [] }, 200);
+  try {
+    return json(await applyEmailActions(supabase, actions), 200);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "apply failed" }, 500);
   }
 }
 

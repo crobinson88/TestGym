@@ -236,7 +236,24 @@ grants access itself, once:
 Re-running it re-grants the same mailbox rather than adding a duplicate. If a
 grant is revoked, the review pass names that mailbox and says to run it again.
 
-Scope is read-only throughout: nothing is ever marked read, moved or replied to.
+### Archiving and labelling
+
+The pass can act on the mailbox, not just read it — off by default:
+
+- **Archive in Gmail as I go** (a toggle in the modal header) archives each
+  thread you Add or mark Not a task. **Decide later never archives**, or the
+  thread could not come back.
+- A **Gmail label** picker on each card applies one of your existing labels, or
+  creates a new one by name.
+- Nothing reaches Gmail until you press Confirm, and the tasks and the ledger
+  are written first — a Gmail refusal is reported per thread, never a reason to
+  undo work that already landed.
+- Archiving makes the pass self-clearing: the window is `in:inbox`, so an
+  archived thread drops out of it.
+
+This needs the **`gmail.modify`** scope on top of the three already authorised.
+Reads still ask only for `gmail.readonly`; the write scope is requested solely
+by the apply call. Nothing is ever marked read, replied to, or deleted.
 
 ## Re-import from Excel (rare)
 

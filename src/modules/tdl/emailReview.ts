@@ -46,7 +46,16 @@ export interface ReviewRuling {
   title: string;
   // Category key the task lands in. Only read for "add".
   section: string;
+  // Archive the thread in Gmail as part of this ruling.
+  archive: boolean;
+  // Label names to apply in Gmail. A name not yet in the mailbox is created.
+  labels: string[];
 }
+
+// Remembered per device, like the category: whether a pass archives as it goes,
+// and which label it files things under.
+export const EMAIL_REVIEW_ARCHIVE_STORAGE_KEY = "tdl:emailReviewArchive";
+export const EMAIL_REVIEW_LABEL_STORAGE_KEY = "tdl:emailReviewLabel";
 
 export interface ReviewTally {
   added: number;
@@ -150,6 +159,8 @@ export interface LedgerRow {
   sender: string;
   subject: string;
   item_id: string | null;
+  archived: boolean;
+  applied_labels: string[];
 }
 
 // The rows that record this pass. "later" rulings are deliberately absent: no
@@ -167,7 +178,41 @@ export function ledgerRows(
       sender: r.candidate.from,
       subject: r.candidate.subject,
       item_id: itemIdByKey.get(candidateKey(r.candidate)) ?? null,
+      archived: r.archive,
+      applied_labels: r.labels.map((l) => l.trim()).filter(Boolean),
     }));
+}
+
+// What to do to each thread in Gmail once the pass is confirmed.
+//
+// Two rules hold here rather than in the component, because they are the ones
+// that must never slip: a "later" ruling touches nothing (it has to come back
+// next pass, and an archived thread would drop out of the window), and a
+// ruling that neither archives nor labels is left out entirely rather than
+// sent as an empty modify.
+export function emailActions(rulings: readonly ReviewRuling[]): EmailAction[] {
+  return rulings
+    .filter((r) => r.action !== "later")
+    .map((r) => ({
+      accountId: r.candidate.accountId,
+      threadId: r.candidate.threadId,
+      archive: r.archive,
+      labelNames: r.labels.map((l) => l.trim()).filter(Boolean),
+    }))
+    .filter((a) => a.archive || a.labelNames.length > 0);
+}
+
+export interface EmailAction {
+  accountId: string;
+  threadId: string;
+  archive: boolean;
+  labelNames: string[];
+}
+
+// Count of threads this pass would change in Gmail — what the confirm button
+// warns with, since it is the irreversible-ish half of the pass.
+export function mailboxChangeCount(rulings: readonly ReviewRuling[]): number {
+  return emailActions(rulings).length;
 }
 
 export function summariseReview(rulings: readonly ReviewRuling[]): ReviewTally {

@@ -15,7 +15,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { env, type Db } from "./_fireflies.js";
-import { GMAIL_READONLY_SCOPE, getGoogleAccessToken } from "./_gcal.js";
+import { GMAIL_MODIFY_SCOPE, GMAIL_READONLY_SCOPE, getGoogleAccessToken } from "./_gcal.js";
 
 const MODEL = "claude-sonnet-4-6";
 const MAX_BODY_CHARS = 2000;
@@ -100,9 +100,19 @@ export function extractBody(payload: GmailPart | undefined): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 }
 
-export async function gmailFetch<T>(token: string, path: string): Promise<T> {
+export async function gmailFetch<T>(
+  token: string,
+  path: string,
+  payload?: unknown,
+): Promise<T> {
+  // A payload means a write: POST it as JSON. Reads stay plain GETs.
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    method: payload === undefined ? "GET" : "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(payload === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
   });
   const body = (await res.json().catch(() => null)) as
     | (T & { error?: { message?: string } })
@@ -138,12 +148,20 @@ async function oauthAccessToken(refreshToken: string): Promise<string> {
   return body.access_token;
 }
 
-export async function accessTokenFor(account: EmailAccount): Promise<string> {
+// `scope` defaults to read-only on purpose: every caller that only reads gets a
+// token that cannot write, and the apply path has to ask for the wider one
+// explicitly. An oauth mailbox's refresh token carries whatever scopes were
+// consented to at `npm run gmail:auth` time, so a grant made before the write
+// scope existed will fail the apply call until it is re-run.
+export async function accessTokenFor(
+  account: EmailAccount,
+  scope: string = GMAIL_READONLY_SCOPE,
+): Promise<string> {
   if (account.auth_mode === "oauth") {
     if (!account.refresh_token) throw new Error("no refresh token — run npm run gmail:auth");
     return oauthAccessToken(account.refresh_token);
   }
-  return getGoogleAccessToken(GMAIL_READONLY_SCOPE, account.address);
+  return getGoogleAccessToken(scope, account.address);
 }
 
 export async function listAccounts(supabase: Db): Promise<EmailAccount[]> {
@@ -263,6 +281,9 @@ export interface ReviewOutcome {
   scanned: number;
   // How much the window holds in total, per Gmail's estimate.
   matched: number;
+  // The mailbox's own labels, for the picker. Only filled on the first page of
+  // a pass — paging would otherwise re-list them on every request.
+  labels: { accountId: string; id: string; name: string }[];
   // Where to resume. An empty object means every mailbox reached the end of its
   // window — the one honest "that is all of it".
   cursors: ReviewCursors;
@@ -364,12 +385,14 @@ export async function collectReviewCandidates(
       matched: number;
       candidates: ReviewCandidate[];
       cursor: string | null;
+      labels: { accountId: string; id: string; name: string }[];
     }> => {
       try {
         const token = await accessTokenFor(account);
         const query = account.search_query?.trim() || REVIEW_QUERY;
         const seen = await reviewedThreads(supabase, account.id);
 
+        const firstPage = !cursors[account.id];
         let pageToken: string | null = cursors[account.id] ?? null;
         let scanned = 0;
         let matched = 0;
@@ -386,6 +409,15 @@ export async function collectReviewCandidates(
           fresh = newestPerThread(result.messages).filter((m) => !seen.has(m.threadId));
           if (fresh.length > 0 || !pageToken) break;
         }
+
+        // Read-only listing, and only once per pass.
+        const labels = firstPage
+          ? userLabels(await listLabels(token)).map((l) => ({
+              accountId: account.id,
+              id: l.id,
+              name: l.name,
+            }))
+          : [];
 
         const suggestions = await suggestForMessages(fresh);
         const candidates = fresh.map((m, i) => {
@@ -407,7 +439,7 @@ export async function collectReviewCandidates(
           } satisfies ReviewCandidate;
         });
 
-        return { scanned, matched, candidates, cursor: pageToken };
+        return { scanned, matched, candidates, cursor: pageToken, labels };
       } catch (e) {
         // One mailbox failing (revoked grant, unauthorised scope) must not sink
         // the others; the UI names the mailbox that could not be read. Its
@@ -419,7 +451,7 @@ export async function collectReviewCandidates(
           label: account.label,
           message: e instanceof Error ? e.message : "could not be read",
         });
-        return { scanned: 0, matched: 0, candidates: [], cursor: null };
+        return { scanned: 0, matched: 0, candidates: [], cursor: null, labels: [] };
       }
     }),
   );
@@ -433,10 +465,156 @@ export async function collectReviewCandidates(
   return {
     accounts: accounts.map(publicAccount),
     candidates: perAccount.flatMap((a) => a.candidates),
+    labels: perAccount.flatMap((a) => a.labels),
     scanned: perAccount.reduce((n, a) => n + a.scanned, 0),
     matched: perAccount.reduce((n, a) => n + a.matched, 0),
     cursors: nextCursors,
     done: Object.keys(nextCursors).length === 0,
     errors,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Writes. Everything above this line only reads; everything below mutates the
+// user's real mailbox, so it is gated on GMAIL_MODIFY_SCOPE, driven entirely by
+// rulings the user confirmed, and reports per-thread rather than throwing the
+// whole batch away on one failure.
+// ---------------------------------------------------------------------------
+
+export interface GmailLabel {
+  id: string;
+  name: string;
+  // "user" = one you made; "system" = INBOX, STARRED, …, which we never offer.
+  type: string;
+}
+
+export async function listLabels(token: string): Promise<GmailLabel[]> {
+  const res = await gmailFetch<{ labels?: GmailLabel[] }>(token, "labels");
+  return (res.labels ?? []).filter((l) => l.id && l.name);
+}
+
+// The labels worth showing in a picker: the ones the user made themselves.
+export function userLabels(labels: readonly GmailLabel[]): GmailLabel[] {
+  return labels
+    .filter((l) => l.type === "user")
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
+export function findLabel(labels: readonly GmailLabel[], name: string): GmailLabel | undefined {
+  const wanted = name.trim().toLowerCase();
+  return labels.find((l) => l.name.toLowerCase() === wanted);
+}
+
+// Find a label by name or create it. Gmail rejects a duplicate name with 409,
+// which is a race we can lose when two threads in the same batch ask for the
+// same new label — so a failed create re-lists and takes the winner rather than
+// failing the thread.
+export async function ensureLabel(
+  token: string,
+  name: string,
+  known: GmailLabel[],
+): Promise<GmailLabel> {
+  const existing = findLabel(known, name);
+  if (existing) return existing;
+  try {
+    const created = await gmailFetch<GmailLabel>(token, "labels", {
+      name: name.trim(),
+      labelListVisibility: "labelShow",
+      messageListVisibility: "show",
+    });
+    known.push(created);
+    return created;
+  } catch (e) {
+    const fresh = await listLabels(token);
+    const hit = findLabel(fresh, name);
+    if (!hit) throw e;
+    known.splice(0, known.length, ...fresh);
+    return hit;
+  }
+}
+
+// Archive = drop the INBOX label; Gmail has no separate archive verb. Applied
+// to the thread, not the message, which is what the Gmail UI does.
+export async function applyToThread(
+  token: string,
+  threadId: string,
+  opts: { archive: boolean; addLabelIds: readonly string[] },
+): Promise<void> {
+  const addLabelIds = [...opts.addLabelIds];
+  const removeLabelIds = opts.archive ? ["INBOX"] : [];
+  if (addLabelIds.length === 0 && removeLabelIds.length === 0) return;
+  await gmailFetch(token, `threads/${threadId}/modify`, { addLabelIds, removeLabelIds });
+}
+
+export interface EmailActionRequest {
+  accountId: string;
+  threadId: string;
+  archive: boolean;
+  // Label names rather than ids: the client may have typed a new one, and the
+  // server is the only side that can turn a name into an id.
+  labelNames: string[];
+}
+
+export interface EmailActionResult {
+  threadId: string;
+  ok: boolean;
+  error?: string;
+}
+
+// Apply the mailbox side of a confirmed review pass. Grouped by account so each
+// mailbox mints one token and lists its labels once.
+export async function applyEmailActions(
+  supabase: Db,
+  requests: readonly EmailActionRequest[],
+): Promise<{ results: EmailActionResult[] }> {
+  if (requests.length === 0) return { results: [] };
+
+  const accounts = await listAccounts(supabase);
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const results: EmailActionResult[] = [];
+
+  const byAccount = new Map<string, EmailActionRequest[]>();
+  for (const r of requests) {
+    const held = byAccount.get(r.accountId);
+    if (held) held.push(r);
+    else byAccount.set(r.accountId, [r]);
+  }
+
+  for (const [accountId, group] of byAccount) {
+    const account = byId.get(accountId);
+    if (!account) {
+      for (const r of group) results.push({ threadId: r.threadId, ok: false, error: "unknown mailbox" });
+      continue;
+    }
+    try {
+      const token = await accessTokenFor(account, GMAIL_MODIFY_SCOPE);
+      // One listing per mailbox, mutated in place by ensureLabel so a new label
+      // is created once however many threads in this batch asked for it.
+      const known = await listLabels(token);
+      for (const r of group) {
+        try {
+          const ids: string[] = [];
+          for (const name of r.labelNames) {
+            if (!name.trim()) continue;
+            ids.push((await ensureLabel(token, name, known)).id);
+          }
+          await applyToThread(token, r.threadId, { archive: r.archive, addLabelIds: ids });
+          results.push({ threadId: r.threadId, ok: true });
+        } catch (e) {
+          // One thread failing must not cost the rest of the mailbox.
+          results.push({
+            threadId: r.threadId,
+            ok: false,
+            error: e instanceof Error ? e.message : "failed",
+          });
+        }
+      }
+    } catch (e) {
+      // Token or label listing failed: the whole mailbox is unreachable.
+      const message = e instanceof Error ? e.message : "mailbox unreachable";
+      for (const r of group) results.push({ threadId: r.threadId, ok: false, error: message });
+    }
+  }
+
+  return { results };
 }

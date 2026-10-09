@@ -7,8 +7,10 @@ import {
   appendCandidates,
   candidateKey,
   describeReview,
+  emailActions,
   isHorizontalSwipe,
   ledgerRows,
+  mailboxChangeCount,
   orderCandidates,
   resolveTitle,
   reviewNotes,
@@ -44,6 +46,8 @@ function ruling(over: Partial<ReviewRuling> = {}): ReviewRuling {
     action: "add",
     title: "Reply to Kyp on the Ocean Rd quote",
     section: "tgm_tasks",
+    archive: false,
+    labels: [],
     ...over,
   };
 }
@@ -330,5 +334,55 @@ describe("swipe geometry", () => {
   it("stays at rest when the card has not been measured yet", () => {
     expect(swipeProgress(-50, 0)).toBeCloseTo(50 / SWIPE_COMMIT_MIN_PX);
     expect(swipeCommitted(-10, 0)).toBe(false);
+  });
+});
+
+describe("emailActions", () => {
+  it("never touches the mailbox for a 'decide later' ruling", () => {
+    // An archived thread drops out of the window, so a later ruling that
+    // archived would never come back — the bug this rule exists to stop.
+    expect(
+      emailActions([ruling({ action: "later", archive: true, labels: ["To-do"] })]),
+    ).toEqual([]);
+  });
+
+  it("archives and labels an added thread", () => {
+    expect(emailActions([ruling({ action: "add", archive: true, labels: ["To-do"] })])).toEqual([
+      { accountId: "acct-1", threadId: "t1", archive: true, labelNames: ["To-do"] },
+    ]);
+  });
+
+  it("archives a skipped thread too", () => {
+    expect(emailActions([ruling({ action: "skip", archive: true, labels: [] })])).toEqual([
+      { accountId: "acct-1", threadId: "t1", archive: true, labelNames: [] },
+    ]);
+  });
+
+  it("leaves out a ruling that neither archives nor labels", () => {
+    expect(emailActions([ruling({ action: "add", archive: false, labels: [] })])).toEqual([]);
+    expect(emailActions([ruling({ action: "add", archive: false, labels: ["  "] })])).toEqual([]);
+  });
+
+  it("trims label names", () => {
+    const [action] = emailActions([ruling({ archive: false, labels: ["  To-do  ", ""] })]);
+    expect(action.labelNames).toEqual(["To-do"]);
+  });
+
+  it("counts only the threads Gmail would actually change", () => {
+    expect(
+      mailboxChangeCount([
+        ruling({ candidate: candidate({ threadId: "a" }), archive: true }),
+        ruling({ candidate: candidate({ threadId: "b" }), archive: false, labels: [] }),
+        ruling({ candidate: candidate({ threadId: "c" }), action: "later", archive: true }),
+      ]),
+    ).toBe(1);
+  });
+});
+
+describe("ledgerRows with mailbox actions", () => {
+  it("records what was done to the mailbox, not just the ruling", () => {
+    const rows = ledgerRows([ruling({ action: "add", archive: true, labels: [" To-do "] })]);
+    expect(rows[0].archived).toBe(true);
+    expect(rows[0].applied_labels).toEqual(["To-do"]);
   });
 });

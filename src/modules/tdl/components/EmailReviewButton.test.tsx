@@ -17,6 +17,10 @@ const fetchEmailCandidates = vi.fn();
 const recordEmailReviews = vi.fn(
   async (_rows: Record<string, unknown>[]) => undefined,
 );
+const applyEmailActions = vi.fn(
+  async (_token: string, _actions: Record<string, unknown>[]) =>
+    [] as { threadId: string; ok: boolean; error?: string }[],
+);
 vi.mock("../emailReviewApi", () => ({
   fetchEmailCandidates: (
     token: string,
@@ -24,6 +28,8 @@ vi.mock("../emailReviewApi", () => ({
   ) => fetchEmailCandidates(token, cursors),
   recordEmailReviews: (rows: Record<string, unknown>[]) =>
     recordEmailReviews(rows),
+  applyEmailActions: (token: string, actions: Record<string, unknown>[]) =>
+    applyEmailActions(token, actions),
 }));
 
 const CATEGORIES: SectionConfig[] = [
@@ -67,6 +73,7 @@ function result(over: Partial<ReviewFetch> = {}): ReviewFetch {
     matched: 1,
     cursors: {},
     done: true,
+    labels: [],
     errors: [],
     ...over,
   };
@@ -319,5 +326,97 @@ describe("EmailReviewButton paging", () => {
       expect(screen.getByText(/pass complete/i)).toBeTruthy(),
     );
     expect(fetchEmailCandidates).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EmailReviewButton Gmail actions", () => {
+  async function openWithArchive(fetchResult = result()) {
+    await openPass(fetchResult);
+    fireEvent.click(screen.getByRole("checkbox", { name: /archive in gmail/i }));
+  }
+
+  it("touches nothing in Gmail unless you ask it to", async () => {
+    await openPass(result());
+    fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(recordEmailReviews).toHaveBeenCalledTimes(1));
+    expect(applyEmailActions).not.toHaveBeenCalled();
+  });
+
+  it("archives the thread when the toggle is on", async () => {
+    await openWithArchive();
+    fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(applyEmailActions).toHaveBeenCalledTimes(1));
+    expect(applyEmailActions.mock.calls[0][1]).toEqual([
+      { accountId: "acct-1", threadId: "t1", archive: true, labelNames: [] },
+    ]);
+  });
+
+  it("never archives a 'decide later' ruling, even with the toggle on", async () => {
+    // An archived thread leaves the window, so archiving one you deferred
+    // would silently lose it — the rule this test exists to protect.
+    await openWithArchive();
+    fireEvent.click(screen.getByRole("button", { name: /decide later/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(recordEmailReviews).toHaveBeenCalledTimes(1));
+    expect(applyEmailActions).not.toHaveBeenCalled();
+  });
+
+  it("applies a label picked from the mailbox's own labels", async () => {
+    await openPass(
+      result({ labels: [{ accountId: "acct-1", id: "Label_1", name: "To-do" }] }),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: /gmail label/i }), {
+      target: { value: "To-do" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(applyEmailActions).toHaveBeenCalledTimes(1));
+    expect(applyEmailActions.mock.calls[0][1]).toEqual([
+      { accountId: "acct-1", threadId: "t1", archive: false, labelNames: ["To-do"] },
+    ]);
+  });
+
+  it("sends a newly typed label by name, for the server to create", async () => {
+    await openPass(result({ labels: [] }));
+    fireEvent.change(screen.getByRole("combobox", { name: /gmail label/i }), {
+      target: { value: "__new__" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /new label name/i }), {
+      target: { value: " Needs reply " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(applyEmailActions).toHaveBeenCalledTimes(1));
+    expect(applyEmailActions.mock.calls[0][1][0].labelNames).toEqual(["Needs reply"]);
+  });
+
+  it("records what was done to the mailbox on the ledger row", async () => {
+    await openWithArchive();
+    fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(recordEmailReviews).toHaveBeenCalledTimes(1));
+    expect(recordEmailReviews.mock.calls[0][0][0]).toMatchObject({ archived: true });
+  });
+
+  it("reports threads Gmail refused instead of claiming a clean pass", async () => {
+    applyEmailActions.mockResolvedValueOnce([
+      { threadId: "t1", ok: false, error: "insufficient permission" },
+    ]);
+    await openWithArchive();
+    fireEvent.click(screen.getByRole("button", { name: /add to to-do/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm 1/i }));
+
+    await waitFor(() => expect(screen.getByText(/1 not updated in Gmail/i)).toBeTruthy());
+    // The task and the ledger still landed — a Gmail refusal is not a rollback.
+    expect(createItem).toHaveBeenCalledTimes(1);
+    expect(recordEmailReviews).toHaveBeenCalledTimes(1);
   });
 });
