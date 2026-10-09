@@ -121,6 +121,21 @@ describe("computeVocabHistory", () => {
     expect(h.seen).toBe(2);
     expect(h.correct).toBe(1);
     expect(h.lastShownAt).toBe("2026-06-05T10:00:00Z");
+    expect(h.recent).toEqual([true, false]);
+  });
+
+  it("keeps the last ten answers oldest-first, however the attempts arrive", () => {
+    const attempts = Array.from({ length: 12 }, (_, i) =>
+      attempt({
+        started_at: `2026-06-${String(i + 1).padStart(2, "0")}T10:00:00Z`,
+        details: [{ questionId: "vocab:être:fr2en", prompt: "être", correct: i % 2 === 0 }],
+      }),
+    );
+    const h = computeVocabHistory(attempts.slice().reverse()).get("être")!;
+    expect(h.seen).toBe(12);
+    expect(h.recent).toHaveLength(10);
+    // Showings 3..12 — the first two (correct, wrong) have fallen out of the window.
+    expect(h.recent).toEqual([true, false, true, false, true, false, true, false, true, false]);
   });
 
   it("ignores rules attempts, soft-deleted attempts and non-vocab details", () => {

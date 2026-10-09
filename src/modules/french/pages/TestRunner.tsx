@@ -30,7 +30,7 @@ import {
 } from "../hooks";
 import { fetchSentences } from "../sentences";
 import { cancelSpeech, speakFrench } from "../speech";
-import { vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
+import { RECALL_WINDOW, vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
   return (
@@ -44,7 +44,8 @@ function isKind(k: string | undefined): k is FrenchTestKind {
 }
 
 // Flags the current vocab prompt as new, or shows its prior recall (times shown,
-// when last seen, % correct). Renders nothing until the history has loaded.
+// when last seen, % correct, plus a strip of the last ten answers in order).
+// Renders nothing until the history has loaded.
 function WordHistoryBadge({
   questionId,
   history,
@@ -65,9 +66,38 @@ function WordHistoryBadge({
   }
 
   return (
-    <div className="mt-3 text-xs text-muted">
-      Seen {h.seen}× · last {relativeDay(h.lastShownAt!.slice(0, 10))} ·{" "}
-      {Math.round((h.correct / h.seen) * 100)}% correct
+    <div className="mt-3">
+      <div className="text-xs text-muted">
+        Seen {h.seen}× · last {relativeDay(h.lastShownAt!.slice(0, 10))} ·{" "}
+        {Math.round((h.correct / h.seen) * 100)}% correct
+      </div>
+      <RecallStrip recent={h.recent} />
+    </div>
+  );
+}
+
+// The last RECALL_WINDOW answers for this word, oldest left, newest right — so the
+// run of hits and misses reads in the order they happened. Showings the word hasn't
+// had yet sit grey on the right.
+function RecallStrip({ recent }: { recent: readonly boolean[] }) {
+  const slots = Array.from({ length: RECALL_WINDOW }, (_, i) => recent[i]);
+  const label = recent.length
+    ? `Last ${recent.length} answer${recent.length === 1 ? "" : "s"}, oldest first: ${recent
+        .map((r) => (r ? "correct" : "wrong"))
+        .join(", ")}`
+    : undefined;
+
+  return (
+    <div className="mt-2 flex items-center gap-1.5" role="img" aria-label={label}>
+      {slots.map((r, i) => (
+        <span
+          key={i}
+          className={cn(
+            "h-2.5 w-2.5 rounded-full",
+            r === undefined ? "bg-line" : r ? "bg-success" : "bg-danger",
+          )}
+        />
+      ))}
     </div>
   );
 }
