@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookMarked,
@@ -38,6 +38,7 @@ import {
   type VocabAnswerMode,
   type VocabDirection,
 } from "../quiz";
+import { clearRun } from "../run";
 import { RULE_QUESTIONS } from "../data/rules";
 import { VOCAB } from "../data/vocab";
 import { CONJ_VERBS } from "../data/conjugations";
@@ -84,6 +85,12 @@ function StatCard({ stats, label }: { stats: KindStats; label: string }) {
 
 export default function FrenchHome() {
   const navigate = useNavigate();
+  // Reaching this screen ends any back-to-back run of tests, so the next one
+  // starts its running total from zero.
+  useEffect(() => {
+    clearRun();
+  }, []);
+
   const stats = useFrenchStats();
   const dueCount = useVocabDueCount();
   const listenDue = useListeningDueCount();

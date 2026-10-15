@@ -28,6 +28,7 @@ import {
   useVocabHistory,
   useVocabSchedules,
 } from "../hooks";
+import { addTest, loadRun, saveRun, type TestRun } from "../run";
 import { fetchSentences } from "../sentences";
 import { cancelSpeech, speakFrench } from "../speech";
 import { RECALL_WINDOW, vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
@@ -219,6 +220,9 @@ export default function TestRunner() {
   const [selfResult, setSelfResult] = useState<boolean | null>(null);
   const [details, setDetails] = useState<FrenchAttemptDetail[]>([]);
   const [finished, setFinished] = useState(false);
+  // Tests already finished in this back-to-back run (this one excluded until it
+  // finishes). Read, not consumed, on mount — StrictMode renders twice.
+  const [run, setRun] = useState<TestRun | null>(() => loadRun(kind));
   const [saving, setSaving] = useState(false);
 
   // Snapshotted on mount; the in-progress test isn't persisted until it finishes,
@@ -344,6 +348,9 @@ export default function TestRunner() {
     setFinished(true);
     setSaving(true);
     const finalCorrect = details.filter((d) => d.correct).length;
+    const nextRun = addTest(run, kind as FrenchTestKind, questions.length, finalCorrect);
+    setRun(nextRun);
+    saveRun(nextRun);
     try {
       await syncEngine.mutations.addFrenchAttempt({
         kind: kind as FrenchTestKind,
@@ -373,6 +380,19 @@ export default function TestRunner() {
           </div>
           <div className="mt-1 text-lg text-muted">{Math.round(acc * 100)}%</div>
         </div>
+        {run && run.tests > 1 && (
+          <div className="rounded-2xl border border-line bg-surface px-5 py-3">
+            <div className="text-xs uppercase tracking-wider text-muted">
+              {run.tests} tests in a row
+            </div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">
+              {run.correct}/{run.total}
+            </div>
+            <div className="text-sm text-muted">
+              {Math.round((run.correct / run.total) * 100)}% across the run
+            </div>
+          </div>
+        )}
         <div className="text-xs text-muted">{saving ? "Saving…" : "Saved to your stats"}</div>
         <div className="flex w-full max-w-xs flex-col gap-3">
           <button
@@ -409,8 +429,15 @@ export default function TestRunner() {
         <button onClick={() => navigate("/french")} className="text-sm text-muted" aria-label="Quit">
           Quit
         </button>
-        <div className="text-sm font-medium tabular-nums text-muted">
-          {index + 1} / {questions.length}
+        <div className="flex items-center gap-2">
+          {run && run.tests > 0 && (
+            <span className="rounded-full bg-surface2 px-2.5 py-1 text-xs font-medium tabular-nums text-muted">
+              Run {run.correct + correct}/{run.total + details.length} · test {run.tests + 1}
+            </span>
+          )}
+          <div className="text-sm font-medium tabular-nums text-muted">
+            {index + 1} / {questions.length}
+          </div>
         </div>
       </div>
 
