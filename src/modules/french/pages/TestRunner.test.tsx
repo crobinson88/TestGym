@@ -41,6 +41,7 @@ vi.mock("@/lib/sync", () => ({
 }));
 
 beforeEach(() => {
+  sessionStorage.clear();
   navigate.mockReset();
   addFrenchAttempt.mockReset();
   addFrenchAttempt.mockResolvedValue(undefined);
@@ -132,5 +133,42 @@ describe("TestRunner — listening sentence ordering", () => {
     render(<TestRunner />);
     await screen.findByText("boom");
     expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
+  });
+});
+
+describe("TestRunner — back-to-back run tally", () => {
+  it("carries the running total across tests and adds the finished one", async () => {
+    sessionStorage.setItem(
+      "french:run",
+      JSON.stringify({ kind: "listening", tests: 2, total: 2, correct: 1 }),
+    );
+    render(<TestRunner />);
+    await screen.findByRole("button", { name: "le chien" });
+
+    expect(screen.getByText("Run 1/2 · test 3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "le chien" }));
+    fireEvent.click(screen.getByRole("button", { name: "grand" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    fireEvent.change(screen.getByPlaceholderText("Type the meaning"), {
+      target: { value: "the big dog" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+
+    await screen.findByText("3 tests in a row");
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+    expect(JSON.parse(sessionStorage.getItem("french:run")!)).toEqual({
+      kind: "listening",
+      tests: 3,
+      total: 3,
+      correct: 2,
+    });
+  });
+
+  it("shows no run tally on the first test of a run", async () => {
+    render(<TestRunner />);
+    await screen.findByRole("button", { name: "le chien" });
+    expect(screen.queryByText(/^Run /)).not.toBeInTheDocument();
   });
 });
