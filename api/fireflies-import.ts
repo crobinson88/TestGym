@@ -1,4 +1,4 @@
-// TDL day-header server actions. Two jobs share this one endpoint to stay within
+// TDL day-header server actions. Several jobs share this one endpoint to stay within
 // Vercel's Hobby-plan 12-Serverless-Function budget (the same reason french-chat
 // doubles as the sentence generator):
 //
@@ -17,6 +17,11 @@
 //     one page per mailbox per request, `cursors` in and out, because the
 //     window runs to four figures. Same budget reason again: api/ is at
 //     exactly 12 functions.
+//  5. action:"comms-review" — every Slack workspace + mailbox over a date range
+//     → Claude → one candidate card per to-do task the comms evidence, with a
+//     done/connected verdict. Writes NOTHING; the browser rules on each card
+//     and only then completes tasks and writes the match ledger. Paged the same
+//     way, `cursors` in and out. Same budget reason: api/ is at exactly 12.
 import {
   authedUser,
   json,
@@ -33,6 +38,7 @@ import {
   listBusyCalendarIds,
 } from "./_gcal.js";
 import { collectReviewCandidates } from "./_gmail.js";
+import { collectCommsCandidates, type CommsCursors } from "./_comms.js";
 import { triageInbox } from "./_workstreams.js";
 
 // Listing is quick; the calendar branch loops a handful of REST calls, and the
@@ -56,6 +62,10 @@ type CalendarSyncBody = {
   timeMax?: string;
   // email-review: where each mailbox got to, from the previous response.
   cursors?: Record<string, string | null>;
+  // comms-review: the date range to read, and where each source got to.
+  from?: string;
+  to?: string;
+  commsCursors?: CommsCursors;
 };
 
 // The import button posts no body; request.json() then throws. Treat any parse
@@ -81,6 +91,7 @@ export async function POST(request: Request): Promise<Response> {
     if (body?.action === "workstream-triage") return json(await triageInbox(supabase), 200);
     if (body?.action === "email-review")
       return json(await collectReviewCandidates(supabase, body.cursors ?? {}), 200);
+    if (body?.action === "comms-review") return handleCommsReview(supabase, body);
 
     const recent = await listRecentTranscripts();
     const ids = recent.map((t) => t.id);
@@ -167,6 +178,21 @@ async function handleCalendarBusy(body: CalendarSyncBody): Promise<Response> {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "freebusy failed" }, 500);
   }
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Read the range's comms and match them against the board. Auth was already
+// checked by the caller. Validates the dates here rather than trusting the
+// client, because they are interpolated into the Slack and Gmail queries.
+async function handleCommsReview(supabase: Db, body: CalendarSyncBody): Promise<Response> {
+  const from = body.from?.trim() ?? "";
+  const to = body.to?.trim() ?? "";
+  if (!ISO_DATE.test(from) || !ISO_DATE.test(to)) {
+    return json({ error: "from and to must be YYYY-MM-DD" }, 400);
+  }
+  if (from > to) return json({ error: "from is after to" }, 400);
+  return json(await collectCommsCandidates(supabase, from, to, body.commsCursors ?? {}), 200);
 }
 
 async function nextPosition(supabase: Db): Promise<number> {

@@ -639,6 +639,40 @@ export interface EmailReviewRow {
   deleted_at: string | null;
 }
 
+// One ruling per (task, communication) pair, written as a comms review pass is
+// confirmed. `slack_workspaces` is deliberately absent from this type: it holds
+// each workspace's Slack user token and is readable only by the service-role
+// key on the server, so the browser has no business with it — exactly as
+// `email_accounts` is kept out.
+export type CommsSource = "slack" | "email";
+// 'done': evidence the task shipped, so it went to the Completed list.
+// 'connected': related, attached to the task as evidence but not finished.
+// 'skipped': seen and ruled not a match. "Decide later" writes no row at all.
+export type CommsRuling = "done" | "connected" | "skipped";
+
+export interface CommsMatchRow {
+  id: string;
+  // The roll-forward chain root, not the row: a task gets a fresh tdl_items row
+  // every day it carries over. Same trick as tdl_comments / tdl_completions.
+  thread_id: string;
+  item_id: string | null;
+  // Snapshot, not a pointer — the ledger should still read right after a rename.
+  item_title: string;
+  source: CommsSource;
+  // Stable id within the source: a Slack `ts` or a Gmail thread id.
+  comm_key: string;
+  comm_url: string | null;
+  comm_excerpt: string | null;
+  comm_at: string | null;
+  ruling: CommsRuling;
+  reviewed_at: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -863,6 +897,16 @@ export type Database = {
           reviewed_at?: string;
         };
         Update: Partial<EmailReviewRow>;
+      };
+      comms_matches: {
+        Row: CommsMatchRow;
+        Insert: Omit<CommsMatchRow, "created_at" | "updated_at" | "user_id" | "reviewed_at"> & {
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+          reviewed_at?: string;
+        };
+        Update: Partial<CommsMatchRow>;
       };
     };
   };

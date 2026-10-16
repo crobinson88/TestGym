@@ -138,6 +138,19 @@ export async function updateItem(
   return updated;
 }
 
+// Append to a task's description without disturbing what is already there —
+// the notes are the user's, and a review pass has no business overwriting them.
+// Used by the comms review to attach the communications that evidence a task.
+export async function appendItemNotes(
+  id: string,
+  addition: string,
+): Promise<LocalTdlItem | null> {
+  const existing = await db.tdl_items.get(id);
+  if (!existing || existing.deleted_at) return null;
+  const held = (existing.notes ?? "").trimEnd();
+  return updateItem(id, { notes: held ? `${held}\n\n${addition}` : addition });
+}
+
 export async function deleteItem(id: string): Promise<void> {
   const existing = await db.tdl_items.get(id);
   if (!existing || existing.deleted_at) return;

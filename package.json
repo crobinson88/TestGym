@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "db:check": "tsx scripts/check-db.ts",
     "gmail:auth": "tsx scripts/gmail-authorize.ts",
+    "slack:auth": "tsx scripts/slack-authorize.ts",
     "icons": "node scripts/generate-icons.mjs",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:watch": "vitest --exclude '**/*.integration.test.ts'",
