@@ -10,6 +10,7 @@ import {
   Repeat,
   SkipForward,
   SlidersHorizontal,
+  Star,
   Undo2,
   X,
 } from "lucide-react";
@@ -17,7 +18,27 @@ import { Button } from "@/components/ui/Button";
 import { cn, prettyDate } from "@/lib/utils";
 import { useCategories } from "../categories";
 import { MAX_PRIORITY_RANK, usedRanks } from "../priority";
-import { archiveItem, setPriorityRank, updateItem } from "../repo";
+import {
+  SHORTLIST_LIMIT,
+  cutIds,
+  describeShortlist,
+  emptyShortlist,
+  isNominated,
+  isOverflowing,
+  movePick,
+  nominate,
+  denominate,
+  rankAssignments,
+  seedFromRanked,
+  togglePick,
+  type Shortlist,
+} from "../priorityShortlist";
+import {
+  applyPriorityShortlist,
+  archiveItem,
+  setPriorityRank,
+  updateItem,
+} from "../repo";
 import { statusLabel, statusOptionsFor } from "../status";
 import {
   collectStatusQueue,
@@ -30,6 +51,7 @@ import {
   type StatusPassAction,
 } from "../statusPass";
 import type { LocalTdlItem, TdlItemRow, TdlStatus } from "../types";
+import { PriorityShortlistStep } from "./PriorityShortlistStep";
 import { STATUS_CLASSES, StatusPill } from "./StatusPill";
 
 function staleText(card: StatusCard): string {
@@ -53,10 +75,19 @@ function snapshotOf(item: LocalTdlItem): StatusDecision["before"] {
 // them is exactly what they are for.
 //
 // Two things ride alongside the status, because re-reading a task is also when
-// you notice them: its **priority rank**, set from the card without advancing
-// the pass (a rank is not a ruling — the card still wants a status), and
+// you notice them: its **priority** (set from the card without advancing the
+// pass — a priority is not a ruling, the card still wants a status) and
 // **Archive**, which is a ruling: the task is done with the board, not just
 // with today, so it ends the card like any status would.
+//
+// Priority comes in two gestures, because the two questions it answers are not
+// the same. "This is P3" can be answered on the card and is written there and
+// then. "This might be one of today's ten" cannot — you only know whether it
+// beats the others once you have seen them all — so it is **tagged a potential
+// priority** and settled later, against the rest of the shortlist. Both land on
+// the same shortlist so the two can never disagree, and the shortlist is the
+// one part of this flow that is propose-then-confirm: tags write nothing until
+// the cut is made.
 export function StatusPassButton({
   snapshot_date,
   items,
@@ -76,6 +107,20 @@ export function StatusPassButton({
   // The rank set while the current card is up. `undefined` = untouched, so the
   // picker falls back to the snapshot's own rank.
   const [rank, setRank] = useState<number | null | undefined>(undefined);
+  // The candidates for today's ten, held in state and written only at the cut.
+  const [shortlist, setShortlist] = useState<Shortlist>(emptyShortlist);
+  // Whether the user has touched the shortlist at all this pass. A day that is
+  // already prioritised seeds the shortlist, so without this a pass where
+  // priorities were never mentioned would still end on a cut screen.
+  const [touched, setTouched] = useState(false);
+  // The mid-pass trim, raised the moment the tags outgrow the ten slots.
+  const [trimming, setTrimming] = useState(false);
+  // How many tags the user had already been shown an overflow for. Leaving a
+  // trim without making room is a decision ("those are the ten"), so the same
+  // overflow must not stop the pass again on the next card — only a *new* tag
+  // past the line does.
+  const [trimAckAt, setTrimAckAt] = useState(0);
+  const [cutMade, setCutMade] = useState(false);
 
   const pending = useMemo(
     () => collectStatusQueue(items, snapshot_date),
@@ -93,6 +138,13 @@ export function StatusPassButton({
     [categories],
   );
 
+  // Every live item on the day, not just the queue: the shortlist can hold a
+  // task the pass itself never shows (one already ranked but already done).
+  const itemById = useMemo(
+    () => new Map(items.map((i) => [i.id, i])),
+    [items],
+  );
+
   // Live, not snapshotted: a rank taken during the pass must show as taken on
   // the cards still to come.
   const takenRanks = useMemo(() => usedRanks(items), [items]);
@@ -102,17 +154,33 @@ export function StatusPassButton({
     setIndex(0);
     setDecisions([]);
     setRank(undefined);
+    // Start from the day's existing priorities so a new candidate competes with
+    // them for a slot, rather than silently displacing whoever held its rank.
+    setShortlist(seedFromRanked(items));
+    setTouched(false);
+    setTrimming(false);
+    setTrimAckAt(0);
+    setCutMade(false);
     setNote(null);
     setOpen(true);
   }
 
   function closeModal() {
     setOpen(false);
-    setNote(decisions.length > 0 ? describeStatusPass(decisions) : null);
+    const parts = [
+      decisions.length > 0 ? describeStatusPass(decisions) : null,
+      cutMade ? describeShortlist(shortlist) : null,
+    ].filter(Boolean);
+    setNote(parts.length > 0 ? parts.join(" · ") : null);
   }
 
   const card: StatusCard | undefined = queue[index];
-  const finished = index >= queue.length;
+  const atEnd = index >= queue.length;
+  // The end-of-pass cut: shown once the queue runs out, whether or not the tags
+  // ever overflowed — the shortlist still has to be put in order.
+  const needsCut = atEnd && touched && !cutMade;
+  const view: "card" | "shortlist" | "summary" =
+    trimming || needsCut ? "shortlist" : atEnd ? "summary" : "card";
 
   async function record(action: StatusPassAction) {
     if (!card || busy) return;
@@ -129,19 +197,36 @@ export function StatusPassButton({
       ]);
       setIndex((i) => i + 1);
       setRank(undefined);
+      // Raised after the card is ruled rather than on the tag itself, so a tap
+      // that overflows the shortlist still finishes the card it was about.
+      if (isOverflowing(shortlist) && shortlist.nominated.length > trimAckAt)
+        setTrimming(true);
     } finally {
       setBusy(false);
     }
   }
 
-  // Ranking a task does not advance the pass: the card still wants a status,
-  // and the rank is folded into whichever ruling it eventually gets.
+  // Tagging writes nothing: it nominates the task for the cut at the end of the
+  // pass. Like the rank picker, it does not advance — the card still wants a
+  // status.
+  function toggleTag() {
+    if (!card || busy) return;
+    const id = card.item.id;
+    setShortlist((s) => (isNominated(s, id) ? denominate(s, id) : nominate(s, id)));
+    setTouched(true);
+  }
+
+  // Naming an exact rank is still written on the spot, but it also joins the
+  // shortlist, so the final cut sees every candidate however it was nominated.
   async function changeRank(next: number | null) {
     if (!card || busy) return;
     setBusy(true);
     try {
-      await setPriorityRank(card.item.id, next);
+      const id = card.item.id;
+      await setPriorityRank(id, next);
       setRank(next);
+      setShortlist((s) => (next == null ? denominate(s, id) : nominate(s, id)));
+      setTouched(true);
     } finally {
       setBusy(false);
     }
@@ -176,11 +261,44 @@ export function StatusPassButton({
     }
   }
 
+  // The cut: picks take ranks 1…n in the order shown, and everyone else on the
+  // shortlist is pushed to Do First. The one write the shortlist ever makes.
+  async function applyCut() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await applyPriorityShortlist(
+        snapshot_date,
+        rankAssignments(shortlist),
+        cutIds(shortlist),
+      );
+      setCutMade(true);
+      setTrimming(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Leaving the pass early still owes the shortlist a cut — the tags are the
+  // whole reason they were collected, so "Finish" ends the walk and lands on
+  // the cut screen rather than dropping them.
+  function finishPass() {
+    if (busy) return;
+    if (touched && !cutMade) {
+      setTrimming(false);
+      setIndex(queue.length);
+      return;
+    }
+    closeModal();
+  }
+
   const count = pending.length;
   const tally = summariseStatusPass(decisions);
   const options: TdlStatus[] = card ? statusOptionsFor(card.item.section) : [];
   const currentRank =
     rank !== undefined ? rank : (card?.item.priority_rank ?? null);
+  const tagged = card ? isNominated(shortlist, card.item.id) : false;
+  const cutCount = cutIds(shortlist).length;
 
   return (
     <>
@@ -213,14 +331,22 @@ export function StatusPassButton({
               <header className="border-b border-line px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <SlidersHorizontal className="h-5 w-5 shrink-0 text-accent" />
+                    {view === "shortlist" ? (
+                      <Flag className="h-5 w-5 shrink-0 text-warn" />
+                    ) : (
+                      <SlidersHorizontal className="h-5 w-5 shrink-0 text-accent" />
+                    )}
                     <h2 className="truncate text-base font-semibold">
-                      Update statuses
+                      {view === "shortlist"
+                        ? "Pick today's priorities"
+                        : "Update statuses"}
                     </h2>
                     <span className="shrink-0 text-xs tabular-nums text-muted">
-                      {finished
-                        ? `${queue.length} of ${queue.length}`
-                        : `${index + 1} of ${queue.length}`}
+                      {view === "shortlist"
+                        ? `${shortlist.picked.length}/${SHORTLIST_LIMIT}`
+                        : atEnd
+                          ? `${queue.length} of ${queue.length}`
+                          : `${index + 1} of ${queue.length}`}
                     </span>
                   </div>
                   <Button
@@ -251,17 +377,35 @@ export function StatusPassButton({
               </header>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-                {finished ? (
+                {view === "shortlist" ? (
+                  <PriorityShortlistStep
+                    shortlist={shortlist}
+                    itemById={itemById}
+                    labelBySection={labelBySection}
+                    final={needsCut}
+                    busy={busy}
+                    onTogglePick={(id) =>
+                      setShortlist((s) => togglePick(s, id))
+                    }
+                    onMove={(id, delta) =>
+                      setShortlist((s) => movePick(s, id, delta))
+                    }
+                    onRemove={(id) => setShortlist((s) => denominate(s, id))}
+                  />
+                ) : view === "summary" ? (
                   <div className="py-6 text-center">
                     <Check className="mx-auto h-10 w-10 text-success" />
                     <p className="mt-3 text-base font-semibold">
-                      {queue.length === 0
-                        ? "Nothing to update"
-                        : "Pass complete"}
+                      {queue.length === 0 ? "Nothing to update" : "Pass complete"}
                     </p>
                     <p className="mt-1 text-sm text-muted">
                       {describeStatusPass(decisions)}
                     </p>
+                    {cutMade && (
+                      <p className="mt-1 text-sm text-muted">
+                        {describeShortlist(shortlist)}
+                      </p>
+                    )}
                   </div>
                 ) : card ? (
                   <>
@@ -316,6 +460,27 @@ export function StatusPassButton({
                     <p className="mt-4 text-xs uppercase tracking-wider text-muted">
                       Priority
                     </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={toggleTag}
+                      aria-pressed={tagged}
+                      className={cn(
+                        "mt-2 flex h-12 w-full items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition active:scale-[0.99] disabled:opacity-50",
+                        tagged
+                          ? "border-warn/50 bg-warn/15 text-warn"
+                          : "border-line bg-surface2 text-muted",
+                      )}
+                    >
+                      <Star
+                        className={cn("h-4 w-4 shrink-0", tagged && "fill-current")}
+                      />
+                      {tagged ? "Tagged a potential priority" : "Tag as potential priority"}
+                      <span className="ml-auto text-[11px] font-normal tabular-nums opacity-80">
+                        {shortlist.nominated.length} tagged
+                        {cutCount > 0 && ` · ${cutCount} over`}
+                      </span>
+                    </button>
                     <div className="relative mt-2">
                       <Flag
                         className={cn(
@@ -413,29 +578,63 @@ export function StatusPassButton({
               </div>
 
               <footer className="flex items-center justify-between gap-2 border-t border-line px-4 py-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void undo()}
-                  disabled={busy || decisions.length === 0}
-                  aria-label="Undo last decision"
-                >
-                  <Undo2 className="mr-1 h-4 w-4" />
-                  Undo
-                </Button>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] tabular-nums text-muted">
-                    {tally.updated} updated
-                    {tally.archived > 0 && ` · ${tally.archived} archived`}
-                    {tally.prioritised > 0 &&
-                      ` · ${tally.prioritised} ranked`}{" "}
-                    · {tally.skipped} skipped
-                  </span>
-                  <Button size="sm" onClick={closeModal} disabled={busy}>
-                    {finished ? "Done" : "Finish"}
-                    {!finished && <ChevronRight className="ml-1 h-4 w-4" />}
-                  </Button>
-                </div>
+                {view === "shortlist" ? (
+                  <>
+                    <span className="text-[11px] tabular-nums text-muted">
+                      {shortlist.picked.length} priorit
+                      {shortlist.picked.length === 1 ? "y" : "ies"}
+                      {cutCount > 0 && ` · ${cutCount} cut`}
+                    </span>
+                    {needsCut ? (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void applyCut()}
+                      >
+                        Set priorities
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setTrimAckAt(shortlist.nominated.length);
+                          setTrimming(false);
+                        }}
+                      >
+                        Back to the pass
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void undo()}
+                      disabled={busy || decisions.length === 0}
+                      aria-label="Undo last decision"
+                    >
+                      <Undo2 className="mr-1 h-4 w-4" />
+                      Undo
+                    </Button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] tabular-nums text-muted">
+                        {tally.updated} updated
+                        {tally.archived > 0 && ` · ${tally.archived} archived`}
+                        {tally.prioritised > 0 &&
+                          ` · ${tally.prioritised} ranked`}{" "}
+                        · {tally.skipped} skipped
+                      </span>
+                      <Button size="sm" onClick={finishPass} disabled={busy}>
+                        {atEnd ? "Done" : "Finish"}
+                        {!atEnd && <ChevronRight className="ml-1 h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </>
+                )}
               </footer>
             </div>
           </div>,
