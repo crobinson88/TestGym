@@ -159,6 +159,7 @@ export async function cycleStatus(id: string): Promise<LocalTdlItem | null> {
 
 import { MAX_PRIORITY_RANK, clampRank, reorderedRankAssignments, usedRanks } from "./priority";
 export { MAX_PRIORITY_RANK, clampRank, usedRanks };
+import { CUT_QUADRANT as SHORTLIST_CUT_QUADRANT } from "./priorityShortlist";
 
 export async function setPriorityRank(
   id: string,
@@ -217,6 +218,71 @@ export async function reorderPriorities(
       await db.tdl_items.put({
         ...existing,
         priority_rank: rank,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+    }
+  });
+  pokeOutbox();
+}
+
+// Settle a status-pass priority shortlist in one go: the picks take ranks 1…n
+// in the order given, and the ones that didn't make the cut are pushed to the
+// red "Do First" quadrant with their rank cleared.
+//
+// A single transaction rather than a loop over setPriorityRank, because the
+// writes are a permutation: assigning rank 3 to one pick would displace another
+// pick that is about to be given a different rank, and the order the day's ten
+// happened to be written in would decide who survived. Collisions are resolved
+// against the whole assignment up front instead — any task outside the
+// shortlist still holding one of the spent ranks is displaced to unranked,
+// exactly as setPriorityRank would do it, while a rank that nobody on the
+// shortlist claims stays with whoever already has it.
+export async function applyPriorityShortlist(
+  snapshot_date: string,
+  assignments: ReadonlyArray<{ id: string; rank: number }>,
+  cutIds: readonly string[],
+): Promise<void> {
+  const rankById = new Map<string, number>();
+  for (const { id, rank } of assignments) {
+    const clamped = clampRank(rank);
+    if (clamped != null) rankById.set(id, clamped);
+  }
+  const cut = new Set(cutIds);
+  const spent = new Set(rankById.values());
+  const ts = nowIso();
+
+  await db.transaction("rw", db.tdl_items, async () => {
+    const siblings = await db.tdl_items
+      .where("snapshot_date")
+      .equals(snapshot_date)
+      .toArray();
+    for (const row of siblings) {
+      if (row.deleted_at) continue;
+      const rank = rankById.get(row.id);
+      const isCut = cut.has(row.id);
+      // Outside the shortlist: only touched when it is sitting on a rank one of
+      // the picks is about to take.
+      const displaced =
+        rank == null &&
+        !isCut &&
+        row.priority_rank != null &&
+        spent.has(row.priority_rank);
+
+      const priority_rank = rank ?? (isCut || displaced ? null : row.priority_rank);
+      const eisenhower_quadrant = isCut
+        ? SHORTLIST_CUT_QUADRANT
+        : row.eisenhower_quadrant;
+      if (
+        priority_rank === row.priority_rank &&
+        eisenhower_quadrant === row.eisenhower_quadrant
+      ) {
+        continue;
+      }
+      await db.tdl_items.put({
+        ...row,
+        priority_rank,
+        eisenhower_quadrant,
         updated_at: ts,
         sync_status: "pending",
       });
