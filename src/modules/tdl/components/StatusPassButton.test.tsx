@@ -359,36 +359,8 @@ describe("StatusPassButton", () => {
     );
   });
 
-  it("sends the ones cut from the shortlist to Do First", async () => {
-    openFlow([
-      item({ id: "a", title: "First" }),
-      item({ id: "b", title: "Second", position: 1 }),
-    ]);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Tag as potential priority/ }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
-    await waitFor(() => expect(screen.getByText("Second")).toBeTruthy());
-    fireEvent.click(
-      screen.getByRole("button", { name: /Tag as potential priority/ }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
-
-    await waitFor(() => expect(screen.getByText("The final 10")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Cut First" }));
-    expect(screen.getByText("→ Do First")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Set priorities/ }));
-
-    await waitFor(() => expect(applyPriorityShortlist).toHaveBeenCalled());
-    expect(applyPriorityShortlist).toHaveBeenCalledWith(
-      DAY,
-      [{ id: "b", rank: 1 }],
-      ["a"],
-    );
-  });
-
-  it("stops the pass for a trim once the tags outgrow the ten slots", async () => {
-    // Ten ranked tasks already hold every slot, so the first new tag overflows.
+  it("sends the ones below the line to Do First", async () => {
+    // Only the top ten can hold a rank, so an eleventh tag is the cut.
     const ranked = Array.from({ length: 10 }, (_, i) =>
       item({
         id: `p${i}`,
@@ -397,14 +369,7 @@ describe("StatusPassButton", () => {
         priority_rank: i + 1,
       }),
     );
-    openFlow([
-      ...ranked,
-      item({ id: "x", title: "Newcomer", position: 10 }),
-      // A card behind the newcomer, so the overflow lands mid-pass rather than
-      // running straight into the end-of-pass cut.
-      item({ id: "z", title: "Trailing", position: 11 }),
-    ]);
-    // Ranked tasks lead the queue, so the newcomer is second to last.
+    openFlow([...ranked, item({ id: "x", title: "Newcomer", position: 10 })]);
     for (let i = 0; i < 10; i++) {
       fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
       // eslint-disable-next-line no-await-in-loop
@@ -416,10 +381,98 @@ describe("StatusPassButton", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
 
-    await waitFor(() =>
-      expect(screen.getByText("More than 10 tagged")).toBeTruthy(),
+    await waitFor(() => expect(screen.getByText("The final 10")).toBeTruthy());
+    expect(screen.getByText("→ Do First")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Set priorities/ }));
+
+    await waitFor(() => expect(applyPriorityShortlist).toHaveBeenCalled());
+    expect(applyPriorityShortlist).toHaveBeenCalledWith(
+      DAY,
+      ranked.map((r, i) => ({ id: r.id, rank: i + 1 })),
+      ["x"],
     );
-    // A trim writes nothing — it only asks who loses their slot.
+  });
+
+  it("promotes a cut task over the line from the sort screen", async () => {
+    const ranked = Array.from({ length: 10 }, (_, i) =>
+      item({
+        id: `p${i}`,
+        title: `Ranked ${i}`,
+        position: i,
+        priority_rank: i + 1,
+      }),
+    );
+    openFlow([...ranked, item({ id: "x", title: "Newcomer", position: 10 })]);
+    for (let i = 0; i < 10; i++) {
+      fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+      // eslint-disable-next-line no-await-in-loop
+      await waitFor(() => expect(screen.queryByText(`Ranked ${i}`)).toBeNull());
+    }
+    await waitFor(() => expect(screen.getByText("Newcomer")).toBeTruthy());
+    fireEvent.click(
+      screen.getByRole("button", { name: /Tag as potential priority/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+
+    await waitFor(() => expect(screen.getByText("The final 10")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Make a priority/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Set priorities/ }));
+
+    await waitFor(() => expect(applyPriorityShortlist).toHaveBeenCalled());
+    // The newcomer takes the last rank; whoever held it drops to Do First.
+    expect(applyPriorityShortlist).toHaveBeenCalledWith(
+      DAY,
+      [
+        ...ranked.slice(0, 9).map((r, i) => ({ id: r.id, rank: i + 1 })),
+        { id: "x", rank: 10 },
+      ],
+      ["p9"],
+    );
+  });
+
+  it("never stops the pass to trim, however many are tagged", async () => {
+    // Ten ranked tasks already hold every rank, so the next tag is over the ten.
+    const ranked = Array.from({ length: 10 }, (_, i) =>
+      item({
+        id: `p${i}`,
+        title: `Ranked ${i}`,
+        position: i,
+        priority_rank: i + 1,
+      }),
+    );
+    openFlow([
+      ...ranked,
+      item({ id: "x", title: "Newcomer", position: 10 }),
+      item({ id: "y", title: "Another", position: 11 }),
+      // A card behind them, so an interruption would land mid-pass rather than
+      // running into the end-of-pass cut.
+      item({ id: "z", title: "Trailing", position: 12 }),
+    ]);
+    // Ranked tasks lead the queue, so the newcomers come after them.
+    for (let i = 0; i < 10; i++) {
+      fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+      // eslint-disable-next-line no-await-in-loop
+      await waitFor(() => expect(screen.queryByText(`Ranked ${i}`)).toBeNull());
+    }
+
+    for (const title of ["Newcomer", "Another"]) {
+      // eslint-disable-next-line no-await-in-loop
+      await waitFor(() => expect(screen.getByText(title)).toBeTruthy());
+      fireEvent.click(
+        screen.getByRole("button", { name: /Tag as potential priority/ }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+    }
+
+    // Straight on to the next card — no trim screen in between.
+    await waitFor(() => expect(screen.getByText("Trailing")).toBeTruthy());
+    expect(screen.queryByText(/The final 10/)).toBeNull();
+    expect(screen.getByText(/12 tagged/)).toBeTruthy();
+
+    // The sort comes once, at the end, over all twelve.
+    fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+    await waitFor(() => expect(screen.getByText("The final 10")).toBeTruthy());
+    expect(screen.getByText(/2 cut/)).toBeTruthy();
     expect(applyPriorityShortlist).not.toHaveBeenCalled();
   });
 

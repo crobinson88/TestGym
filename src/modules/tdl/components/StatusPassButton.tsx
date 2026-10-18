@@ -21,16 +21,17 @@ import { MAX_PRIORITY_RANK, usedRanks } from "../priority";
 import {
   SHORTLIST_LIMIT,
   cutIds,
+  demote,
   describeShortlist,
   emptyShortlist,
   isNominated,
-  isOverflowing,
-  movePick,
+  moveNomination,
   nominate,
   denominate,
+  pickedIds,
+  promote,
   rankAssignments,
   seedFromRanked,
-  togglePick,
   type Shortlist,
 } from "../priorityShortlist";
 import {
@@ -113,13 +114,6 @@ export function StatusPassButton({
   // already prioritised seeds the shortlist, so without this a pass where
   // priorities were never mentioned would still end on a cut screen.
   const [touched, setTouched] = useState(false);
-  // The mid-pass trim, raised the moment the tags outgrow the ten slots.
-  const [trimming, setTrimming] = useState(false);
-  // How many tags the user had already been shown an overflow for. Leaving a
-  // trim without making room is a decision ("those are the ten"), so the same
-  // overflow must not stop the pass again on the next card — only a *new* tag
-  // past the line does.
-  const [trimAckAt, setTrimAckAt] = useState(0);
   const [cutMade, setCutMade] = useState(false);
 
   const pending = useMemo(
@@ -158,8 +152,6 @@ export function StatusPassButton({
     // them for a slot, rather than silently displacing whoever held its rank.
     setShortlist(seedFromRanked(items));
     setTouched(false);
-    setTrimming(false);
-    setTrimAckAt(0);
     setCutMade(false);
     setNote(null);
     setOpen(true);
@@ -176,11 +168,14 @@ export function StatusPassButton({
 
   const card: StatusCard | undefined = queue[index];
   const atEnd = index >= queue.length;
-  // The end-of-pass cut: shown once the queue runs out, whether or not the tags
-  // ever overflowed — the shortlist still has to be put in order.
+  // The cut: shown once, when the queue runs out. However many were tagged,
+  // the list is sorted here and nowhere else.
   const needsCut = atEnd && touched && !cutMade;
-  const view: "card" | "shortlist" | "summary" =
-    trimming || needsCut ? "shortlist" : atEnd ? "summary" : "card";
+  const view: "card" | "shortlist" | "summary" = needsCut
+    ? "shortlist"
+    : atEnd
+      ? "summary"
+      : "card";
 
   async function record(action: StatusPassAction) {
     if (!card || busy) return;
@@ -197,18 +192,15 @@ export function StatusPassButton({
       ]);
       setIndex((i) => i + 1);
       setRank(undefined);
-      // Raised after the card is ruled rather than on the tag itself, so a tap
-      // that overflows the shortlist still finishes the card it was about.
-      if (isOverflowing(shortlist) && shortlist.nominated.length > trimAckAt)
-        setTrimming(true);
     } finally {
       setBusy(false);
     }
   }
 
-  // Tagging writes nothing: it nominates the task for the cut at the end of the
-  // pass. Like the rank picker, it does not advance — the card still wants a
-  // status.
+  // Tagging writes nothing: it nominates the task for the sort at the end of
+  // the pass. There is no cap and no interruption — tag as many as the day
+  // deserves. Like the rank picker, it does not advance: the card still wants
+  // a status.
   function toggleTag() {
     if (!card || busy) return;
     const id = card.item.id;
@@ -273,7 +265,6 @@ export function StatusPassButton({
         cutIds(shortlist),
       );
       setCutMade(true);
-      setTrimming(false);
     } finally {
       setBusy(false);
     }
@@ -285,7 +276,6 @@ export function StatusPassButton({
   function finishPass() {
     if (busy) return;
     if (touched && !cutMade) {
-      setTrimming(false);
       setIndex(queue.length);
       return;
     }
@@ -298,6 +288,7 @@ export function StatusPassButton({
   const currentRank =
     rank !== undefined ? rank : (card?.item.priority_rank ?? null);
   const tagged = card ? isNominated(shortlist, card.item.id) : false;
+  const pickedCount = pickedIds(shortlist).length;
   const cutCount = cutIds(shortlist).length;
 
   return (
@@ -343,7 +334,7 @@ export function StatusPassButton({
                     </h2>
                     <span className="shrink-0 text-xs tabular-nums text-muted">
                       {view === "shortlist"
-                        ? `${shortlist.picked.length}/${SHORTLIST_LIMIT}`
+                        ? `${pickedCount}/${SHORTLIST_LIMIT}`
                         : atEnd
                           ? `${queue.length} of ${queue.length}`
                           : `${index + 1} of ${queue.length}`}
@@ -382,13 +373,11 @@ export function StatusPassButton({
                     shortlist={shortlist}
                     itemById={itemById}
                     labelBySection={labelBySection}
-                    final={needsCut}
                     busy={busy}
-                    onTogglePick={(id) =>
-                      setShortlist((s) => togglePick(s, id))
-                    }
+                    onPromote={(id) => setShortlist((s) => promote(s, id))}
+                    onDemote={(id) => setShortlist((s) => demote(s, id))}
                     onMove={(id, delta) =>
-                      setShortlist((s) => movePick(s, id, delta))
+                      setShortlist((s) => moveNomination(s, id, delta))
                     }
                     onRemove={(id) => setShortlist((s) => denominate(s, id))}
                   />
@@ -478,7 +467,7 @@ export function StatusPassButton({
                       {tagged ? "Tagged a potential priority" : "Tag as potential priority"}
                       <span className="ml-auto text-[11px] font-normal tabular-nums opacity-80">
                         {shortlist.nominated.length} tagged
-                        {cutCount > 0 && ` · ${cutCount} over`}
+                        {cutCount > 0 && " · sorted at the end"}
                       </span>
                     </button>
                     <div className="relative mt-2">
@@ -581,32 +570,17 @@ export function StatusPassButton({
                 {view === "shortlist" ? (
                   <>
                     <span className="text-[11px] tabular-nums text-muted">
-                      {shortlist.picked.length} priorit
-                      {shortlist.picked.length === 1 ? "y" : "ies"}
+                      {pickedCount} priorit{pickedCount === 1 ? "y" : "ies"}
                       {cutCount > 0 && ` · ${cutCount} cut`}
                     </span>
-                    {needsCut ? (
-                      <Button
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void applyCut()}
-                      >
-                        Set priorities
-                        <ChevronRight className="ml-1 h-4 w-4" />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => {
-                          setTrimAckAt(shortlist.nominated.length);
-                          setTrimming(false);
-                        }}
-                      >
-                        Back to the pass
-                        <ChevronRight className="ml-1 h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void applyCut()}
+                    >
+                      Set priorities
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
                   </>
                 ) : (
                   <>
