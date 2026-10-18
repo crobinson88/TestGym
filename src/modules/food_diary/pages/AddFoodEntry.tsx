@@ -40,6 +40,7 @@ export default function AddFoodEntry() {
   const [estimating, setEstimating] = useState(false);
   const [estimatingText, setEstimatingText] = useState(false);
   const [estimateNote, setEstimateNote] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
   const [librarySearch, setLibrarySearch] = useState("");
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
@@ -54,6 +55,11 @@ export default function AddFoodEntry() {
     }
   }, [editing, existing, hydrated]);
 
+  // The serving is described in its own box ("two slices of pepperoni pizza"),
+  // so the entry's name stays whatever you want it filed under; the typed name
+  // stands in when the box is empty.
+  const describedServing = description.trim() || name.trim();
+
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file
@@ -62,8 +68,8 @@ export default function AddFoodEntry() {
     setError(null);
     setEstimateNote(null);
     try {
-      // Pass the typed name (if any) as a hint to sharpen the estimate.
-      const est = await estimateFoodPhoto(file, session.access_token, name.trim() || undefined);
+      // Pass the description (or the typed name) as a hint to sharpen the estimate.
+      const est = await estimateFoodPhoto(file, session.access_token, describedServing || undefined);
       if (est.error) {
         setError(est.error);
         return;
@@ -83,7 +89,7 @@ export default function AddFoodEntry() {
   }
 
   async function estimateFromText() {
-    const desc = name.trim();
+    const desc = describedServing;
     if (!desc || !session || estimatingText || estimating) return;
     setEstimatingText(true);
     setError(null);
@@ -94,7 +100,7 @@ export default function AddFoodEntry() {
         setError(est.error);
         return;
       }
-      if (est.name) setName(est.name);
+      if (est.name && !name.trim()) setName(est.name);
       setCalories(String(est.calories));
       setProtein(String(est.protein));
       const pct = Math.round(est.confidence * 100);
@@ -211,12 +217,63 @@ export default function AddFoodEntry() {
           onChange={onPhoto}
         />
 
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <Button onClick={save} size="lg" className="w-full" disabled={!valid || saving}>
+            {saving ? (
+              "Saving…"
+            ) : (
+              <>
+                <Check className="mr-2 h-5 w-5" /> {editing ? "Save changes" : "Log it"}
+              </>
+            )}
+          </Button>
+          {editing && (
+            <Button
+              variant="ghost"
+              size="lg"
+              className="w-full text-warn"
+              onClick={remove}
+              disabled={saving}
+            >
+              <Trash2 className="mr-2 h-5 w-5" /> Delete
+            </Button>
+          )}
+        </div>
+
         {!editing && (
           <div className="rounded-2xl border border-line bg-surface p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
-              <Sparkles className="h-3.5 w-3.5 text-accent" /> Estimate with a photo
+              <Sparkles className="h-3.5 w-3.5 text-accent" /> Estimate with AI
             </div>
-            <div className="flex gap-2">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe the serving — e.g. two slices of pepperoni pizza and a side salad"
+              aria-label="Describe what you ate"
+              rows={3}
+              className="w-full resize-y rounded-xl border border-line bg-surface2 px-3 py-2 text-sm text-text placeholder:text-muted outline-none focus:border-accent"
+            />
+            <Button
+              variant="secondary"
+              size="md"
+              className="mt-2 w-full"
+              onClick={estimateFromText}
+              disabled={!describedServing || estimatingText || estimating || !session}
+            >
+              {estimatingText ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-5 w-5 text-accent" />
+              )}
+              {estimatingText ? "Estimating…" : "Estimate calories & protein"}
+            </Button>
+            <div className="mt-2 flex gap-2">
               <Button
                 variant="secondary"
                 size="md"
@@ -241,6 +298,7 @@ export default function AddFoodEntry() {
                 <ImagePlus className="mr-2 h-5 w-5" /> Library
               </Button>
             </div>
+            {estimateNote && <p className="mt-2 text-xs text-accent">{estimateNote}</p>}
           </div>
         )}
 
@@ -301,30 +359,13 @@ export default function AddFoodEntry() {
           </div>
         )}
 
-        <div className="space-y-2">
-          <Field label="Food">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="What did you eat?"
-            />
-          </Field>
-          <Button
-            variant="secondary"
-            size="md"
-            className="w-full"
-            onClick={estimateFromText}
-            disabled={!name.trim() || estimatingText || estimating || !session}
-          >
-            {estimatingText ? (
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            ) : (
-              <Sparkles className="mr-2 h-5 w-5 text-accent" />
-            )}
-            {estimatingText ? "Estimating…" : "Estimate calories & protein"}
-          </Button>
-          {estimateNote && <p className="text-xs text-accent">{estimateNote}</p>}
-        </div>
+        <Field label="Food">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="What did you eat?"
+          />
+        </Field>
 
         <div className="grid grid-cols-2 gap-4">
           <Field label="Calories (kcal)">
@@ -353,35 +394,6 @@ export default function AddFoodEntry() {
         <Field label="Date">
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-
-        {error && (
-          <div className="flex items-start gap-2 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
-            {error}
-          </div>
-        )}
-
-        <div className="space-y-3 pt-2">
-          <Button onClick={save} size="lg" className="w-full" disabled={!valid || saving}>
-            {saving ? (
-              "Saving…"
-            ) : (
-              <>
-                <Check className="mr-2 h-5 w-5" /> {editing ? "Save changes" : "Log it"}
-              </>
-            )}
-          </Button>
-          {editing && (
-            <Button
-              variant="ghost"
-              size="lg"
-              className="w-full text-warn"
-              onClick={remove}
-              disabled={saving}
-            >
-              <Trash2 className="mr-2 h-5 w-5" /> Delete
-            </Button>
-          )}
-        </div>
       </div>
     </div>
   );

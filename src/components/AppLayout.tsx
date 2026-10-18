@@ -140,6 +140,13 @@ export function AppLayout() {
               Task
             </button>
             <button
+              onClick={() => go("/food/add")}
+              className="flex h-14 items-center gap-3 rounded-full bg-surface px-5 text-base font-medium text-text shadow-lg ring-1 ring-line transition active:scale-[0.98]"
+            >
+              <UtensilsCrossed className="h-5 w-5 text-accent" />
+              Food
+            </button>
+            <button
               onClick={() => go("/add-cardio")}
               className="flex h-14 items-center gap-3 rounded-full bg-surface px-5 text-base font-medium text-text shadow-lg ring-1 ring-line transition active:scale-[0.98]"
             >
