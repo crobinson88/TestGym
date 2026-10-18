@@ -6,63 +6,48 @@ import {
   CUT_QUADRANT,
   SHORTLIST_LIMIT,
   cutIds,
-  hasRoom,
   isPicked,
   orderShortlist,
+  pickedIds,
   type Shortlist,
 } from "../priorityShortlist";
 import type { LocalTdlItem } from "../types";
 import { StatusPill } from "./StatusPill";
 
-// The whittle screen: every task tagged a potential priority during the status
-// pass, picks first in the order that becomes their rank, then the ones headed
-// for Do First. It is shown twice — the moment the tags outgrow the ten slots
-// (a trim, mid-pass) and once at the end of the pass (the final cut, the only
-// one that writes).
+// The cut: every task tagged a potential priority during the status pass, as
+// one sorted list however many were tagged. Sort it top to bottom; the first
+// SHORTLIST_LIMIT take ranks 1…n and everything below the line goes to Do
+// First. Shown once, at the end of the pass — it is the only step that writes.
 export function PriorityShortlistStep({
   shortlist,
   itemById,
   labelBySection,
-  final,
   busy,
-  onTogglePick,
+  onPromote,
+  onDemote,
   onMove,
   onRemove,
 }: {
   shortlist: Shortlist;
   itemById: ReadonlyMap<string, LocalTdlItem>;
   labelBySection: ReadonlyMap<string, string>;
-  // The end-of-pass cut, as opposed to the mid-pass trim.
-  final: boolean;
   busy: boolean;
-  onTogglePick: (id: string) => void;
+  onPromote: (id: string) => void;
+  onDemote: (id: string) => void;
   onMove: (id: string, delta: number) => void;
   onRemove: (id: string) => void;
 }) {
   const ordered = orderShortlist(shortlist, itemById);
+  const picked = pickedIds(shortlist);
   const cut = cutIds(shortlist);
-  const full = !hasRoom(shortlist);
   const cutLabel = QUADRANT_BY_KEY[CUT_QUADRANT].label;
 
   return (
     <>
-      <div
-        className={cn(
-          "rounded-xl border p-3",
-          final || !full
-            ? "border-line bg-surface2"
-            : "border-warn/40 bg-warn/10",
-        )}
-      >
-        <p className="text-sm font-semibold">
-          {final
-            ? `The final ${SHORTLIST_LIMIT}`
-            : `More than ${SHORTLIST_LIMIT} tagged`}
-        </p>
+      <div className="rounded-xl border border-line bg-surface2 p-3">
+        <p className="text-sm font-semibold">{`The final ${SHORTLIST_LIMIT}`}</p>
         <p className="mt-1 text-xs text-muted">
-          {final
-            ? `Top ${shortlist.picked.length} become today's priorities, in this order. `
-            : `Only ${SHORTLIST_LIMIT} can be priorities. Swap anyone you'd rather have in — nothing is written yet. `}
+          {`Sort all ${ordered.length} — the top ${picked.length} become today's priorities, in this order. `}
           {cut.length > 0 &&
             `The ${cut.length} below the line go to ${cutLabel}.`}
         </p>
@@ -70,14 +55,14 @@ export function PriorityShortlistStep({
 
       <ul className="mt-3 space-y-2">
         {ordered.map((item, i) => {
-          const picked = isPicked(shortlist, item.id);
-          const rank = picked ? i + 1 : null;
+          const isTop = isPicked(shortlist, item.id);
+          const rank = isTop ? i + 1 : null;
           return (
             <li
               key={item.id}
               className={cn(
                 "rounded-xl border p-2",
-                picked
+                isTop
                   ? "border-accent/40 bg-accent/10"
                   : "border-danger/30 bg-danger/5",
               )}
@@ -86,7 +71,7 @@ export function PriorityShortlistStep({
                 <span
                   className={cn(
                     "mt-0.5 inline-flex h-7 min-w-[2rem] shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums",
-                    picked
+                    isTop
                       ? "bg-accent/20 text-accent"
                       : "bg-danger/15 text-danger",
                   )}
@@ -106,7 +91,7 @@ export function PriorityShortlistStep({
                       section={item.section}
                       compact
                     />
-                    {!picked && (
+                    {!isTop && (
                       <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">
                         → {cutLabel}
                       </span>
@@ -126,49 +111,47 @@ export function PriorityShortlistStep({
               </div>
 
               <div className="mt-2 flex items-center gap-2">
-                {picked ? (
-                  <>
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      disabled={busy || i === 0}
-                      onClick={() => onMove(item.id, -1)}
-                      aria-label={`Move ${item.title} up`}
-                      className="h-11 w-11"
-                    >
-                      <ArrowUp className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      disabled={busy || i === shortlist.picked.length - 1}
-                      onClick={() => onMove(item.id, 1)}
-                      aria-label={`Move ${item.title} down`}
-                      className="h-11 w-11"
-                    >
-                      <ArrowDown className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => onTogglePick(item.id)}
-                      aria-label={`Cut ${item.title}`}
-                      className="ml-auto h-11"
-                    >
-                      Cut
-                    </Button>
-                  </>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  disabled={busy || i === 0}
+                  onClick={() => onMove(item.id, -1)}
+                  aria-label={`Move ${item.title} up`}
+                  className="h-11 w-11"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  disabled={busy || i === ordered.length - 1}
+                  onClick={() => onMove(item.id, 1)}
+                  aria-label={`Move ${item.title} down`}
+                  className="h-11 w-11"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+                {isTop ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || ordered.length <= SHORTLIST_LIMIT}
+                    onClick={() => onDemote(item.id)}
+                    aria-label={`Cut ${item.title}`}
+                    className="ml-auto h-11"
+                  >
+                    Cut
+                  </Button>
                 ) : (
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy || full}
-                    onClick={() => onTogglePick(item.id)}
+                    disabled={busy}
+                    onClick={() => onPromote(item.id)}
                     className="ml-auto h-11"
                   >
                     <Star className="mr-1 h-4 w-4" />
-                    {full ? `${SHORTLIST_LIMIT} already picked` : "Make a priority"}
+                    Make a priority
                   </Button>
                 )}
               </div>

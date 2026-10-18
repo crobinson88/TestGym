@@ -5,15 +5,15 @@
 // as it is made — but deciding a task is *one of today's ten priorities* can't
 // be done card by card, because you only know whether it beats the others once
 // you have seen them all. So the pass carries a second, lighter gesture:
-// **tag it a potential priority** and move on. Tags are held in modal state and
-// write nothing; the shortlist is settled at the end of the pass (or the moment
-// it overflows), and only then does anything hit the db.
+// **tag it a potential priority** and move on. Tagging is unlimited and never
+// interrupts the walk; the shortlist is sorted once, at the end of the pass,
+// and only then does anything hit the db.
 
 import { MAX_PRIORITY_RANK } from "./priority";
 import type { TdlQuadrant } from "@/lib/database.types";
 
-// The cut is the day's ten priority ranks, so the shortlist can't be wider than
-// the ranks it is spent on.
+// How many of the sorted shortlist become ranked priorities. The cut is the
+// day's ten priority ranks; everything below the line goes to Do First.
 export const SHORTLIST_LIMIT = MAX_PRIORITY_RANK;
 
 // Where a nominated task that doesn't make the ten ends up: the red
@@ -22,105 +22,107 @@ export const SHORTLIST_LIMIT = MAX_PRIORITY_RANK;
 export const CUT_QUADRANT: TdlQuadrant = "do_first";
 
 export interface Shortlist {
-  // Every task tagged a potential priority, in the order it was tagged.
+  // Every task tagged a potential priority, in priority order. The first
+  // SHORTLIST_LIMIT take ranks 1…n; the rest are the cut. There is no cap on
+  // how many can be tagged — the line is drawn when the list is sorted, not
+  // while it is being collected.
   nominated: string[];
-  // The ones currently holding a slot, most important first. Never longer than
-  // SHORTLIST_LIMIT; its order becomes ranks 1…n.
-  picked: string[];
 }
 
 export function emptyShortlist(): Shortlist {
-  return { nominated: [], picked: [] };
+  return { nominated: [] };
 }
 
 export function isNominated(s: Shortlist, id: string): boolean {
   return s.nominated.includes(id);
 }
 
+// The ones above the line, most important first. Their order becomes ranks 1…n.
+export function pickedIds(s: Shortlist): string[] {
+  return s.nominated.slice(0, SHORTLIST_LIMIT);
+}
+
+// Nominated but below the line: headed for Do First unless moved up.
+export function cutIds(s: Shortlist): string[] {
+  return s.nominated.slice(SHORTLIST_LIMIT);
+}
+
 export function isPicked(s: Shortlist, id: string): boolean {
-  return s.picked.includes(id);
+  const i = s.nominated.indexOf(id);
+  return i !== -1 && i < SHORTLIST_LIMIT;
 }
 
-export function hasRoom(s: Shortlist): boolean {
-  return s.picked.length < SHORTLIST_LIMIT;
-}
-
-// Tag a task. It takes a slot straight away while there is one free — the first
-// ten nominations are provisionally the ten, so a pass that never overflows
-// needs no re-picking at all. Once the slots are full a new tag still joins the
-// shortlist, just unpicked, which is what tips the pass into a whittle.
+// Tag a task. It joins the end of the list, wherever that falls relative to the
+// line — a tag is "this is a candidate", not "this is in", so it never has to
+// evict anyone and never stops the pass.
 export function nominate(s: Shortlist, id: string): Shortlist {
   if (isNominated(s, id)) return s;
-  return {
-    nominated: [...s.nominated, id],
-    picked: hasRoom(s) ? [...s.picked, id] : s.picked,
-  };
+  return { nominated: [...s.nominated, id] };
 }
 
 // Untag it entirely — not a cut, a "that was a mis-tap". It leaves the
 // shortlist, so it is neither ranked nor pushed to Do First.
 export function denominate(s: Shortlist, id: string): Shortlist {
   if (!isNominated(s, id)) return s;
-  return {
-    nominated: s.nominated.filter((x) => x !== id),
-    picked: s.picked.filter((x) => x !== id),
-  };
+  return { nominated: s.nominated.filter((x) => x !== id) };
 }
 
 export function toggleNomination(s: Shortlist, id: string): Shortlist {
   return isNominated(s, id) ? denominate(s, id) : nominate(s, id);
 }
 
-// Swap a task in or out of the ten. Picking is refused when the slots are full
-// rather than silently evicting someone: the user has to say who loses.
-export function togglePick(s: Shortlist, id: string): Shortlist {
-  if (!isNominated(s, id)) return s;
-  if (isPicked(s, id)) return { ...s, picked: s.picked.filter((x) => x !== id) };
-  if (!hasRoom(s)) return s;
-  return { ...s, picked: [...s.picked, id] };
+function moveTo(s: Shortlist, id: string, to: number): Shortlist {
+  const from = s.nominated.indexOf(id);
+  if (from === -1 || to < 0 || to >= s.nominated.length || to === from) return s;
+  const nominated = [...s.nominated];
+  const [moved] = nominated.splice(from, 1);
+  nominated.splice(to, 0, moved);
+  return { nominated };
 }
 
-// Nudge a pick up (-1) or down (+1) the order, which is what sets its rank.
-export function movePick(s: Shortlist, id: string, delta: number): Shortlist {
-  const from = s.picked.indexOf(id);
+// Nudge a task up (-1) or down (+1) the sorted list. It moves across the line
+// like any other step, so sorting works the same whether or not more than
+// SHORTLIST_LIMIT were tagged.
+export function moveNomination(
+  s: Shortlist,
+  id: string,
+  delta: number,
+): Shortlist {
+  const from = s.nominated.indexOf(id);
   if (from === -1) return s;
-  const to = from + delta;
-  if (to < 0 || to >= s.picked.length) return s;
-  const picked = [...s.picked];
-  const [moved] = picked.splice(from, 1);
-  picked.splice(to, 0, moved);
-  return { ...s, picked };
+  return moveTo(s, id, from + delta);
 }
 
-// Nominated but not holding a slot: headed for Do First unless swapped back in.
-export function cutIds(s: Shortlist): string[] {
-  return s.nominated.filter((id) => !isPicked(s, id));
+// Jump a cut task over the line, into the last ranked slot — the one-tap way to
+// say "this one is in", pushing whoever held that slot down into the cut.
+export function promote(s: Shortlist, id: string): Shortlist {
+  if (!isNominated(s, id) || isPicked(s, id)) return s;
+  return moveTo(s, id, SHORTLIST_LIMIT - 1);
 }
 
-// More candidates than slots — the point at which the pass stops to make the
-// user cut it back down rather than letting tags pile up unseen.
-export function isOverflowing(s: Shortlist): boolean {
-  return cutIds(s).length > 0;
+// The reverse: drop a ranked task to the top of the cut, keeping it on the
+// shortlist (and so on its way to Do First) rather than untagging it.
+export function demote(s: Shortlist, id: string): Shortlist {
+  if (!isPicked(s, id)) return s;
+  return moveTo(s, id, Math.min(SHORTLIST_LIMIT, s.nominated.length - 1));
 }
 
 export function shortlistSize(s: Shortlist): number {
   return s.nominated.length;
 }
 
-// The ranks to write: picked order → 1…n (1 = most important).
+// The ranks to write: the sorted list's first SHORTLIST_LIMIT → 1…n.
 export function rankAssignments(s: Shortlist): { id: string; rank: number }[] {
-  return s.picked.map((id, i) => ({ id, rank: i + 1 }));
+  return pickedIds(s).map((id, i) => ({ id, rank: i + 1 }));
 }
 
-// Order a card list by the shortlist's own order — picks first in rank order,
-// then the cut ones in the order they were tagged — so the whittle screen reads
-// top to bottom as the ten and then the rest.
+// Order a card list by the shortlist's own order, so the cut screen reads top
+// to bottom as the ten and then the rest.
 export function orderShortlist<T extends { id: string }>(
   s: Shortlist,
   byId: ReadonlyMap<string, T>,
 ): T[] {
-  const ids = [...s.picked, ...cutIds(s)];
-  return ids
+  return s.nominated
     .map((id) => byId.get(id))
     .filter((x): x is T => x !== undefined);
 }
@@ -130,22 +132,23 @@ export function orderShortlist<T extends { id: string }>(
 export function seedFromRanked(
   items: ReadonlyArray<{ id: string; priority_rank: number | null }>,
 ): Shortlist {
-  const ranked = items
-    .filter((i) => i.priority_rank != null)
-    .sort((a, b) => (a.priority_rank as number) - (b.priority_rank as number))
-    .slice(0, SHORTLIST_LIMIT)
-    .map((i) => i.id);
-  return { nominated: [...ranked], picked: [...ranked] };
+  return {
+    nominated: items
+      .filter((i) => i.priority_rank != null)
+      .sort((a, b) => (a.priority_rank as number) - (b.priority_rank as number))
+      .map((i) => i.id),
+  };
 }
 
 // The one-line result of a settled shortlist.
 export function describeShortlist(s: Shortlist): string {
+  const picked = pickedIds(s).length;
   const cut = cutIds(s).length;
-  if (s.picked.length === 0 && cut === 0) return "No priorities set";
+  if (picked === 0 && cut === 0) return "No priorities set";
   const head =
-    s.picked.length === 0
+    picked === 0
       ? "No priorities set"
-      : `${s.picked.length} priorit${s.picked.length === 1 ? "y" : "ies"} set`;
+      : `${picked} priorit${picked === 1 ? "y" : "ies"} set`;
   if (cut === 0) return head;
   return `${head} · ${cut} to Do First`;
 }

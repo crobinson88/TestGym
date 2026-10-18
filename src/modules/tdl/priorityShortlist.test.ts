@@ -3,20 +3,20 @@ import {
   CUT_QUADRANT,
   SHORTLIST_LIMIT,
   cutIds,
+  demote,
   denominate,
   describeShortlist,
   emptyShortlist,
-  hasRoom,
-  isOverflowing,
   isNominated,
   isPicked,
-  movePick,
+  moveNomination,
   nominate,
   orderShortlist,
+  pickedIds,
+  promote,
   rankAssignments,
   seedFromRanked,
   shortlistSize,
-  togglePick,
   toggleNomination,
   type Shortlist,
 } from "./priorityShortlist";
@@ -25,8 +25,10 @@ function build(ids: string[]): Shortlist {
   return ids.reduce((s, id) => nominate(s, id), emptyShortlist());
 }
 
+const fullIds = Array.from({ length: SHORTLIST_LIMIT }, (_, i) => `t${i}`);
+
 describe("nominate", () => {
-  it("tags a task and gives it a slot while there is room", () => {
+  it("tags a task, which is above the line while the list is short", () => {
     const s = nominate(emptyShortlist(), "a");
     expect(isNominated(s, "a")).toBe(true);
     expect(isPicked(s, "a")).toBe(true);
@@ -37,42 +39,15 @@ describe("nominate", () => {
     expect(nominate(once, "a")).toBe(once);
   });
 
-  it("keeps tagging past the limit, but without a slot", () => {
-    const full = build(
-      Array.from({ length: SHORTLIST_LIMIT }, (_, i) => `t${i}`),
-    );
-    expect(hasRoom(full)).toBe(false);
-    const over = nominate(full, "extra");
-    expect(isNominated(over, "extra")).toBe(true);
-    expect(isPicked(over, "extra")).toBe(false);
-    expect(over.picked).toHaveLength(SHORTLIST_LIMIT);
-  });
-});
-
-describe("isOverflowing", () => {
-  it("is false while every tag holds a slot", () => {
-    expect(isOverflowing(build(["a", "b", "c"]))).toBe(false);
-  });
-
-  it("flips the moment a tag lands with no slot free", () => {
-    const over = nominate(
-      build(Array.from({ length: SHORTLIST_LIMIT }, (_, i) => `t${i}`)),
-      "extra",
-    );
-    expect(isOverflowing(over)).toBe(true);
-    expect(cutIds(over)).toEqual(["extra"]);
-  });
-
-  it("clears again once a slot is freed for the overflow", () => {
-    let s = nominate(
-      build(Array.from({ length: SHORTLIST_LIMIT }, (_, i) => `t${i}`)),
-      "extra",
-    );
-    s = togglePick(s, "t0");
-    s = togglePick(s, "extra");
-    expect(isPicked(s, "extra")).toBe(true);
-    expect(cutIds(s)).toEqual(["t0"]);
-    expect(isOverflowing(s)).toBe(true);
+  it("takes an unlimited number of tags, the extras landing below the line", () => {
+    let s = build(fullIds);
+    s = nominate(s, "extra");
+    s = nominate(s, "extra2");
+    expect(shortlistSize(s)).toBe(SHORTLIST_LIMIT + 2);
+    expect(isNominated(s, "extra2")).toBe(true);
+    expect(isPicked(s, "extra2")).toBe(false);
+    expect(pickedIds(s)).toHaveLength(SHORTLIST_LIMIT);
+    expect(cutIds(s)).toEqual(["extra", "extra2"]);
   });
 });
 
@@ -82,6 +57,12 @@ describe("denominate", () => {
     expect(isNominated(s, "a")).toBe(false);
     expect(cutIds(s)).toEqual([]);
     expect(shortlistSize(s)).toBe(1);
+  });
+
+  it("pulls the next one up over the line", () => {
+    const s = denominate(nominate(build(fullIds), "extra"), "t0");
+    expect(isPicked(s, "extra")).toBe(true);
+    expect(cutIds(s)).toEqual([]);
   });
 
   it("ignores a task that was never tagged", () => {
@@ -96,66 +77,80 @@ describe("denominate", () => {
   });
 });
 
-describe("togglePick", () => {
-  it("cuts a pick without untagging it", () => {
-    const s = togglePick(build(["a", "b"]), "a");
-    expect(isPicked(s, "a")).toBe(false);
-    expect(isNominated(s, "a")).toBe(true);
-    expect(cutIds(s)).toEqual(["a"]);
-  });
-
-  it("puts a cut task back at the end of the order", () => {
-    let s = build(["a", "b"]);
-    s = togglePick(s, "a");
-    s = togglePick(s, "a");
-    expect(s.picked).toEqual(["b", "a"]);
-  });
-
-  it("refuses a pick when the slots are full rather than evicting someone", () => {
-    const over = nominate(
-      build(Array.from({ length: SHORTLIST_LIMIT }, (_, i) => `t${i}`)),
-      "extra",
-    );
-    expect(togglePick(over, "extra")).toBe(over);
-  });
-
-  it("ignores a task that is not on the shortlist", () => {
-    const s = build(["a"]);
-    expect(togglePick(s, "zz")).toBe(s);
-  });
-});
-
-describe("movePick", () => {
-  it("moves a pick up the order", () => {
-    expect(movePick(build(["a", "b", "c"]), "c", -1).picked).toEqual([
+describe("moveNomination", () => {
+  it("moves a task up the order", () => {
+    expect(moveNomination(build(["a", "b", "c"]), "c", -1).nominated).toEqual([
       "a",
       "c",
       "b",
     ]);
   });
 
-  it("moves a pick down the order", () => {
-    expect(movePick(build(["a", "b", "c"]), "a", 1).picked).toEqual([
+  it("moves a task down the order", () => {
+    expect(moveNomination(build(["a", "b", "c"]), "a", 1).nominated).toEqual([
       "b",
       "a",
       "c",
     ]);
+  });
+
+  it("steps across the line like any other step", () => {
+    const s = moveNomination(nominate(build(fullIds), "extra"), "extra", -1);
+    expect(isPicked(s, "extra")).toBe(true);
+    expect(cutIds(s)).toEqual(["t9"]);
   });
 
   it("stops at the ends", () => {
     const s = build(["a", "b"]);
-    expect(movePick(s, "a", -1)).toBe(s);
-    expect(movePick(s, "b", 1)).toBe(s);
+    expect(moveNomination(s, "a", -1)).toBe(s);
+    expect(moveNomination(s, "b", 1)).toBe(s);
   });
 
-  it("ignores a task that holds no slot", () => {
-    const s = togglePick(build(["a", "b"]), "a");
-    expect(movePick(s, "a", -1)).toBe(s);
+  it("ignores a task that is not on the shortlist", () => {
+    const s = build(["a"]);
+    expect(moveNomination(s, "zz", -1)).toBe(s);
+  });
+});
+
+describe("promote / demote", () => {
+  it("jumps a cut task into the last ranked slot, pushing that one down", () => {
+    const s = promote(nominate(build(fullIds), "extra"), "extra");
+    expect(rankAssignments(s).at(-1)).toEqual({
+      id: "extra",
+      rank: SHORTLIST_LIMIT,
+    });
+    expect(cutIds(s)).toEqual(["t9"]);
+  });
+
+  it("leaves a task that is already above the line alone", () => {
+    const s = build(["a", "b"]);
+    expect(promote(s, "a")).toBe(s);
+  });
+
+  it("drops a ranked task below the line, still tagged, and pulls the next up", () => {
+    const s = demote(nominate(build(fullIds), "extra"), "t0");
+    expect(isNominated(s, "t0")).toBe(true);
+    expect(isPicked(s, "t0")).toBe(false);
+    expect(isPicked(s, "extra")).toBe(true);
+    expect(cutIds(s)).toEqual(["t0"]);
+  });
+
+  it("sends it to the end when the list is shorter than the ten", () => {
+    expect(demote(build(["a", "b", "c"]), "a").nominated).toEqual([
+      "b",
+      "c",
+      "a",
+    ]);
+  });
+
+  it("is a no-op on the only task on the shortlist", () => {
+    const s = build(["a"]);
+    expect(demote(s, "a")).toBe(s);
   });
 });
 
 describe("rankAssignments", () => {
-  it("spends ranks 1…n down the picked order", () => {
+  it("spends ranks 1…n down the sorted order", () => {
     expect(rankAssignments(build(["a", "b", "c"]))).toEqual([
       { id: "a", rank: 1 },
       { id: "b", rank: 2 },
@@ -164,15 +159,16 @@ describe("rankAssignments", () => {
   });
 
   it("leaves out the cut ones", () => {
-    const s = togglePick(build(["a", "b"]), "a");
-    expect(rankAssignments(s)).toEqual([{ id: "b", rank: 1 }]);
+    const s = demote(nominate(build(fullIds), "extra"), "t0");
+    expect(rankAssignments(s).map((r) => r.id)).not.toContain("t0");
+    expect(rankAssignments(s).at(-1)).toEqual({
+      id: "extra",
+      rank: SHORTLIST_LIMIT,
+    });
   });
 
   it("never spends more than the day has ranks", () => {
-    const over = nominate(
-      build(Array.from({ length: SHORTLIST_LIMIT }, (_, i) => `t${i}`)),
-      "extra",
-    );
+    const over = nominate(build(fullIds), "extra");
     const ranks = rankAssignments(over).map((r) => r.rank);
     expect(ranks).toHaveLength(SHORTLIST_LIMIT);
     expect(Math.max(...ranks)).toBe(SHORTLIST_LIMIT);
@@ -181,9 +177,8 @@ describe("rankAssignments", () => {
 });
 
 describe("orderShortlist", () => {
-  it("reads picks in rank order then the cut ones in tag order", () => {
-    let s = build(["a", "b", "c"]);
-    s = togglePick(s, "b");
+  it("reads top to bottom in the sorted order", () => {
+    const s = demote(build(["a", "b", "c"]), "b");
     const byId = new Map(["a", "b", "c"].map((id) => [id, { id }]));
     expect(orderShortlist(s, byId).map((x) => x.id)).toEqual(["a", "c", "b"]);
   });
@@ -204,7 +199,7 @@ describe("seedFromRanked", () => {
       { id: "u", priority_rank: null },
       { id: "b", priority_rank: 2 },
     ]);
-    expect(s.picked).toEqual(["a", "b", "c"]);
+    expect(pickedIds(s)).toEqual(["a", "b", "c"]);
     expect(cutIds(s)).toEqual([]);
   });
 
@@ -226,8 +221,10 @@ describe("describeShortlist", () => {
   });
 
   it("names the ones pushed to Do First", () => {
-    const s = togglePick(build(["a", "b"]), "a");
-    expect(describeShortlist(s)).toBe("1 priority set · 1 to Do First");
+    const s = nominate(build(fullIds), "extra");
+    expect(describeShortlist(s)).toBe(
+      `${SHORTLIST_LIMIT} priorities set · 1 to Do First`,
+    );
   });
 });
 
