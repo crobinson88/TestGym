@@ -6,16 +6,28 @@ export function speechAvailable(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
-// Prefer a metropolitan-French voice, then any French voice, else let the locale
-// pick. Voices load lazily, so this is re-read on every call.
-function pickFrenchVoice(): SpeechSynthesisVoice | null {
-  if (!speechAvailable()) return null;
-  const voices = window.speechSynthesis.getVoices();
+// Prefer a French voice that speaks on the device: several browsers ship
+// network-backed voices that go silent offline, and the listening and speaking
+// tests are otherwise fully local. Metropolitan French first, then any French,
+// local before remote in each case; else let the locale pick.
+export function pickFrenchVoice(
+  voices: readonly SpeechSynthesisVoice[],
+): SpeechSynthesisVoice | null {
+  const fr = voices.filter((v) => v.lang.toLowerCase().startsWith("fr"));
+  const metropolitan = fr.filter((v) => v.lang === "fr-FR");
   return (
-    voices.find((v) => v.lang === "fr-FR") ??
-    voices.find((v) => v.lang.toLowerCase().startsWith("fr")) ??
+    metropolitan.find((v) => v.localService) ??
+    metropolitan[0] ??
+    fr.find((v) => v.localService) ??
+    fr[0] ??
     null
   );
+}
+
+// Voices load lazily, so the list is re-read on every call.
+function currentFrenchVoice(): SpeechSynthesisVoice | null {
+  if (!speechAvailable()) return null;
+  return pickFrenchVoice(window.speechSynthesis.getVoices());
 }
 
 // Speak a French word at the given rate (1 = normal). Cancels any in-flight
@@ -27,7 +39,7 @@ export function speakFrench(text: string, rate = 1): void {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "fr-FR";
   u.rate = rate;
-  const voice = pickFrenchVoice();
+  const voice = currentFrenchVoice();
   if (voice) u.voice = voice;
   synth.speak(u);
 }

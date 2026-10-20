@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Send } from "lucide-react";
+import { ArrowLeft, RefreshCw, Send, WifiOff } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useOnline } from "@/lib/online";
 import { cn } from "@/lib/utils";
 import { SCENARIOS, sendChat, type ChatTurn, type Scenario } from "../chat";
 
@@ -9,6 +10,9 @@ export default function ChatRoleplay() {
   const navigate = useNavigate();
   const { session } = useAuth();
   const token = session?.access_token;
+  // Margaux is a model on the other end of the wire — unlike the tests, this one
+  // genuinely can't run offline, so say so rather than failing per message.
+  const online = useOnline();
 
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [messages, setMessages] = useState<ChatTurn[]>([]);
@@ -22,6 +26,10 @@ export default function ChatRoleplay() {
   }, [messages, busy]);
 
   async function turn(next: ChatTurn[]) {
+    if (!online) {
+      setError("You're offline — the roleplay chat needs a connection.");
+      return;
+    }
     if (!token) {
       setError("You need to be signed in to chat.");
       return;
@@ -43,6 +51,10 @@ export default function ChatRoleplay() {
     setMessages([]);
     setInput("");
     setError(null);
+    if (!online) {
+      setError("You're offline — the roleplay chat needs a connection.");
+      return;
+    }
     if (!token) {
       setError("You need to be signed in to chat.");
       return;
@@ -82,6 +94,15 @@ export default function ChatRoleplay() {
           Pick a scene and chat in French. Margaux replies simply and gives a quick correction
           when you slip up.
         </p>
+        {!online && (
+          <div className="flex items-start gap-2 rounded-2xl border border-line bg-surface px-4 py-3 text-sm text-muted">
+            <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              You’re offline. The chat needs a connection — the vocab, rules, conjugation,
+              pronunciation, speaking and listening tests all work without one.
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {SCENARIOS.map((s) => (
             <button
