@@ -40,8 +40,14 @@ vi.mock("@/lib/sync", () => ({
   syncEngine: { mutations: { addFrenchAttempt: (...a: unknown[]) => addFrenchAttempt(...a) } },
 }));
 
+function setOnline(online: boolean) {
+  Object.defineProperty(navigator, "onLine", { value: online, configurable: true });
+}
+
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
+  setOnline(true);
   navigate.mockReset();
   addFrenchAttempt.mockReset();
   addFrenchAttempt.mockResolvedValue(undefined);
@@ -170,5 +176,71 @@ describe("TestRunner — back-to-back run tally", () => {
     render(<TestRunner />);
     await screen.findByRole("button", { name: "le chien" });
     expect(screen.queryByText(/^Run /)).not.toBeInTheDocument();
+  });
+});
+
+
+describe("TestRunner — offline sentence rounds", () => {
+  it("deals the test from cached sentences instead of calling the server", async () => {
+    setOnline(false);
+    localStorage.setItem(
+      "french:sentences",
+      JSON.stringify([{ fr: "le chien vite", en: "the fast dog", words: ["le chien", "vite"] }]),
+    );
+    render(<TestRunner />);
+
+    await screen.findByRole("button", { name: "le chien" });
+    expect(fetchSentences).not.toHaveBeenCalled();
+    expect(screen.getByText("Cached")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "le chien" }));
+    fireEvent.click(screen.getByRole("button", { name: "vite" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    fireEvent.change(screen.getByPlaceholderText("Type the meaning"), {
+      target: { value: "the fast dog" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+
+    await waitFor(() => expect(addFrenchAttempt).toHaveBeenCalledOnce());
+    expect(addFrenchAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "listening", total: 1, correct: 1 }),
+    );
+  });
+
+  it("caches what it generates so the next offline run has sentences", async () => {
+    render(<TestRunner />);
+    await screen.findByRole("button", { name: "le chien" });
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("french:sentences")!)).toEqual([
+        { fr: "le chien grand", en: "the big dog", words: ["le chien", "grand"] },
+      ]),
+    );
+  });
+
+  it("falls back to locally built word rounds when offline with nothing cached", async () => {
+    setOnline(false);
+    render(<TestRunner />);
+
+    await screen.findByText(/Sentence rounds are written online/);
+    expect(fetchSentences).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Take it as word rounds/ }));
+
+    await screen.findByText("Word rounds");
+    expect(screen.getByRole("button", { name: "Check" })).toBeInTheDocument();
+  });
+
+  it("reaches for the cache when a request fails mid-flight", async () => {
+    fetchSentences.mockReset();
+    fetchSentences.mockRejectedValueOnce(new Error("boom"));
+    localStorage.setItem(
+      "french:sentences",
+      JSON.stringify([{ fr: "le chien vite", en: "the fast dog", words: ["le chien", "vite"] }]),
+    );
+    render(<TestRunner />);
+
+    await screen.findByText("Cached");
+    expect(screen.queryByText("boom")).not.toBeInTheDocument();
   });
 });

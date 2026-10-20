@@ -12,9 +12,11 @@ import {
   Sparkles,
   Target,
   Volume2,
+  WifiOff,
 } from "lucide-react";
 import type { FrenchTestKind } from "@/lib/database.types";
 import { Input } from "@/components/ui/Input";
+import { useOnline } from "@/lib/online";
 import { cn, relativeDay } from "@/lib/utils";
 import {
   useFrenchStats,
@@ -91,6 +93,7 @@ export default function FrenchHome() {
     clearRun();
   }, []);
 
+  const online = useOnline();
   const stats = useFrenchStats();
   const dueCount = useVocabDueCount();
   const listenDue = useListeningDueCount();
@@ -133,6 +136,12 @@ export default function FrenchHome() {
           {VOCAB.length} words · {RULE_QUESTIONS.length} rule questions · {PRON_QUESTIONS.length}{" "}
           pronunciation · {CONJ_VERBS.length} verbs
         </p>
+        {!online && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+            <WifiOff className="h-3.5 w-3.5" />
+            Offline — every test still runs; results sync when you’re back.
+          </p>
+        )}
       </header>
 
       <section className="grid grid-cols-1 gap-3">
@@ -334,7 +343,9 @@ export default function FrenchHome() {
           </button>
           {wordsPerRound > 1 ? (
             <p className="px-1 text-xs text-muted">
-              Sentences are generated from words you’ve mastered, spoken for you to rebuild in order.
+              {online
+                ? "Sentences are generated from words you’ve mastered, spoken for you to rebuild in order."
+                : "Offline: sentences you’ve heard before are replayed from the cache, or the round is built from your mastered words."}
             </p>
           ) : (
             <div className="flex gap-2" role="group" aria-label="Listening word selection">
@@ -426,12 +437,18 @@ export default function FrenchHome() {
         </button>
         <button
           onClick={() => navigate("/french/chat")}
-          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-3.5 text-left transition active:scale-[0.98]"
+          disabled={!online}
+          className={cn(
+            "flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-3.5 text-left transition active:scale-[0.98]",
+            !online && "opacity-50",
+          )}
         >
           <MessageCircle className="h-6 w-6 shrink-0 text-accent" />
           <div className="flex-1">
             <div className="font-semibold">Roleplay chat</div>
-            <div className="text-sm text-muted">Practise a conversation in French</div>
+            <div className="text-sm text-muted">
+              {online ? "Practise a conversation in French" : "Needs a connection"}
+            </div>
           </div>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted" />
         </button>

@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, ChevronRight, Loader2, RotateCcw, Sparkles, Volume2, X } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Headphones,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  Volume2,
+  WifiOff,
+  X,
+} from "lucide-react";
 import type { FrenchAttemptDetail, FrenchTestKind } from "@/lib/database.types";
 import { useAuth } from "@/lib/auth";
+import { isOnline } from "@/lib/online";
 import { syncEngine } from "@/lib/sync";
 import { cn, relativeDay, todayIsoDate } from "@/lib/utils";
 import {
@@ -30,8 +41,14 @@ import {
 } from "../hooks";
 import { addTest, loadRun, saveRun, type TestRun } from "../run";
 import { fetchSentences } from "../sentences";
+import { cacheSentences, loadSentenceCache, selectCached } from "../sentenceCache";
 import { cancelSpeech, speakFrench } from "../speech";
 import { RECALL_WINDOW, vocabKeyFromQuestionId, type VocabWordHistory } from "../stats";
+
+// Shown when the sentence rounds can't be written and nothing cached fits — the
+// one part of the French tests that needs a server.
+const OFFLINE_SENTENCES =
+  "Sentence rounds are written online, and none are cached yet. Everything else works offline.";
 
 function isKind(k: string | undefined): k is FrenchTestKind {
   return (
@@ -153,9 +170,16 @@ export default function TestRunner() {
   const [sentenceQuestions, setSentenceQuestions] = useState<Question[] | undefined>(undefined);
   const [genError, setGenError] = useState<string | null>(null);
   const [genNonce, setGenNonce] = useState(0);
+  // Where the rounds on screen came from: freshly written, or dealt from the cache
+  // of earlier batches because there was no network.
+  const [cached, setCached] = useState(false);
+  // Offline with nothing cached, the learner can still take the test as word rounds
+  // chunked from their mastered vocabulary — the pre-generator behaviour, fully
+  // local, just not grammatical sentences.
+  const [localRounds, setLocalRounds] = useState(false);
 
   useEffect(() => {
-    if (!sentenceMode || !masteredReady || !token) return;
+    if (!sentenceMode || localRounds || !masteredReady) return;
     const pool = masteredPool ?? [];
     if (pool.length === 0) {
       setGenError("Master some words in the vocab tests first.");
@@ -164,14 +188,40 @@ export default function TestRunner() {
     let cancelled = false;
     setSentenceQuestions(undefined);
     setGenError(null);
+    setCached(false);
     const distractors = pool.map((w) => w.fr);
+    const mastered = new Set(distractors.map((w) => w.toLowerCase()));
+
+    // Deal from sentences cached on earlier (online) runs. Only ones still built
+    // entirely from mastered words are usable, so this can come up empty.
+    function dealCached(): boolean {
+      const picked = selectCached(loadSentenceCache(), count, wordsPerRound, mastered);
+      if (picked.length === 0) return false;
+      setSentenceQuestions(picked.map((s) => makeSentenceQuestion(s, distractors, Math.random)));
+      setCached(true);
+      return true;
+    }
+
+    // Read at run time rather than through a hook: the network coming back
+    // mid-test must not re-run this and swap the questions under the learner.
+    const offline = !isOnline();
+    if (offline || !token) {
+      if (!dealCached()) {
+        setGenError(offline ? OFFLINE_SENTENCES : "Sign in to have sentence rounds written.");
+      }
+      return;
+    }
     (async () => {
       try {
         const sentences = await fetchSentences(distractors, count, wordsPerRound, token);
         if (cancelled) return;
+        cacheSentences(sentences);
         setSentenceQuestions(sentences.map((s) => makeSentenceQuestion(s, distractors, Math.random)));
       } catch (e) {
         if (cancelled) return;
+        // A dropped connection mid-request looks like any other failure here, so
+        // the cache is tried before the error is shown.
+        if (dealCached()) return;
         setGenError(e instanceof Error ? e.message : "Sentence generation failed");
       }
     })();
@@ -179,14 +229,14 @@ export default function TestRunner() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sentenceMode, masteredReady, token, count, wordsPerRound, genNonce]);
+  }, [sentenceMode, localRounds, masteredReady, token, count, wordsPerRound, genNonce]);
 
   // Static (non-sentence) tests are built once the pool + schedule are ready, then
   // frozen for the run — the attempts table isn't written until the test finishes,
   // so selection won't shift mid-test. `ready` (not the map/array identity) gates
   // the one-time build. Sentence rounds come from `sentenceQuestions` instead.
   const syncQuestions = useMemo<Question[]>(() => {
-    if (!isKind(kind) || !ready || sentenceMode) return [];
+    if (!isKind(kind) || !ready || (sentenceMode && !localRounds)) return [];
     const pool = kind === "listening" ? (masteredPool ?? []) : VOCAB;
     return generateTest(kind, pool, RULE_QUESTIONS, CONJ_VERBS, PRON_QUESTIONS, {
       count,
@@ -197,9 +247,9 @@ export default function TestRunner() {
       now: todayIsoDate(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, direction, count, wordsPerRound, mode, ready, sentenceMode]);
+  }, [kind, direction, count, wordsPerRound, mode, ready, sentenceMode, localRounds]);
 
-  const questions = sentenceMode ? (sentenceQuestions ?? []) : syncQuestions;
+  const questions = sentenceMode && !localRounds ? (sentenceQuestions ?? []) : syncQuestions;
   const startedAt = useRef(new Date().toISOString());
   const startedMs = useRef(Date.now());
 
@@ -247,15 +297,31 @@ export default function TestRunner() {
       </div>
     );
   }
-  if (sentenceMode) {
+  if (sentenceMode && !localRounds) {
     if (genError) {
+      // Word rounds are only offered when there are mastered words to chunk — the
+      // "master some words first" case has nothing to build from either.
+      const canUseWordRounds = (masteredPool?.length ?? 0) > 0;
       return (
         <div className="flex min-h-[70vh] flex-col items-center justify-center gap-5 p-6 text-center">
           <div className="text-sm text-warn">{genError}</div>
           <div className="flex w-full max-w-xs flex-col gap-3">
+            {canUseWordRounds && (
+              <button
+                onClick={() => setLocalRounds(true)}
+                className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent font-semibold text-bg transition active:scale-[0.98]"
+              >
+                <Headphones className="h-5 w-5" /> Take it as word rounds
+              </button>
+            )}
             <button
               onClick={() => setGenNonce((n) => n + 1)}
-              className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent font-semibold text-bg transition active:scale-[0.98]"
+              className={cn(
+                "flex h-12 items-center justify-center gap-2 rounded-2xl font-semibold transition active:scale-[0.98]",
+                canUseWordRounds
+                  ? "border border-line bg-surface"
+                  : "bg-accent text-bg",
+              )}
             >
               <RotateCcw className="h-5 w-5" /> Try again
             </button>
@@ -430,6 +496,12 @@ export default function TestRunner() {
           Quit
         </button>
         <div className="flex items-center gap-2">
+          {(cached || localRounds) && (
+            <span className="flex items-center gap-1 rounded-full bg-surface2 px-2.5 py-1 text-xs font-medium text-muted">
+              <WifiOff className="h-3 w-3" />
+              {localRounds ? "Word rounds" : "Cached"}
+            </span>
+          )}
           {run && run.tests > 0 && (
             <span className="rounded-full bg-surface2 px-2.5 py-1 text-xs font-medium tabular-nums text-muted">
               Run {run.correct + correct}/{run.total + details.length} · test {run.tests + 1}
