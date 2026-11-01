@@ -1,7 +1,7 @@
 import type { FrenchTestKind } from "@/lib/database.types";
 import { todayIsoDate } from "@/lib/utils";
 import type { VocabWord } from "./data/vocab";
-import type { RuleQuestion } from "./data/rules";
+import type { RuleQuestion, RuleTopic } from "./data/rules";
 import type { PronQuestion } from "./data/pronunciation";
 import type { Person, VerbConjugation } from "./data/conjugations";
 import { ALLER, PERSONS, PRONOUN_LABEL } from "./data/conjugations";
@@ -218,6 +218,9 @@ export interface GenerateOptions {
   // Restrict spaced-repetition selection to due reviews only, or new words only.
   // Requires `schedules`; ignored by the plain-sample fallback. Defaults to mixed.
   mode?: StudyMode;
+  // Rules only: the grammar topics to draw from (topic names or their slugs).
+  // Empty/omitted draws from every topic.
+  topics?: readonly string[];
 }
 
 // Fisher-Yates, parameterised on the rng so tests are deterministic.
@@ -528,11 +531,86 @@ export function makeRuleQuestion(rule: RuleQuestion, rng: Rng): Question {
   };
 }
 
+// A URL-safe slug for a grammar topic, so a topic selection survives in the query
+// string: "C'est vs Il est" -> "c-est-vs-il-est".
+export function topicSlug(topic: string): string {
+  return topic
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export interface RuleTopicOption {
+  topic: RuleTopic;
+  slug: string;
+  count: number;
+}
+
+// The grammar topics the pool covers, in the order they first appear (the guide's
+// order), each with how many questions it holds — the options of the topic picker.
+export function ruleTopics(pool: readonly RuleQuestion[]): RuleTopicOption[] {
+  const byTopic = new Map<string, RuleTopicOption>();
+  const out: RuleTopicOption[] = [];
+  for (const q of pool) {
+    const found = byTopic.get(q.topic);
+    if (found) {
+      found.count += 1;
+      continue;
+    }
+    const opt: RuleTopicOption = { topic: q.topic, slug: topicSlug(q.topic), count: 1 };
+    byTopic.set(q.topic, opt);
+    out.push(opt);
+  }
+  return out;
+}
+
+export const TOPIC_SEPARATOR = ",";
+
+// Encode picked topics for the `?topics=` query param.
+export function encodeTopics(topics: readonly string[]): string {
+  return topics.map(topicSlug).join(TOPIC_SEPARATOR);
+}
+
+// Decode a `?topics=` value back into the topics it names, in pool order. Slugs
+// the pool doesn't cover are dropped, so an empty or stale value reads as "every
+// topic" rather than an empty test.
+export function parseTopics(
+  raw: string | null | undefined,
+  pool: readonly RuleQuestion[],
+): RuleTopic[] {
+  if (!raw) return [];
+  const wanted = new Set(
+    raw
+      .split(TOPIC_SEPARATOR)
+      .map((s) => topicSlug(s.trim()))
+      .filter(Boolean),
+  );
+  if (wanted.size === 0) return [];
+  return ruleTopics(pool)
+    .filter((o) => wanted.has(o.slug))
+    .map((o) => o.topic);
+}
+
+// Narrow the pool to the picked topics (matched by name or slug). Picking nothing
+// — or only topics the pool doesn't hold — draws from everything, so a test is
+// never empty because of a stale selection.
+export function filterRules(
+  pool: readonly RuleQuestion[],
+  topics: readonly string[] | undefined,
+): RuleQuestion[] {
+  if (!topics || topics.length === 0) return pool.slice();
+  const wanted = new Set(topics.map(topicSlug));
+  const picked = pool.filter((q) => wanted.has(topicSlug(q.topic)));
+  return picked.length > 0 ? picked : pool.slice();
+}
+
 export function generateRulesTest(
   pool: readonly RuleQuestion[],
-  { count = TEST_SIZE, rng = Math.random }: GenerateOptions = {},
+  { count = TEST_SIZE, rng = Math.random, topics }: GenerateOptions = {},
 ): Question[] {
-  return sample(pool, count, rng).map((r) => makeRuleQuestion(r, rng));
+  return sample(filterRules(pool, topics), count, rng).map((r) => makeRuleQuestion(r, rng));
 }
 
 // Pronunciation-rules questions are multiple choice like grammar rules, plus an

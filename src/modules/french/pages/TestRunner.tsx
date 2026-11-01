@@ -25,6 +25,7 @@ import {
   generateTest,
   KIND_LABELS,
   makeSentenceQuestion,
+  parseTopics,
   speedRate,
   type Question,
   type VocabDirection,
@@ -140,6 +141,12 @@ export default function TestRunner() {
   // Which slice of the pool to draw: mixed / review / new. Listening only in the UI.
   const mode = clampStudyMode(searchParams.get("mode"));
 
+  // Rules only: the grammar topics picked on the home screen. Empty = every topic.
+  // Memoised on the raw param so the one-time test build isn't re-triggered by a
+  // fresh array each render.
+  const topicsParam = searchParams.get("topics");
+  const topics = useMemo(() => parseTopics(topicsParam, RULE_QUESTIONS), [topicsParam]);
+
   // Playback rate for the listening test (1 = normal); ignored by other kinds.
   const rate = speedRate(searchParams.get("speed"));
 
@@ -243,11 +250,12 @@ export default function TestRunner() {
       direction,
       wordsPerRound,
       mode,
+      topics,
       schedules: needsSchedule ? schedules : undefined,
       now: todayIsoDate(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, direction, count, wordsPerRound, mode, ready, sentenceMode, localRounds]);
+  }, [kind, direction, count, wordsPerRound, mode, topics, ready, sentenceMode, localRounds]);
 
   const questions = sentenceMode && !localRounds ? (sentenceQuestions ?? []) : syncQuestions;
   const startedAt = useRef(new Date().toISOString());

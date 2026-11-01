@@ -102,6 +102,35 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+// How a grammar topic has gone across every rules test taken.
+export interface TopicAccuracy {
+  seen: number;
+  correct: number;
+}
+
+// Per-topic accuracy on the rules test, keyed by topic name, so the topic picker
+// can show what still needs work. `topicOf` maps a rules question id to its topic
+// (rules ids are the static slugs); details from other kinds map to nothing and
+// are skipped, as are questions retired from the pool.
+export function ruleTopicAccuracy(
+  attempts: readonly FrenchAttemptRow[],
+  topicOf: ReadonlyMap<string, string>,
+): Map<string, TopicAccuracy> {
+  const map = new Map<string, TopicAccuracy>();
+  for (const a of attempts) {
+    if (a.deleted_at || a.kind !== "rules") continue;
+    for (const d of a.details ?? []) {
+      const topic = topicOf.get(d.questionId);
+      if (!topic) continue;
+      const t = map.get(topic) ?? { seen: 0, correct: 0 };
+      t.seen += 1;
+      if (d.correct) t.correct += 1;
+      map.set(topic, t);
+    }
+  }
+  return map;
+}
+
 // Per-word recall history, keyed by the French word, aggregated across both test
 // directions (a word is the same study item whether shown fr→en or en→fr).
 export interface VocabWordHistory {

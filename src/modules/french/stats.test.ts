@@ -10,6 +10,7 @@ import {
   masteredVocab,
   reviewIntervalDays,
   REVIEW_INTERVALS_DAYS,
+  ruleTopicAccuracy,
   vocabKeyFromQuestionId,
   vocabMastery,
   vocabMasteryProgress,
@@ -374,5 +375,41 @@ describe("weeklyAccuracy", () => {
       weeks,
     );
     expect(points.every((p) => p.vocab === null && p.rules === null)).toBe(true);
+  });
+});
+
+describe("ruleTopicAccuracy", () => {
+  const topicOf = new Map<string, string>([
+    ["gender-1", "Noun Gender"],
+    ["gender-2", "Noun Gender"],
+    ["neg-1", "Negation"],
+  ]);
+
+  it("tallies seen/correct per topic across rules attempts", () => {
+    const map = ruleTopicAccuracy(
+      [
+        attempt({
+          kind: "rules",
+          details: [mk("gender-1", true), mk("gender-2", false), mk("neg-1", true)],
+        }),
+        attempt({ kind: "rules", details: [mk("gender-1", true), mk("neg-1", false)] }),
+      ],
+      topicOf,
+    );
+    expect(map.get("Noun Gender")).toEqual({ seen: 3, correct: 2 });
+    expect(map.get("Negation")).toEqual({ seen: 2, correct: 1 });
+  });
+
+  it("skips other kinds, deleted attempts and questions no longer in the pool", () => {
+    const map = ruleTopicAccuracy(
+      [
+        attempt({ kind: "vocab", details: [mk("gender-1", false)] }),
+        attempt({ kind: "rules", details: [mk("gender-1", false)], deleted_at: "2026-06-04" }),
+        attempt({ kind: "rules", details: [mk("retired-question", false), mk("neg-1", true)] }),
+      ],
+      topicOf,
+    );
+    expect(map.get("Noun Gender")).toBeUndefined();
+    expect(map.get("Negation")).toEqual({ seen: 1, correct: 1 });
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookMarked,
@@ -22,16 +22,20 @@ import {
   useFrenchStats,
   useListeningDueCount,
   useMasteredVocab,
+  useRuleTopicStats,
   useVocabDueCount,
 } from "../hooks";
 import { pct, type KindStats } from "../stats";
 import {
+  encodeTopics,
+  filterRules,
   KIND_LABELS,
   LISTENING_SIZES,
   LISTENING_SPEEDS,
   LISTENING_WORDS_PER_ROUND,
   MIN_TEST_SIZE,
   parseCountInput,
+  ruleTopics,
   STUDY_MODES,
   TEST_SIZE,
   TEST_SIZES,
@@ -109,6 +113,23 @@ export default function FrenchHome() {
   const [wordsPerRound, setWordsPerRound] = useState<number>(1);
   const [speed, setSpeed] = useState<ListeningSpeed>("normal");
   const [listenMode, setListenMode] = useState<StudyMode>("mixed");
+  // Grammar topics the rules test draws from. Empty = every topic, so the test is
+  // never empty just because nothing is ticked.
+  const [topics, setTopics] = useState<string[]>([]);
+
+  const topicOptions = useMemo(() => ruleTopics(RULE_QUESTIONS), []);
+  const topicStats = useRuleTopicStats();
+  const rulesPool = useMemo(() => filterRules(RULE_QUESTIONS, topics).length, [topics]);
+  // A narrow selection can hold fewer questions than the chosen length; the test
+  // caps at what's there, so say so rather than promising more.
+  const rulesCount = Math.min(count, rulesPool);
+  const topicsQuery = topics.length > 0 ? `&topics=${encodeTopics(topics)}` : "";
+
+  function toggleTopic(topic: string) {
+    setTopics((cur) =>
+      cur.includes(topic) ? cur.filter((t) => t !== topic) : [...cur, topic],
+    );
+  }
 
   function pickCount(n: number) {
     setCount(n);
@@ -268,16 +289,73 @@ export default function FrenchHome() {
             ))}
           </div>
         </div>
-        <button
-          onClick={() => navigate(`/french/test/rules?n=${count}`)}
-          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
-        >
-          <ScrollText className="h-7 w-7 shrink-0 text-accent" />
-          <div>
-            <div className="text-lg font-semibold">New rules test</div>
-            <div className="text-sm text-muted">{count} grammar questions</div>
+        <div className="space-y-2">
+          <button
+            onClick={() => navigate(`/french/test/rules?n=${count}${topicsQuery}`)}
+            className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+          >
+            <ScrollText className="h-7 w-7 shrink-0 text-accent" />
+            <div>
+              <div className="text-lg font-semibold">New rules test</div>
+              <div className="text-sm text-muted">
+                {rulesCount} grammar question{rulesCount === 1 ? "" : "s"} ·{" "}
+                {topics.length === 0
+                  ? "all topics"
+                  : topics.length === 1
+                    ? topics[0]
+                    : `${topics.length} topics`}
+              </div>
+            </div>
+          </button>
+          <div className="space-y-1.5">
+            <div className="px-1 text-xs uppercase tracking-wider text-muted">
+              Rules to practise
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Rules to practise">
+              <button
+                onClick={() => setTopics([])}
+                aria-pressed={topics.length === 0}
+                className={cn(
+                  "min-h-11 rounded-xl border px-3 py-2 text-sm font-medium transition",
+                  topics.length === 0
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-line bg-surface text-muted",
+                )}
+              >
+                All topics
+              </button>
+              {topicOptions.map((o) => {
+                const picked = topics.includes(o.topic);
+                const seen = topicStats?.get(o.topic);
+                return (
+                  <button
+                    key={o.slug}
+                    onClick={() => toggleTopic(o.topic)}
+                    aria-pressed={picked}
+                    className={cn(
+                      "flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition",
+                      picked
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-line bg-surface text-muted",
+                    )}
+                  >
+                    <span>{o.topic}</span>
+                    <span className="text-xs tabular-nums opacity-70">
+                      {o.count}
+                      {seen && seen.seen > 0 ? ` · ${pct(seen.correct / seen.seen)}` : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {rulesPool < count && (
+              <p className="px-1 text-xs text-muted">
+                Only {rulesPool} question{rulesPool === 1 ? "" : "s"} in this selection — the test
+                runs short.
+              </p>
+            )}
           </div>
-        </button>
+        </div>
         <button
           onClick={() => navigate(`/french/test/conjug?n=${count}`)}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
