@@ -8,6 +8,7 @@ import {
   computeVocabSchedules,
   dueForReview,
   masteredVocab,
+  ruleAccuracy,
   ruleTopicAccuracy,
   vocabMastery,
   vocabMasteryProgress,
@@ -67,13 +68,13 @@ export function useMasteredVocab() {
   }, []);
 }
 
-// Per-topic accuracy on the rules test, for the topic picker on the home screen.
-// Undefined until the attempts load.
-export function useRuleTopicStats() {
+// Accuracy per rule and per topic on the rules test, for the rule picker on the
+// home screen. Undefined until the attempts load.
+export function useRuleStats() {
   return useLiveQuery(async () => {
     const all = await db.french_attempts.toArray();
     const topicOf = new Map(RULE_QUESTIONS.map((q) => [q.id, q.topic as string]));
-    return ruleTopicAccuracy(all, topicOf);
+    return { byRule: ruleAccuracy(all), byTopic: ruleTopicAccuracy(all, topicOf) };
   }, []);
 }
 

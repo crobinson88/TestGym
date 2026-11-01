@@ -10,6 +10,7 @@ import {
   masteredVocab,
   reviewIntervalDays,
   REVIEW_INTERVALS_DAYS,
+  ruleAccuracy,
   ruleTopicAccuracy,
   vocabKeyFromQuestionId,
   vocabMastery,
@@ -411,5 +412,24 @@ describe("ruleTopicAccuracy", () => {
     );
     expect(map.get("Noun Gender")).toBeUndefined();
     expect(map.get("Negation")).toEqual({ seen: 1, correct: 1 });
+  });
+});
+
+describe("ruleAccuracy", () => {
+  it("tallies seen/correct per individual rule", () => {
+    const map = ruleAccuracy([
+      attempt({ kind: "rules", details: [mk("gender-1", true), mk("neg-1", false)] }),
+      attempt({ kind: "rules", details: [mk("gender-1", false)] }),
+    ]);
+    expect(map.get("gender-1")).toEqual({ seen: 2, correct: 1 });
+    expect(map.get("neg-1")).toEqual({ seen: 1, correct: 0 });
+  });
+
+  it("skips other kinds and deleted attempts", () => {
+    const map = ruleAccuracy([
+      attempt({ kind: "vocab", details: [mk("gender-1", false)] }),
+      attempt({ kind: "rules", details: [mk("gender-1", false)], deleted_at: "2026-06-04" }),
+    ]);
+    expect(map.size).toBe(0);
   });
 });

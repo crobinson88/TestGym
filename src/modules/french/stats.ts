@@ -108,25 +108,40 @@ export interface TopicAccuracy {
   correct: number;
 }
 
-// Per-topic accuracy on the rules test, keyed by topic name, so the topic picker
-// can show what still needs work. `topicOf` maps a rules question id to its topic
-// (rules ids are the static slugs); details from other kinds map to nothing and
-// are skipped, as are questions retired from the pool.
-export function ruleTopicAccuracy(
+// Per-rule accuracy on the rules test, keyed by question id, so the rule picker
+// can show which individual rules keep going wrong. Details from other kinds and
+// deleted attempts are skipped.
+export function ruleAccuracy(
   attempts: readonly FrenchAttemptRow[],
-  topicOf: ReadonlyMap<string, string>,
 ): Map<string, TopicAccuracy> {
   const map = new Map<string, TopicAccuracy>();
   for (const a of attempts) {
     if (a.deleted_at || a.kind !== "rules") continue;
     for (const d of a.details ?? []) {
-      const topic = topicOf.get(d.questionId);
-      if (!topic) continue;
-      const t = map.get(topic) ?? { seen: 0, correct: 0 };
+      const t = map.get(d.questionId) ?? { seen: 0, correct: 0 };
       t.seen += 1;
       if (d.correct) t.correct += 1;
-      map.set(topic, t);
+      map.set(d.questionId, t);
     }
+  }
+  return map;
+}
+
+// The same tallies folded up to the topic, for the topic row. `topicOf` maps a
+// rules question id to its topic (rules ids are the static slugs); rules retired
+// from the pool map to nothing and are skipped.
+export function ruleTopicAccuracy(
+  attempts: readonly FrenchAttemptRow[],
+  topicOf: ReadonlyMap<string, string>,
+): Map<string, TopicAccuracy> {
+  const map = new Map<string, TopicAccuracy>();
+  for (const [questionId, a] of ruleAccuracy(attempts)) {
+    const topic = topicOf.get(questionId);
+    if (!topic) continue;
+    const t = map.get(topic) ?? { seen: 0, correct: 0 };
+    t.seen += a.seen;
+    t.correct += a.correct;
+    map.set(topic, t);
   }
   return map;
 }

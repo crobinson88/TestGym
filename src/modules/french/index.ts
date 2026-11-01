@@ -1,7 +1,7 @@
 export { frenchRoutes } from "./routes";
 export {
   useFrenchAttempts,
-  useRuleTopicStats,
+  useRuleStats,
   useFrenchStats,
   useFrenchWeeklyAccuracy,
   useVocabMastery,
@@ -9,6 +9,7 @@ export {
 } from "./hooks";
 export {
   computeStats,
+  ruleAccuracy,
   ruleTopicAccuracy,
   weeklyAccuracy,
   vocabMastery,
@@ -35,15 +36,25 @@ export {
   parseCountInput,
   ruleTopics,
   filterRules,
-  parseTopics,
-  encodeTopics,
+  parseRules,
+  encodeRules,
   topicSlug,
+  topicSelectionState,
+  toggleRule,
+  toggleTopicRules,
+  describeRuleSelection,
   KIND_LABELS,
   TEST_SIZE,
   TEST_SIZES,
   MIN_TEST_SIZE,
 } from "./quiz";
-export type { Question, VocabDirection, ConjTense, RuleTopicOption } from "./quiz";
+export type {
+  Question,
+  VocabDirection,
+  ConjTense,
+  RuleTopicOption,
+  TopicSelectionState,
+} from "./quiz";
 export { SCENARIOS, sendChat } from "./chat";
 export type { Scenario, ChatTurn } from "./chat";
 export { VOCAB, VERBS, WORDS, WORDS_EXT } from "./data/vocab";
