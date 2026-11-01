@@ -1,7 +1,7 @@
 import type { FrenchTestKind } from "@/lib/database.types";
 import { todayIsoDate } from "@/lib/utils";
 import type { VocabWord } from "./data/vocab";
-import type { RuleQuestion } from "./data/rules";
+import type { RuleQuestion, RuleTopic } from "./data/rules";
 import type { PronQuestion } from "./data/pronunciation";
 import type { Person, VerbConjugation } from "./data/conjugations";
 import { ALLER, PERSONS, PRONOUN_LABEL } from "./data/conjugations";
@@ -218,6 +218,9 @@ export interface GenerateOptions {
   // Restrict spaced-repetition selection to due reviews only, or new words only.
   // Requires `schedules`; ignored by the plain-sample fallback. Defaults to mixed.
   mode?: StudyMode;
+  // Rules only: the ids of the rules to draw from (a whole topic is just all of
+  // its ids). Empty/omitted draws from every rule.
+  rules?: readonly string[];
 }
 
 // Fisher-Yates, parameterised on the rng so tests are deterministic.
@@ -528,11 +531,160 @@ export function makeRuleQuestion(rule: RuleQuestion, rng: Rng): Question {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Rule picking. A selection is a set of **rule ids** — one rule, a handful across
+// topics, or whole topics at once (a topic is just all of its ids). Picking
+// nothing means every rule, so a test is never empty.
+// ---------------------------------------------------------------------------
+
+// A URL-safe slug for a grammar topic, so a topic selection survives in the query
+// string: "C'est vs Il est" -> "c-est-vs-il-est".
+export function topicSlug(topic: string): string {
+  return topic
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export interface RuleTopicOption {
+  topic: RuleTopic;
+  slug: string;
+  // The topic's rules, in pool order — what a topic-level tick selects.
+  rules: RuleQuestion[];
+}
+
+// The grammar topics the pool covers, in the order they first appear (the guide's
+// order), each carrying its own rules — the shape the picker renders.
+export function ruleTopics(pool: readonly RuleQuestion[]): RuleTopicOption[] {
+  const byTopic = new Map<string, RuleTopicOption>();
+  const out: RuleTopicOption[] = [];
+  for (const q of pool) {
+    let opt = byTopic.get(q.topic);
+    if (!opt) {
+      opt = { topic: q.topic, slug: topicSlug(q.topic), rules: [] };
+      byTopic.set(q.topic, opt);
+      out.push(opt);
+    }
+    opt.rules.push(q);
+  }
+  return out;
+}
+
+// How much of a topic the current selection covers, for the topic row's tick box.
+export type TopicSelectionState = "all" | "some" | "none";
+
+export function topicSelectionState(
+  option: RuleTopicOption,
+  selected: ReadonlySet<string>,
+): TopicSelectionState {
+  if (selected.size === 0) return "none";
+  let hits = 0;
+  for (const r of option.rules) if (selected.has(r.id)) hits += 1;
+  if (hits === 0) return "none";
+  return hits === option.rules.length ? "all" : "some";
+}
+
+// Ticking a topic selects all of its rules; unticking removes them, leaving any
+// rules picked elsewhere alone.
+export function toggleTopicRules(
+  selected: readonly string[],
+  option: RuleTopicOption,
+  on: boolean,
+): string[] {
+  const ids = new Set(selected);
+  for (const r of option.rules) {
+    if (on) ids.add(r.id);
+    else ids.delete(r.id);
+  }
+  return [...ids];
+}
+
+export function toggleRule(selected: readonly string[], id: string): string[] {
+  return selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+}
+
+export const RULE_SEPARATOR = ",";
+// A whole topic rides in the URL as one token rather than every id it holds.
+export const TOPIC_TOKEN = "t:";
+
+// Encode a rule selection for the `?rules=` query param: a fully-picked topic
+// collapses to `t:<slug>`, anything else is listed by rule id, both in pool order
+// so the same selection always encodes the same way.
+export function encodeRules(selected: readonly string[], pool: readonly RuleQuestion[]): string {
+  const ids = new Set(selected);
+  if (ids.size === 0) return "";
+  const tokens: string[] = [];
+  for (const option of ruleTopics(pool)) {
+    const state = topicSelectionState(option, ids);
+    if (state === "none") continue;
+    if (state === "all") {
+      tokens.push(`${TOPIC_TOKEN}${option.slug}`);
+      continue;
+    }
+    for (const r of option.rules) if (ids.has(r.id)) tokens.push(r.id);
+  }
+  return tokens.join(RULE_SEPARATOR);
+}
+
+// Decode a `?rules=` value into the rule ids it names, in pool order: `t:<slug>`
+// expands to that topic's rules, bare tokens are rule ids. Tokens the pool doesn't
+// hold are dropped, so an empty or stale value reads as "every rule" rather than
+// an empty test.
+export function parseRules(
+  raw: string | null | undefined,
+  pool: readonly RuleQuestion[],
+): string[] {
+  if (!raw) return [];
+  const wanted = new Set<string>();
+  const topics = new Set<string>();
+  for (const token of raw.split(RULE_SEPARATOR)) {
+    const t = token.trim();
+    if (!t) continue;
+    if (t.startsWith(TOPIC_TOKEN)) topics.add(topicSlug(t.slice(TOPIC_TOKEN.length)));
+    else wanted.add(t);
+  }
+  return pool
+    .filter((q) => wanted.has(q.id) || topics.has(topicSlug(q.topic)))
+    .map((q) => q.id);
+}
+
+// Narrow the pool to the picked rules. Picking nothing — or only ids the pool
+// doesn't hold — draws from every rule, so a stale selection can't empty a test.
+export function filterRules(
+  pool: readonly RuleQuestion[],
+  selected: readonly string[] | undefined,
+): RuleQuestion[] {
+  if (!selected || selected.length === 0) return pool.slice();
+  const ids = new Set(selected);
+  const picked = pool.filter((q) => ids.has(q.id));
+  return picked.length > 0 ? picked : pool.slice();
+}
+
+// A short label for the current selection, for the test tile: every rule, a named
+// topic when exactly one whole topic is picked, a count of topics when several
+// whole ones are, else a plain count of rules.
+export function describeRuleSelection(
+  selected: readonly string[],
+  pool: readonly RuleQuestion[],
+): string {
+  if (selected.length === 0) return "all rules";
+  const ids = new Set(selected);
+  const options = ruleTopics(pool);
+  const whole = options.filter((o) => topicSelectionState(o, ids) === "all");
+  const covered = whole.reduce((n, o) => n + o.rules.length, 0);
+  if (covered === ids.size && whole.length > 0) {
+    return whole.length === 1 ? whole[0].topic : `${whole.length} topics`;
+  }
+  return `${ids.size} rule${ids.size === 1 ? "" : "s"}`;
+}
+
 export function generateRulesTest(
   pool: readonly RuleQuestion[],
-  { count = TEST_SIZE, rng = Math.random }: GenerateOptions = {},
+  { count = TEST_SIZE, rng = Math.random, rules }: GenerateOptions = {},
 ): Question[] {
-  return sample(pool, count, rng).map((r) => makeRuleQuestion(r, rng));
+  return sample(filterRules(pool, rules), count, rng).map((r) => makeRuleQuestion(r, rng));
 }
 
 // Pronunciation-rules questions are multiple choice like grammar rules, plus an

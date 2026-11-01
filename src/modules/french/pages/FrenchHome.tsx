@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookMarked,
@@ -24,8 +24,12 @@ import {
   useMasteredVocab,
   useVocabDueCount,
 } from "../hooks";
+import RulePicker from "../RulePicker";
 import { pct, type KindStats } from "../stats";
 import {
+  describeRuleSelection,
+  encodeRules,
+  filterRules,
   KIND_LABELS,
   LISTENING_SIZES,
   LISTENING_SPEEDS,
@@ -109,6 +113,16 @@ export default function FrenchHome() {
   const [wordsPerRound, setWordsPerRound] = useState<number>(1);
   const [speed, setSpeed] = useState<ListeningSpeed>("normal");
   const [listenMode, setListenMode] = useState<StudyMode>("mixed");
+  // The rules the test draws from, by id. Empty = every rule, so the test is never
+  // empty just because nothing is ticked.
+  const [rules, setRules] = useState<string[]>([]);
+
+  const rulesPool = useMemo(() => filterRules(RULE_QUESTIONS, rules).length, [rules]);
+  // A narrow selection can hold fewer questions than the chosen length; the test
+  // caps at what's there, so say so rather than promising more.
+  const rulesCount = Math.min(count, rulesPool);
+  const rulesLabel = describeRuleSelection(rules, RULE_QUESTIONS);
+  const rulesQuery = rules.length > 0 ? `&rules=${encodeRules(rules, RULE_QUESTIONS)}` : "";
 
   function pickCount(n: number) {
     setCount(n);
@@ -268,16 +282,27 @@ export default function FrenchHome() {
             ))}
           </div>
         </div>
-        <button
-          onClick={() => navigate(`/french/test/rules?n=${count}`)}
-          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
-        >
-          <ScrollText className="h-7 w-7 shrink-0 text-accent" />
-          <div>
-            <div className="text-lg font-semibold">New rules test</div>
-            <div className="text-sm text-muted">{count} grammar questions</div>
-          </div>
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={() => navigate(`/french/test/rules?n=${count}${rulesQuery}`)}
+            className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"
+          >
+            <ScrollText className="h-7 w-7 shrink-0 text-accent" />
+            <div>
+              <div className="text-lg font-semibold">New rules test</div>
+              <div className="text-sm text-muted">
+                {rulesCount} grammar question{rulesCount === 1 ? "" : "s"} · {rulesLabel}
+              </div>
+            </div>
+          </button>
+          <RulePicker selected={rules} onChange={setRules} />
+          {rulesPool < count && (
+            <p className="px-1 text-xs text-muted">
+              Only {rulesPool} question{rulesPool === 1 ? "" : "s"} in this selection — the test
+              runs short.
+            </p>
+          )}
+        </div>
         <button
           onClick={() => navigate(`/french/test/conjug?n=${count}`)}
           className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left transition active:scale-[0.98]"

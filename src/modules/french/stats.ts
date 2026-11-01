@@ -102,6 +102,50 @@ export function computeStats(attempts: readonly FrenchAttemptRow[]): FrenchStats
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+// How a grammar topic has gone across every rules test taken.
+export interface TopicAccuracy {
+  seen: number;
+  correct: number;
+}
+
+// Per-rule accuracy on the rules test, keyed by question id, so the rule picker
+// can show which individual rules keep going wrong. Details from other kinds and
+// deleted attempts are skipped.
+export function ruleAccuracy(
+  attempts: readonly FrenchAttemptRow[],
+): Map<string, TopicAccuracy> {
+  const map = new Map<string, TopicAccuracy>();
+  for (const a of attempts) {
+    if (a.deleted_at || a.kind !== "rules") continue;
+    for (const d of a.details ?? []) {
+      const t = map.get(d.questionId) ?? { seen: 0, correct: 0 };
+      t.seen += 1;
+      if (d.correct) t.correct += 1;
+      map.set(d.questionId, t);
+    }
+  }
+  return map;
+}
+
+// The same tallies folded up to the topic, for the topic row. `topicOf` maps a
+// rules question id to its topic (rules ids are the static slugs); rules retired
+// from the pool map to nothing and are skipped.
+export function ruleTopicAccuracy(
+  attempts: readonly FrenchAttemptRow[],
+  topicOf: ReadonlyMap<string, string>,
+): Map<string, TopicAccuracy> {
+  const map = new Map<string, TopicAccuracy>();
+  for (const [questionId, a] of ruleAccuracy(attempts)) {
+    const topic = topicOf.get(questionId);
+    if (!topic) continue;
+    const t = map.get(topic) ?? { seen: 0, correct: 0 };
+    t.seen += a.seen;
+    t.correct += a.correct;
+    map.set(topic, t);
+  }
+  return map;
+}
+
 // Per-word recall history, keyed by the French word, aggregated across both test
 // directions (a word is the same study item whether shown fr→en or en→fr).
 export interface VocabWordHistory {

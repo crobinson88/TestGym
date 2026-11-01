@@ -22,7 +22,16 @@ import {
   makeSpeakingQuestion,
   makeVocabQuestion,
   normalizeAnswer,
+  describeRuleSelection,
+  encodeRules,
+  filterRules,
   parseCountInput,
+  parseRules,
+  ruleTopics,
+  toggleRule,
+  toggleTopicRules,
+  topicSelectionState,
+  topicSlug,
   selectVocab,
   shuffle,
   speedRate,
@@ -542,6 +551,117 @@ describe("rules", () => {
     const q = makeRuleQuestion(RULES[1], rng);
     expect(q.choices[q.answer]).toBe("J'ai 25 ans.");
     expect(q.explanation).toBe("Age uses avoir.");
+  });
+
+  // Three topics, one of them twice, so topic counts and narrowing are real.
+  const TOPIC_RULES: RuleQuestion[] = [
+    ...RULES,
+    {
+      id: "r3",
+      topic: "Negation",
+      prompt: "Make negative: Nous parlons.",
+      choices: ["Nous ne parlons pas.", "Nous parlons pas ne."],
+      answer: 0,
+      explanation: "ne + verb + pas.",
+    },
+    {
+      id: "r4",
+      topic: "C'est vs Il est",
+      prompt: "___ un médecin.",
+      choices: ["C'est", "Il est"],
+      answer: 0,
+      explanation: "c'est + article + noun.",
+    },
+  ];
+
+  it("ruleTopics lists each topic once, in first-appearance order, with its rules", () => {
+    const opts = ruleTopics(TOPIC_RULES);
+    expect(opts.map((o) => o.topic)).toEqual(["Negation", "Avoir", "C'est vs Il est"]);
+    expect(opts.map((o) => o.rules.map((r) => r.id))).toEqual([["r1", "r3"], ["r2"], ["r4"]]);
+  });
+
+  it("topicSelectionState reports all / some / none against the picked ids", () => {
+    const [negation] = ruleTopics(TOPIC_RULES);
+    expect(topicSelectionState(negation, new Set())).toBe("none");
+    expect(topicSelectionState(negation, new Set(["r2"]))).toBe("none");
+    expect(topicSelectionState(negation, new Set(["r1"]))).toBe("some");
+    expect(topicSelectionState(negation, new Set(["r1", "r3"]))).toBe("all");
+  });
+
+  it("toggling a topic adds or drops its rules without touching the rest", () => {
+    const [negation] = ruleTopics(TOPIC_RULES);
+    expect(toggleTopicRules(["r2"], negation, true).sort()).toEqual(["r1", "r2", "r3"]);
+    expect(toggleTopicRules(["r1", "r2", "r3"], negation, false)).toEqual(["r2"]);
+  });
+
+  it("toggling a single rule adds it, and tapping again removes it", () => {
+    expect(toggleRule([], "r1")).toEqual(["r1"]);
+    expect(toggleRule(["r1", "r2"], "r1")).toEqual(["r2"]);
+  });
+
+  it("topicSlug is URL-safe", () => {
+    expect(topicSlug("C'est vs Il est")).toBe("c-est-vs-il-est");
+    expect(topicSlug("Être")).toBe("etre");
+  });
+
+  it("encodeRules collapses a whole topic to one token and lists the rest by id", () => {
+    expect(encodeRules(["r1", "r3"], TOPIC_RULES)).toBe("t:negation");
+    expect(encodeRules(["r1"], TOPIC_RULES)).toBe("r1");
+    expect(encodeRules(["r4", "r1", "r3"], TOPIC_RULES)).toBe("t:negation,t:c-est-vs-il-est");
+    expect(encodeRules(["r1", "r2"], TOPIC_RULES)).toBe("r1,t:avoir");
+    expect(encodeRules([], TOPIC_RULES)).toBe("");
+  });
+
+  it("parseRules round-trips a selection, in pool order", () => {
+    for (const picked of [["r1"], ["r1", "r3"], ["r2", "r4"], ["r1", "r2", "r3", "r4"]]) {
+      expect(parseRules(encodeRules(picked, TOPIC_RULES), TOPIC_RULES)).toEqual(
+        TOPIC_RULES.filter((r) => picked.includes(r.id)).map((r) => r.id),
+      );
+    }
+  });
+
+  it("parseRules drops tokens the pool doesn't hold and reads empty as every rule", () => {
+    expect(parseRules("r1,no-such-rule", TOPIC_RULES)).toEqual(["r1"]);
+    expect(parseRules("t:no-such-topic", TOPIC_RULES)).toEqual([]);
+    expect(parseRules("", TOPIC_RULES)).toEqual([]);
+    expect(parseRules(null, TOPIC_RULES)).toEqual([]);
+  });
+
+  it("describeRuleSelection names a whole topic, counts several, else counts rules", () => {
+    expect(describeRuleSelection([], TOPIC_RULES)).toBe("all rules");
+    expect(describeRuleSelection(["r1", "r3"], TOPIC_RULES)).toBe("Negation");
+    expect(describeRuleSelection(["r1", "r3", "r2"], TOPIC_RULES)).toBe("2 topics");
+    expect(describeRuleSelection(["r1"], TOPIC_RULES)).toBe("1 rule");
+    expect(describeRuleSelection(["r1", "r4"], TOPIC_RULES)).toBe("2 rules");
+  });
+
+  it("filterRules narrows to the picked rules, and falls back to the whole pool", () => {
+    expect(filterRules(TOPIC_RULES, ["r3", "r1"]).map((r) => r.id)).toEqual(["r1", "r3"]);
+    expect(filterRules(TOPIC_RULES, []).length).toBe(TOPIC_RULES.length);
+    expect(filterRules(TOPIC_RULES, undefined).length).toBe(TOPIC_RULES.length);
+    expect(filterRules(TOPIC_RULES, ["no-such-rule"]).length).toBe(TOPIC_RULES.length);
+  });
+
+  it("generateRulesTest only draws from the picked rules", () => {
+    const test = generateRulesTest(TOPIC_RULES, { count: 2, rng: lcg(3), rules: ["r1", "r3"] });
+    expect(test).toHaveLength(2);
+    expect(test.map((q) => q.id).sort()).toEqual(["r1", "r3"]);
+  });
+
+  it("generateRulesTest caps at the picked rules rather than padding", () => {
+    const test = generateRulesTest(TOPIC_RULES, { count: 99, rng: lcg(4), rules: ["r2"] });
+    expect(test).toHaveLength(1);
+    expect(test[0].id).toBe("r2");
+  });
+
+  it("generateTest routes the rule filter through", () => {
+    const test = generateTest("rules", VOCAB, TOPIC_RULES, CONJ_VERBS, PRON, {
+      count: 5,
+      rng: lcg(5),
+      rules: ["r4"],
+    });
+    expect(test).toHaveLength(1);
+    expect(test[0].id).toBe("r4");
   });
 
   it("generateRulesTest preserves correctness across the test", () => {
