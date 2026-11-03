@@ -451,6 +451,42 @@ export interface DrivingAttemptRow {
   deleted_at: string | null;
 }
 
+// The section of the DCWP Home Improvement Contractor study guide a question
+// belongs to. An exam either mixes every section ("all") or drills a single one.
+export type HicSection =
+  | "all"
+  | "licensing"
+  | "contracts"
+  | "advertising"
+  | "operations";
+
+// One question's outcome inside a completed HIC exam, kept so the stats view can
+// surface which items were missed without re-deriving them.
+export interface HicAttemptDetail {
+  questionId: string;
+  prompt: string;
+  correct: boolean;
+}
+
+// One completed NYC Home Improvement Contractor licensing exam practice test.
+// `correct`/`total` are the score; `section` is the section drilled ("all" = a
+// mixed exam); `details` is the per-question breakdown. Same sync / RLS /
+// soft-delete rules as `sets`.
+export interface HicAttemptRow {
+  id: string;
+  section: HicSection;
+  total: number;
+  correct: number;
+  duration_ms: number | null;
+  details: HicAttemptDetail[];
+  started_at: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 // An article or podcast saved to read/listen to later. URL + title + a free-text
 // description; `is_read` flags it done. Same sync / RLS / soft-delete rules as `sets`.
 export interface ReadingItemRow {
@@ -789,6 +825,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<DrivingAttemptRow>;
+      };
+      hic_attempts: {
+        Row: HicAttemptRow;
+        Insert: Omit<HicAttemptRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<HicAttemptRow>;
       };
       reading_items: {
         Row: ReadingItemRow;

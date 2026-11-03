@@ -17,7 +17,7 @@ import { frenchRoutes } from "@/modules/french/routes";
 import { drivingRoutes } from "@/modules/driving/routes";
 import { readingRoutes } from "@/modules/reading_list/routes";
 import { foodRoutes } from "@/modules/food_diary/routes";
-import { doorRoutes } from "@/modules/doors/routes";
+import { hicRoutes } from "@/modules/hic/routes";
 import { workstreamRoutes } from "@/modules/workstreams/routes";
 
 const ExerciseDetail = lazy(() => import("@/routes/ExerciseDetail"));
@@ -80,7 +80,7 @@ export function App() {
               {drivingRoutes()}
               {readingRoutes()}
               {foodRoutes()}
-              {doorRoutes()}
+              {hicRoutes()}
               {workstreamRoutes()}
             </Route>
           </Route>

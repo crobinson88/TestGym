@@ -7,6 +7,7 @@ import type {
   LocalExercise,
   LocalFoodEntry,
   LocalDrivingAttempt,
+  LocalHicAttempt,
   LocalFoodGoal,
   LocalForecast,
   LocalFrenchAttempt,
@@ -25,6 +26,9 @@ import type {
   DailyHabitRow,
   DrivingAttemptDetail,
   DrivingAttemptRow,
+  HicAttemptDetail,
+  HicAttemptRow,
+  HicSection,
   DrivingSection,
   ExerciseRow,
   FoodEntryRow,
@@ -127,6 +131,15 @@ export interface AddDrivingAttemptInput {
   started_at: string;
 }
 
+export interface AddHicAttemptInput {
+  section: HicSection;
+  total: number;
+  correct: number;
+  duration_ms?: number | null;
+  details?: HicAttemptDetail[];
+  started_at: string;
+}
+
 export interface AddReadingItemInput {
   url: string;
   title: string;
@@ -220,6 +233,10 @@ function pendingFrenchAttempt(row: FrenchAttemptRow): LocalFrenchAttempt {
 }
 
 function pendingDrivingAttempt(row: DrivingAttemptRow): LocalDrivingAttempt {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingHicAttempt(row: HicAttemptRow): LocalHicAttempt {
   return { ...row, sync_status: "pending" };
 }
 
@@ -637,6 +654,27 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     };
     const local = pendingDrivingAttempt(row);
     await db.driving_attempts.put(local);
+    notify();
+    return local;
+  }
+
+  async function addHicAttempt(input: AddHicAttemptInput): Promise<LocalHicAttempt> {
+    const id = uuid();
+    const ts = now();
+    const row: HicAttemptRow = {
+      id,
+      section: input.section,
+      total: input.total,
+      correct: input.correct,
+      duration_ms: input.duration_ms ?? null,
+      details: input.details ?? [],
+      started_at: input.started_at,
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingHicAttempt(row);
+    await db.hic_attempts.put(local);
     notify();
     return local;
   }
@@ -1174,6 +1212,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     deleteForecast,
     addFrenchAttempt,
     addDrivingAttempt,
+    addHicAttempt,
     addReadingItem,
     updateReadingItem,
     deleteReadingItem,
