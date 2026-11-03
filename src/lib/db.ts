@@ -9,6 +9,7 @@ import type {
   FoodGoalRow,
   ForecastRow,
   DrivingAttemptRow,
+  HicAttemptRow,
   FrenchAttemptRow,
   MarketNoteRow,
   MetActivityRow,
@@ -135,6 +136,10 @@ export interface LocalDrivingAttempt extends DrivingAttemptRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalHicAttempt extends HicAttemptRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalFrenchAttempt extends FrenchAttemptRow {
   sync_status: SyncStatus;
 }
@@ -189,6 +194,7 @@ export class GymDB extends Dexie {
   forecasts!: Table<LocalForecast, string>;
   french_attempts!: Table<LocalFrenchAttempt, string>;
   driving_attempts!: Table<LocalDrivingAttempt, string>;
+  hic_attempts!: Table<LocalHicAttempt, string>;
   reading_items!: Table<LocalReadingItem, string>;
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
@@ -434,6 +440,9 @@ export class GymDB extends Dexie {
             if (row.completed_at === undefined) row.completed_at = null;
           });
       });
+    this.version(32).stores({
+      hic_attempts: "id, section, started_at, updated_at, sync_status, deleted_at",
+    });
   }
 }
 

@@ -4,6 +4,7 @@ import type {
   CategoryRow,
   DailyHabitRow,
   DrivingAttemptRow,
+  HicAttemptRow,
   ExerciseRow,
   FoodEntryRow,
   FoodGoalRow,
@@ -330,6 +331,25 @@ async function mergeDrivingAttempts(db: GymDB, rows: DrivingAttemptRow[]) {
   });
 }
 
+async function mergeHicAttempts(db: GymDB, rows: HicAttemptRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.hic_attempts, async () => {
+    for (const remote of rows) {
+      const local = await db.hic_attempts.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.hic_attempts.put({
+          ...remote,
+          total: Number(remote.total),
+          correct: Number(remote.correct),
+          duration_ms: remote.duration_ms === null ? null : Number(remote.duration_ms),
+          details: remote.details ?? [],
+          sync_status: "synced",
+        });
+      }
+    }
+  });
+}
+
 async function mergeReadingItems(db: GymDB, rows: ReadingItemRow[]) {
   if (rows.length === 0) return;
   await db.transaction("rw", db.reading_items, async () => {
@@ -454,6 +474,7 @@ const META_KEYS: Record<SyncTable, string> = {
   forecasts: "last_pull_forecasts",
   french_attempts: "last_pull_french_attempts",
   driving_attempts: "last_pull_driving_attempts",
+  hic_attempts: "last_pull_hic_attempts",
   reading_items: "last_pull_reading_items",
   tips: "last_pull_tips",
   market_notes: "last_pull_market_notes",
@@ -494,6 +515,7 @@ export function createPull({ client, db, log }: PullDeps) {
       forecasts: 0,
       french_attempts: 0,
       driving_attempts: 0,
+      hic_attempts: 0,
       reading_items: 0,
       tips: 0,
       market_notes: 0,
@@ -621,6 +643,13 @@ export function createPull({ client, db, log }: PullDeps) {
           fetched.driving_attempts = rows.length;
           if (rows.length > 0) {
             await writeMark("driving_attempts", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "hic_attempts") {
+          const rows = await fetchSince<HicAttemptRow>(client, "hic_attempts", since);
+          await mergeHicAttempts(db, rows);
+          fetched.hic_attempts = rows.length;
+          if (rows.length > 0) {
+            await writeMark("hic_attempts", rows[rows.length - 1].updated_at);
           }
         } else if (table === "reading_items") {
           const rows = await fetchSince<ReadingItemRow>(client, "reading_items", since);

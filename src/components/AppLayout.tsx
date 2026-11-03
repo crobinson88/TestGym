@@ -6,8 +6,8 @@ import {
   Car,
   CheckSquare,
   Clock,
-  DoorClosed,
   Dumbbell,
+  HardHat,
   Heart,
   History,
   ListTodo,
@@ -50,7 +50,7 @@ const tabs: readonly Tab[] = [
   { to: "/driving", label: "Permit", icon: Car },
   { to: "/reading", label: "Reading", icon: BookOpen },
   { to: "/food", label: "Food", icon: UtensilsCrossed },
-  { to: "/doors", label: "Doors", icon: DoorClosed },
+  { to: "/hic", label: "HIC", icon: HardHat },
 ];
 
 export function AppLayout() {
