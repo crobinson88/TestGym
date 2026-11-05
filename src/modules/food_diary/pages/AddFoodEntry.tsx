@@ -14,12 +14,23 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { todayIsoDate } from "@/lib/utils";
+import { cn, todayIsoDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useFoodEntries, useFoodEntry } from "../hooks";
 import { foodLibrary, searchLibrary, type LibraryFood } from "../compute";
 import { estimateFoodPhoto, estimateFoodText } from "../photo";
+
+type AddMode = "ai" | "library";
+const ADD_MODE_KEY = "food:addMode";
+
+function loadAddMode(): AddMode {
+  try {
+    return localStorage.getItem(ADD_MODE_KEY) === "library" ? "library" : "ai";
+  } catch {
+    return "ai";
+  }
+}
 
 export default function AddFoodEntry() {
   const navigate = useNavigate();
@@ -42,6 +53,7 @@ export default function AddFoodEntry() {
   const [estimateNote, setEstimateNote] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [librarySearch, setLibrarySearch] = useState("");
+  const [addMode, setAddModeState] = useState<AddMode>(loadAddMode);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
 
@@ -126,6 +138,15 @@ export default function AddFoodEntry() {
   // opens short; search narrows it in place.
   const query = librarySearch.trim();
   const library = query ? searchLibrary(fullLibrary, query) : fullLibrary;
+
+  function setAddMode(next: AddMode) {
+    setAddModeState(next);
+    try {
+      localStorage.setItem(ADD_MODE_KEY, next);
+    } catch {
+      // per-device convenience only
+    }
+  }
 
   function pickFood(food: LibraryFood) {
     setName(food.name);
@@ -246,7 +267,9 @@ export default function AddFoodEntry() {
           )}
         </div>
 
-        {!editing && (
+        {!editing && <AddModeToggle value={addMode} onChange={setAddMode} />}
+
+        {!editing && addMode === "ai" && (
           <div className="rounded-2xl border border-line bg-surface p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
               <Sparkles className="h-3.5 w-3.5 text-accent" /> Estimate with AI
@@ -302,7 +325,14 @@ export default function AddFoodEntry() {
           </div>
         )}
 
-        {!editing && fullLibrary.length > 0 && (
+        {!editing && addMode === "library" && fullLibrary.length === 0 && (
+          <div className="rounded-2xl border border-line bg-surface p-3 text-sm text-muted">
+            Your library is empty. Every food you log joins it automatically, so a repeat meal is
+            one tap next time.
+          </div>
+        )}
+
+        {!editing && addMode === "library" && fullLibrary.length > 0 && (
           <div className="rounded-2xl border border-line bg-surface p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted">
               <Library className="h-3.5 w-3.5 text-accent" /> Library
@@ -395,6 +425,42 @@ export default function AddFoodEntry() {
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
       </div>
+    </div>
+  );
+}
+
+function AddModeToggle({
+  value,
+  onChange,
+}: {
+  value: AddMode;
+  onChange: (next: AddMode) => void;
+}) {
+  const options: { mode: AddMode; label: string; icon: React.ReactNode }[] = [
+    { mode: "ai", label: "Estimate with AI", icon: <Sparkles className="h-4 w-4" /> },
+    { mode: "library", label: "Library", icon: <Library className="h-4 w-4" /> },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label="Fill from"
+      className="flex items-center gap-1 rounded-xl border border-line bg-surface p-1"
+    >
+      {options.map((o) => (
+        <button
+          key={o.mode}
+          type="button"
+          onClick={() => onChange(o.mode)}
+          aria-pressed={value === o.mode}
+          className={cn(
+            "inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-sm transition",
+            value === o.mode ? "bg-surface2 font-medium text-text" : "text-muted hover:text-text",
+          )}
+        >
+          <span className={value === o.mode ? "text-accent" : ""}>{o.icon}</span>
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
