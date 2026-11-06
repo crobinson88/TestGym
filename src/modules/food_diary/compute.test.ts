@@ -7,6 +7,7 @@ import {
   cmToFtIn,
   coverageByEntry,
   dailyBalance,
+  effectiveBaseline,
   exerciseKcalFromMetMinutes,
   foodLibrary,
   ftInToCm,
@@ -238,6 +239,23 @@ describe("baselineBurn", () => {
 
   it("passes null through", () => {
     expect(baselineBurn(null, 1.2)).toBeNull();
+  });
+});
+
+describe("effectiveBaseline", () => {
+  it("prefers the hand-entered value", () => {
+    expect(effectiveBaseline(2500, 2194)).toBe(2500);
+  });
+
+  it("works without an estimate", () => {
+    expect(effectiveBaseline(2400, null)).toBe(2400);
+  });
+
+  it("falls back to the estimate when unset or invalid", () => {
+    expect(effectiveBaseline(null, 2194)).toBe(2194);
+    expect(effectiveBaseline(undefined, 2194)).toBe(2194);
+    expect(effectiveBaseline(-5, 2194)).toBe(2194);
+    expect(effectiveBaseline(null, null)).toBeNull();
   });
 });
 

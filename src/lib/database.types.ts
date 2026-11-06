@@ -645,6 +645,8 @@ export interface FoodGoalRow {
   height_cm: number | null;
   weight_lb: number | null;
   activity_factor: number;
+  // Hand-entered baseline daily burn. Wins over the BMR × activity estimate; null = use the estimate.
+  baseline_kcal: number | null;
   client_id: string | null;
   user_id: string | null;
   created_at: string;
