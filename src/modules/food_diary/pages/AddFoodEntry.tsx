@@ -148,13 +148,25 @@ export default function AddFoodEntry() {
     }
   }
 
-  function pickFood(food: LibraryFood) {
-    setName(food.name);
-    setCalories(String(food.calories));
-    setProtein(String(food.protein));
-    setLibrarySearch("");
+  // A library food is a known quantity, so tapping it logs it straight away on
+  // the chosen date rather than just filling the form.
+  async function pickFood(food: LibraryFood) {
+    if (saving) return;
+    setSaving(true);
     setError(null);
     setEstimateNote(null);
+    try {
+      await syncEngine.mutations.addFoodEntry({
+        name: food.name,
+        calories: food.calories,
+        protein: food.protein,
+        entry_date: date,
+      });
+      navigate("/food");
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(false);
+    }
   }
 
   const caloriesNum = Number(calories);
@@ -340,6 +352,7 @@ export default function AddFoodEntry() {
                 {query ? `${library.length} of ${fullLibrary.length}` : fullLibrary.length}
               </span>
             </div>
+            <p className="mb-2 text-xs text-muted">Tap a food to log it.</p>
             <div className="relative mb-3">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input
@@ -369,7 +382,9 @@ export default function AddFoodEntry() {
                 <li key={food.name}>
                   <button
                     onClick={() => pickFood(food)}
-                    className="flex min-h-11 flex-col items-start rounded-xl border border-line bg-surface2 px-3 py-1.5 text-left transition active:scale-[0.98]"
+                    disabled={saving}
+                    aria-label={`Log ${food.name}`}
+                    className="flex min-h-11 flex-col items-start rounded-xl border border-line bg-surface2 px-3 py-1.5 text-left transition active:scale-[0.98] disabled:opacity-50"
                   >
                     <span className="max-w-[60vw] truncate text-sm font-medium text-text">
                       {food.name}
