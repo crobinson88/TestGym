@@ -8,11 +8,13 @@ import {
   coverageByEntry,
   dailyBalance,
   exerciseKcalFromMetMinutes,
+  foodDayPath,
   foodLibrary,
   ftInToCm,
   goalProgress,
   groupByDate,
   isInLibrary,
+  parseDayParam,
   lbToKg,
   mifflinBmr,
   recentFoods,
@@ -329,5 +331,37 @@ describe("searchLibrary", () => {
     ]);
     expect(searchLibrary(foods, "butter kize")).toHaveLength(1);
     expect(searchLibrary(foods, "peanut pear")).toEqual([]);
+  });
+});
+
+describe("parseDayParam", () => {
+  const today = "2026-11-07";
+  it("falls back to today when missing or malformed", () => {
+    expect(parseDayParam(null, today)).toBe(today);
+    expect(parseDayParam("", today)).toBe(today);
+    expect(parseDayParam("yesterday", today)).toBe(today);
+    expect(parseDayParam("2026-2-03", today)).toBe(today);
+  });
+  it("rejects dates that don't exist", () => {
+    expect(parseDayParam("2026-02-30", today)).toBe(today);
+    expect(parseDayParam("2026-13-01", today)).toBe(today);
+  });
+  it("accepts past days", () => {
+    expect(parseDayParam("2026-11-06", today)).toBe("2026-11-06");
+    expect(parseDayParam("2025-12-31", today)).toBe("2025-12-31");
+  });
+  it("caps future days at today", () => {
+    expect(parseDayParam("2026-11-08", today)).toBe(today);
+  });
+});
+
+describe("foodDayPath", () => {
+  const today = "2026-11-07";
+  it("omits the param for today", () => {
+    expect(foodDayPath(today, today)).toBe("/food");
+  });
+  it("carries a past day", () => {
+    expect(foodDayPath("2026-11-05", today)).toBe("/food?date=2026-11-05");
+    expect(foodDayPath("2026-11-05", today, "/food/add")).toBe("/food/add?date=2026-11-05");
   });
 });

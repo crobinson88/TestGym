@@ -278,3 +278,22 @@ export function searchLibrary(foods: LibraryFood[], query: string): LibraryFood[
     return tokens.every((t) => name.includes(t));
   });
 }
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// The diary day named by a `?date=` param: a real calendar date no later than
+// today, else today. Food can be back-filled but not logged ahead.
+export function parseDayParam(raw: string | null | undefined, today: string): string {
+  if (!raw || !ISO_DAY.test(raw)) return today;
+  const [y, m, d] = raw.split("-").map((p) => parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+    return today;
+  }
+  return raw > today ? today : raw;
+}
+
+// Where the diary for a day lives: bare `/food` for today, `?date=` otherwise.
+export function foodDayPath(date: string, today: string, base = "/food"): string {
+  return date === today ? base : `${base}?date=${date}`;
+}
