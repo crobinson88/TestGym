@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Camera,
   Check,
@@ -14,11 +14,17 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { cn, todayIsoDate } from "@/lib/utils";
+import { addDays, cn, prettyDate, todayIsoDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync";
 import { useFoodEntries, useFoodEntry } from "../hooks";
-import { foodLibrary, searchLibrary, type LibraryFood } from "../compute";
+import {
+  foodDayPath,
+  foodLibrary,
+  parseDayParam,
+  searchLibrary,
+  type LibraryFood,
+} from "../compute";
 import { estimateFoodPhoto, estimateFoodText } from "../photo";
 
 type AddMode = "ai" | "library";
@@ -39,11 +45,14 @@ export default function AddFoodEntry() {
   const editing = !!id;
   const { session } = useAuth();
   const allEntries = useFoodEntries();
+  const [params] = useSearchParams();
+  const today = todayIsoDate();
+  const startDay = parseDayParam(params.get("date"), today);
 
   const [name, setName] = useState("");
   const [calories, setCalories] = useState("");
   const [protein, setProtein] = useState("");
-  const [date, setDate] = useState(todayIsoDate());
+  const [date, setDate] = useState(startDay);
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,13 +157,25 @@ export default function AddFoodEntry() {
     }
   }
 
-  function pickFood(food: LibraryFood) {
-    setName(food.name);
-    setCalories(String(food.calories));
-    setProtein(String(food.protein));
-    setLibrarySearch("");
+  // A library food is a known quantity, so tapping it logs it straight away on
+  // the chosen date rather than just filling the form.
+  async function pickFood(food: LibraryFood) {
+    if (saving) return;
+    setSaving(true);
     setError(null);
     setEstimateNote(null);
+    try {
+      await syncEngine.mutations.addFoodEntry({
+        name: food.name,
+        calories: food.calories,
+        protein: food.protein,
+        entry_date: date,
+      });
+      navigate(foodDayPath(date, today));
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(false);
+    }
   }
 
   const caloriesNum = Number(calories);
@@ -188,7 +209,7 @@ export default function AddFoodEntry() {
           entry_date: date,
         });
       }
-      navigate("/food");
+      navigate(foodDayPath(date, today));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -201,7 +222,7 @@ export default function AddFoodEntry() {
     setSaving(true);
     try {
       await syncEngine.mutations.deleteFoodEntry(id);
-      navigate("/food");
+      navigate(foodDayPath(date, today));
     } catch (err) {
       setError((err as Error).message);
       setSaving(false);
@@ -212,7 +233,7 @@ export default function AddFoodEntry() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-line px-2 py-3">
         <button
-          onClick={() => navigate("/food")}
+          onClick={() => navigate(foodDayPath(existing?.entry_date ?? startDay, today))}
           className="flex h-11 w-11 items-center justify-center rounded-xl text-text hover:bg-surface2"
           aria-label="Back"
         >
@@ -243,6 +264,8 @@ export default function AddFoodEntry() {
             {error}
           </div>
         )}
+
+        <DateField value={date} today={today} onChange={setDate} />
 
         <div className="space-y-3">
           <Button onClick={save} size="lg" className="w-full" disabled={!valid || saving}>
@@ -340,6 +363,7 @@ export default function AddFoodEntry() {
                 {query ? `${library.length} of ${fullLibrary.length}` : fullLibrary.length}
               </span>
             </div>
+            <p className="mb-2 text-xs text-muted">Tap a food to log it.</p>
             <div className="relative mb-3">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input
@@ -369,7 +393,9 @@ export default function AddFoodEntry() {
                 <li key={food.name}>
                   <button
                     onClick={() => pickFood(food)}
-                    className="flex min-h-11 flex-col items-start rounded-xl border border-line bg-surface2 px-3 py-1.5 text-left transition active:scale-[0.98]"
+                    disabled={saving}
+                    aria-label={`Log ${food.name}`}
+                    className="flex min-h-11 flex-col items-start rounded-xl border border-line bg-surface2 px-3 py-1.5 text-left transition active:scale-[0.98] disabled:opacity-50"
                   >
                     <span className="max-w-[60vw] truncate text-sm font-medium text-text">
                       {food.name}
@@ -420,10 +446,58 @@ export default function AddFoodEntry() {
             />
           </Field>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        <Field label="Date">
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </Field>
+function DateField({
+  value,
+  today,
+  onChange,
+}: {
+  value: string;
+  today: string;
+  onChange: (next: string) => void;
+}) {
+  const yesterday = addDays(today, -1);
+  const chips = [
+    { label: "Today", date: today },
+    { label: "Yesterday", date: yesterday },
+  ];
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs uppercase tracking-wide text-muted">Date</span>
+        {value !== today && value !== yesterday && (
+          <span className="text-xs text-muted">{prettyDate(value)}</span>
+        )}
+      </div>
+      <div className="flex gap-2">
+        {chips.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            onClick={() => onChange(c.date)}
+            aria-pressed={value === c.date}
+            className={cn(
+              "h-11 shrink-0 rounded-xl border px-3 text-sm transition",
+              value === c.date
+                ? "border-accent bg-accent/15 font-medium text-text"
+                : "border-line text-muted hover:text-text",
+            )}
+          >
+            {c.label}
+          </button>
+        ))}
+        <Input
+          type="date"
+          value={value}
+          max={today}
+          onChange={(e) => onChange(parseDayParam(e.target.value, today))}
+          aria-label="Date"
+          className="min-w-0 flex-1"
+        />
       </div>
     </div>
   );
