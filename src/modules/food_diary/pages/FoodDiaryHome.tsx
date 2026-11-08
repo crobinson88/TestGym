@@ -1,13 +1,19 @@
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Flame,
   Pencil,
   Plus,
+  RotateCcw,
   Target,
   UtensilsCrossed,
+  X,
 } from "lucide-react";
+import { syncEngine } from "@/lib/sync";
+import type { LocalFoodGoal } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { addDays, prettyDate, relativeDay, todayIsoDate } from "@/lib/utils";
 import type { FoodEntryRow } from "@/lib/database.types";
@@ -20,6 +26,7 @@ import {
   cardioSessionKcal,
   coverageByEntry,
   dailyBalance,
+  effectiveBaseline,
   exerciseKcalFromMetMinutes,
   foodDayPath,
   goalProgress,
@@ -66,7 +73,8 @@ export default function FoodDiaryHome() {
     heightCm: goals?.height_cm ?? null,
     weightKg,
   });
-  const baseline = baselineBurn(bmr, goals?.activity_factor ?? 1.2);
+  const estimate = baselineBurn(bmr, goals?.activity_factor ?? 1.2);
+  const baseline = effectiveBaseline(goals?.baseline_kcal, estimate);
   // Cardio burn: a session's directly-logged calories win, else the MET
   // estimate (per session, so logged + estimated sessions can mix).
   const cardioKcal = (dayCardio ?? []).reduce(
@@ -144,6 +152,8 @@ export default function FoodDiaryHome() {
         burn={balance.burn}
         net={balance.net}
         title={isToday ? "Balance today" : `Balance · ${prettyDate(day)}`}
+        goals={goals}
+        estimate={estimate}
         onSetup={() => navigate("/food/goals")}
       />
 
@@ -283,6 +293,8 @@ function BalanceCard({
   burn,
   net,
   title,
+  goals,
+  estimate,
   onSetup,
 }: {
   intake: number;
@@ -291,8 +303,12 @@ function BalanceCard({
   burn: number | null;
   net: number | null;
   title: string;
+  goals: LocalFoodGoal | null;
+  estimate: number | null;
   onSetup: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+
   if (baseline == null || burn == null || net == null) {
     return (
       <button
@@ -340,15 +356,109 @@ function BalanceCard({
           </div>
         </div>
       </div>
-      <div className="mt-3 flex gap-4 border-t border-line pt-3 text-xs text-muted">
-        <span>
-          Baseline <span className="tabular-nums text-text">{baseline}</span>
-        </span>
-        <span>
-          Exercise <span className="tabular-nums text-text">+{exercise}</span>
-        </span>
-      </div>
+      {editing && goals ? (
+        <BaselineEditor goals={goals} baseline={baseline} estimate={estimate} onDone={() => setEditing(false)} />
+      ) : (
+        <div className="mt-3 flex items-center gap-4 border-t border-line pt-3 text-xs text-muted">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            disabled={!goals}
+            aria-label="Edit baseline burn"
+            className="-my-2 flex min-h-[44px] items-center gap-1 rounded-lg pr-1 transition hover:text-text"
+          >
+            Baseline <span className="tabular-nums text-text">{baseline}</span>
+            {goals?.baseline_kcal != null && <span className="text-[10px] text-muted">(set)</span>}
+            <Pencil className="ml-0.5 h-3 w-3" />
+          </button>
+          <span>
+            Exercise <span className="tabular-nums text-text">+{exercise}</span>
+          </span>
+        </div>
+      )}
     </section>
+  );
+}
+
+function BaselineEditor({
+  goals,
+  baseline,
+  estimate,
+  onDone,
+}: {
+  goals: LocalFoodGoal;
+  baseline: number;
+  estimate: number | null;
+  onDone: () => void;
+}) {
+  const [value, setValue] = useState(String(baseline));
+  const [saving, setSaving] = useState(false);
+  const num = value.trim() ? Number(value) : null;
+  const valid = num != null && Number.isFinite(num) && num >= 0;
+
+  async function save(baselineKcal: number | null) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await syncEngine.mutations.setFoodGoals({
+        calorie_goal: goals.calorie_goal,
+        protein_goal: goals.protein_goal,
+        baseline_kcal: baselineKcal,
+      });
+      onDone();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      className="mt-3 space-y-2 border-t border-line pt-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) void save(num);
+      }}
+    >
+      <div className="text-xs uppercase tracking-wide text-muted">Baseline burn (kcal/day)</div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-label="Baseline burn"
+          className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface2 px-3 text-base tabular-nums text-text outline-none focus:border-accent"
+        />
+        <button
+          type="submit"
+          disabled={!valid || saving}
+          aria-label="Save baseline"
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-bg transition disabled:opacity-50"
+        >
+          <Check className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          aria-label="Cancel"
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-muted transition hover:bg-surface2"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      {goals.baseline_kcal != null && estimate != null && (
+        <button
+          type="button"
+          onClick={() => void save(null)}
+          disabled={saving}
+          className="flex min-h-[44px] items-center gap-1.5 text-xs text-accent"
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> Use estimate ({estimate})
+        </button>
+      )}
+    </form>
   );
 }
 

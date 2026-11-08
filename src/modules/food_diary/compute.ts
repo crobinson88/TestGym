@@ -208,6 +208,16 @@ export function baselineBurn(bmr: number | null, activityFactor: number): number
   return Math.round(bmr * activityFactor);
 }
 
+// The baseline actually used in the balance: a hand-entered value wins over the
+// BMR × activity estimate, so the number can be set even without a body profile.
+export function effectiveBaseline(
+  override: number | null | undefined,
+  estimate: number | null,
+): number | null {
+  if (override != null && Number.isFinite(override) && override >= 0) return Math.round(override);
+  return estimate;
+}
+
 // Calories burned from a cardio session's MET-minutes:
 //   kcal = MET × 3.5 × kg / 200 × minutes = met_minutes × kg × 0.0175
 // Sums a day's sessions. Returns 0 when weight is unknown (can't convert).

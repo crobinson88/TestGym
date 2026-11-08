@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, ChevronLeft, Flame } from "lucide-react";
+import { Check, ChevronLeft, Flame, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { syncEngine } from "@/lib/sync";
 import type { BodySex } from "@/lib/database.types";
 import { useFoodGoals } from "../hooks";
-import { baselineBurn, cmToFtIn, ftInToCm, lbToKg, mifflinBmr } from "../compute";
+import { baselineBurn, cmToFtIn, effectiveBaseline, ftInToCm, lbToKg, mifflinBmr } from "../compute";
 
 // Base (non-exercise) activity multipliers. Logged gym cardio is added on top,
 // so default to sedentary to avoid double-counting.
@@ -30,6 +30,7 @@ export default function FoodGoals() {
   const [heightIn, setHeightIn] = useState("");
   const [weightLb, setWeightLb] = useState("197");
   const [activity, setActivity] = useState<number>(1.2);
+  const [baselineOverride, setBaselineOverride] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export default function FoodGoals() {
       setAge(goals.age != null ? String(goals.age) : "");
       setWeightLb(goals.weight_lb != null ? String(goals.weight_lb) : "");
       setActivity(goals.activity_factor);
+      setBaselineOverride(goals.baseline_kcal != null ? String(goals.baseline_kcal) : "");
       if (goals.height_cm != null) {
         const { feet, inches } = cmToFtIn(goals.height_cm);
         setHeightFt(String(feet));
@@ -63,7 +65,10 @@ export default function FoodGoals() {
   const weightKg = weightNum != null && weightNum > 0 ? lbToKg(weightNum) : null;
 
   const bmr = mifflinBmr({ sex, age: ageNum, heightCm, weightKg });
-  const baseline = baselineBurn(bmr, activity);
+  const estimate = baselineBurn(bmr, activity);
+  const overrideNum = baselineOverride.trim() ? Number(baselineOverride) : null;
+  const overrideValid = overrideNum == null || (Number.isFinite(overrideNum) && overrideNum >= 0);
+  const baseline = effectiveBaseline(overrideValid ? overrideNum : null, estimate);
 
   const goalsValid =
     calorieGoal.trim().length > 0 &&
@@ -71,7 +76,8 @@ export default function FoodGoals() {
     Number.isFinite(calorieNum) &&
     calorieNum >= 0 &&
     Number.isFinite(proteinNum) &&
-    proteinNum >= 0;
+    proteinNum >= 0 &&
+    overrideValid;
 
   async function save() {
     if (!goalsValid || saving) return;
@@ -86,6 +92,7 @@ export default function FoodGoals() {
         height_cm: heightCm,
         weight_lb: weightNum,
         activity_factor: activity,
+        baseline_kcal: overrideNum,
       });
       navigate("/food");
     } catch (err) {
@@ -233,18 +240,52 @@ export default function FoodGoals() {
             </div>
           </Field>
 
-          <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4">
-            <Flame className="h-6 w-6 shrink-0 text-accent" />
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted">Baseline daily burn</div>
-              {baseline != null ? (
-                <div className="text-xl font-bold tabular-nums text-text">
-                  {baseline} <span className="text-sm font-normal text-muted">kcal/day</span>
-                </div>
-              ) : (
-                <div className="text-sm text-muted">Add age, height and weight to estimate.</div>
-              )}
+          <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+            <div className="flex items-center gap-3">
+              <Flame className="h-6 w-6 shrink-0 text-accent" />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs uppercase tracking-wide text-muted">Baseline daily burn</div>
+                {baseline != null ? (
+                  <div className="text-xl font-bold tabular-nums text-text">
+                    {baseline} <span className="text-sm font-normal text-muted">kcal/day</span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted">
+                    Add age, height and weight to estimate, or type your own below.
+                  </div>
+                )}
+              </div>
             </div>
+            <label className="block space-y-2">
+              <span className="text-xs uppercase tracking-wide text-muted">Your own number (kcal/day)</span>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={baselineOverride}
+                  onChange={(e) => setBaselineOverride(e.target.value)}
+                  placeholder={estimate != null ? String(estimate) : "e.g. 2200"}
+                  aria-invalid={!overrideValid}
+                />
+                {baselineOverride.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setBaselineOverride("")}
+                    className="flex h-12 shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 text-sm text-muted transition hover:bg-surface2"
+                  >
+                    <RotateCcw className="h-4 w-4" /> Use estimate
+                  </button>
+                )}
+              </div>
+              <span className="block text-xs text-muted">
+                {overrideNum != null && overrideValid
+                  ? estimate != null
+                    ? `Overriding the ${estimate} kcal estimate.`
+                    : "Used as your baseline burn."
+                  : "Leave blank to use the estimate from your body profile."}
+              </span>
+            </label>
           </div>
         </section>
 

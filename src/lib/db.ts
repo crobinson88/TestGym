@@ -443,6 +443,14 @@ export class GymDB extends Dexie {
     this.version(32).stores({
       hic_attempts: "id, section, started_at, updated_at, sync_status, deleted_at",
     });
+    this.version(33).upgrade(async (tx) => {
+      await tx
+        .table("food_goals")
+        .toCollection()
+        .modify((row: LocalFoodGoal) => {
+          if (row.baseline_kcal === undefined) row.baseline_kcal = null;
+        });
+    });
   }
 }
 

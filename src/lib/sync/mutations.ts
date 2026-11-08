@@ -190,6 +190,7 @@ export interface SetFoodGoalsInput {
   height_cm?: number | null;
   weight_lb?: number | null;
   activity_factor?: number;
+  baseline_kcal?: number | null;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -1161,6 +1162,12 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
         input.activity_factor !== undefined
           ? Math.max(1, input.activity_factor)
           : current?.activity_factor ?? 1.2,
+      baseline_kcal:
+        input.baseline_kcal !== undefined
+          ? input.baseline_kcal == null || !Number.isFinite(input.baseline_kcal) || input.baseline_kcal < 0
+            ? null
+            : Math.round(input.baseline_kcal)
+          : current?.baseline_kcal ?? null,
     };
 
     if (current) {
