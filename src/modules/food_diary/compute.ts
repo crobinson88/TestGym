@@ -65,7 +65,9 @@ export interface RecentFood {
 // Distinct foods logged previously, most-recently-logged first, so a food can
 // be re-logged onto the current day with one tap. Deduped by name
 // (case-insensitive, trimmed); the most recent entry's macros win. Pass
-// `excludeDate` (today) to keep the picker to prior logs only.
+// `excludeDate` (today) to keep the picker to prior logs only. Logs kept out of
+// the library (`in_library = false`) are skipped, so a title only appears once
+// a log of it has been saved to the library.
 export function recentFoods(
   entries: FoodEntryRow[],
   opts: { excludeDate?: string; limit?: number } = {},
@@ -74,6 +76,7 @@ export function recentFoods(
   const byName = new Map<string, FoodEntryRow>();
   for (const e of entries) {
     if (excludeDate && e.entry_date === excludeDate) continue;
+    if (e.in_library === false) continue;
     const key = e.name.trim().toLowerCase();
     if (!key) continue;
     const seen = byName.get(key);
@@ -132,7 +135,9 @@ function byName(a: LibraryFood, b: LibraryFood): number {
 export function isInLibrary(entries: FoodEntryRow[], name: string): boolean {
   const key = name.trim().toLowerCase();
   if (!key) return false;
-  return entries.some((e) => !e.deleted_at && e.name.trim().toLowerCase() === key);
+  return entries.some(
+    (e) => !e.deleted_at && e.in_library !== false && e.name.trim().toLowerCase() === key,
+  );
 }
 
 // How much of each entry's calories the day's energy budget (its burn) covers,

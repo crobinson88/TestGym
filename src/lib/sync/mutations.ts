@@ -174,6 +174,8 @@ export interface AddFoodEntryInput {
   calories: number;
   protein: number;
   entry_date?: string;
+  // Defaults to true: every log joins the library unless told otherwise.
+  in_library?: boolean;
 }
 
 export type UpdateFoodEntryInput = Partial<AddFoodEntryInput>;
@@ -1077,6 +1079,7 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       name: input.name.trim(),
       calories: clampNonNeg(input.calories),
       protein: clampNonNeg(input.protein),
+      in_library: input.in_library ?? true,
       client_id: id,
       user_id: null,
       ...baseRowDefaults(ts),
@@ -1100,6 +1103,8 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
       calories: patch.calories !== undefined ? clampNonNeg(patch.calories) : existing.calories,
       protein: patch.protein !== undefined ? clampNonNeg(patch.protein) : existing.protein,
       entry_date: patch.entry_date !== undefined ? patch.entry_date : existing.entry_date,
+      in_library:
+        patch.in_library !== undefined ? patch.in_library : (existing.in_library ?? true),
       updated_at: ts,
       sync_status: "pending",
     };

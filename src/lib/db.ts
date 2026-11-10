@@ -451,6 +451,14 @@ export class GymDB extends Dexie {
           if (row.baseline_kcal === undefined) row.baseline_kcal = null;
         });
     });
+    this.version(34).upgrade(async (tx) => {
+      await tx
+        .table("food_entries")
+        .toCollection()
+        .modify((row: LocalFoodEntry) => {
+          if (row.in_library === undefined) row.in_library = true;
+        });
+    });
   }
 }
 

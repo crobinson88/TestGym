@@ -420,6 +420,7 @@ async function mergeFoodEntries(db: GymDB, rows: FoodEntryRow[]) {
           ...remote,
           calories: Number(remote.calories),
           protein: Number(remote.protein),
+          in_library: remote.in_library ?? true,
           sync_status: "synced",
         });
       }

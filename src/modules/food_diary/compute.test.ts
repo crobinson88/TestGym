@@ -30,6 +30,7 @@ function entry(over: Partial<FoodEntryRow> = {}): FoodEntryRow {
     name: "Chicken",
     calories: 200,
     protein: 40,
+    in_library: true,
     client_id: null,
     user_id: null,
     created_at: "2026-07-16T10:00:00.000Z",
@@ -142,6 +143,28 @@ describe("foodLibrary", () => {
     );
     expect(lib.map((f) => f.name)).toEqual(["Latte"]);
   });
+
+  it("leaves out logs kept out of the library", () => {
+    const lib = foodLibrary([
+      entry({ name: "Oats" }),
+      entry({ name: "Mystery curry", in_library: false }),
+    ]);
+    expect(lib.map((f) => f.name)).toEqual(["Oats"]);
+  });
+
+  it("takes macros from the newest library log, not a newer opted-out one", () => {
+    const lib = foodLibrary([
+      entry({ name: "Latte", calories: 120, created_at: "2026-07-14T08:00:00.000Z" }),
+      entry({
+        name: "latte",
+        calories: 300,
+        in_library: false,
+        created_at: "2026-07-16T08:00:00.000Z",
+      }),
+    ]);
+    expect(lib).toHaveLength(1);
+    expect(lib[0].calories).toBe(120);
+  });
 });
 
 describe("isInLibrary", () => {
@@ -158,6 +181,10 @@ describe("isInLibrary", () => {
 
   it("ignores soft-deleted entries", () => {
     expect(isInLibrary([entry({ name: "Latte", deleted_at: "x" })], "Latte")).toBe(false);
+  });
+
+  it("ignores logs kept out of the library", () => {
+    expect(isInLibrary([entry({ name: "Latte", in_library: false })], "Latte")).toBe(false);
   });
 });
 
