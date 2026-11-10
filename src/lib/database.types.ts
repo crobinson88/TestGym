@@ -623,6 +623,9 @@ export interface FoodEntryRow {
   name: string;
   calories: number;
   protein: number;
+  // Whether this log feeds the food library. False = logged but kept out of it
+  // (an AI estimate the user chose not to save).
+  in_library: boolean;
   client_id: string | null;
   user_id: string | null;
   created_at: string;

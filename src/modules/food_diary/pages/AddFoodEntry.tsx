@@ -21,6 +21,7 @@ import { useFoodEntries, useFoodEntry } from "../hooks";
 import {
   foodDayPath,
   foodLibrary,
+  isInLibrary,
   parseDayParam,
   searchLibrary,
   type LibraryFood,
@@ -60,6 +61,10 @@ export default function AddFoodEntry() {
   const [estimating, setEstimating] = useState(false);
   const [estimatingText, setEstimatingText] = useState(false);
   const [estimateNote, setEstimateNote] = useState<string | null>(null);
+  // Set once an AI estimate fills the form: "Log it" then asks whether the food
+  // should join the library (and under what label) before saving.
+  const [aiEstimated, setAiEstimated] = useState(false);
+  const [libraryPrompt, setLibraryPrompt] = useState(false);
   const [description, setDescription] = useState("");
   const [librarySearch, setLibrarySearch] = useState("");
   const [addMode, setAddModeState] = useState<AddMode>(loadAddMode);
@@ -98,6 +103,7 @@ export default function AddFoodEntry() {
       if (est.name && !name.trim()) setName(est.name);
       setCalories(String(est.calories));
       setProtein(String(est.protein));
+      setAiEstimated(true);
       const pct = Math.round(est.confidence * 100);
       setEstimateNote(
         `AI estimate${Number.isFinite(pct) ? ` · ${pct}% confidence` : ""} — check and adjust before saving.`,
@@ -124,6 +130,7 @@ export default function AddFoodEntry() {
       if (est.name && !name.trim()) setName(est.name);
       setCalories(String(est.calories));
       setProtein(String(est.protein));
+      setAiEstimated(true);
       const pct = Math.round(est.confidence * 100);
       setEstimateNote(
         `AI estimate${Number.isFinite(pct) ? ` · ${pct}% confidence` : ""} — check and adjust before saving.`,
@@ -189,8 +196,16 @@ export default function AddFoodEntry() {
     Number.isFinite(proteinNum) &&
     proteinNum >= 0;
 
-  async function save() {
+  function onLogIt() {
     if (!valid || saving) return;
+    if (!editing && aiEstimated) setLibraryPrompt(true);
+    else void save();
+  }
+
+  async function save(opts: { name?: string; inLibrary?: boolean } = {}) {
+    if (!valid || saving) return;
+    const finalName = (opts.name ?? name).trim();
+    if (!finalName) return;
     setSaving(true);
     setError(null);
     try {
@@ -203,14 +218,16 @@ export default function AddFoodEntry() {
         });
       } else {
         await syncEngine.mutations.addFoodEntry({
-          name: name.trim(),
+          name: finalName,
           calories: caloriesNum,
           protein: proteinNum,
           entry_date: date,
+          in_library: opts.inLibrary ?? true,
         });
       }
       navigate(foodDayPath(date, today));
     } catch (err) {
+      setLibraryPrompt(false);
       setError((err as Error).message);
     } finally {
       setSaving(false);
@@ -268,7 +285,7 @@ export default function AddFoodEntry() {
         <DateField value={date} today={today} onChange={setDate} />
 
         <div className="space-y-3">
-          <Button onClick={save} size="lg" className="w-full" disabled={!valid || saving}>
+          <Button onClick={onLogIt} size="lg" className="w-full" disabled={!valid || saving}>
             {saving ? (
               "Saving…"
             ) : (
@@ -445,6 +462,113 @@ export default function AddFoodEntry() {
               placeholder="0"
             />
           </Field>
+        </div>
+      </div>
+
+      {libraryPrompt && (
+        <SaveToLibraryPrompt
+          initialLabel={name.trim()}
+          calories={caloriesNum}
+          protein={proteinNum}
+          alreadyIn={(label) => isInLibrary(allEntries ?? [], label)}
+          saving={saving}
+          onSave={(label) => save({ name: label, inLibrary: true })}
+          onSkip={() => save({ inLibrary: false })}
+          onCancel={() => setLibraryPrompt(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Asked after "Log it" on an AI estimate: an estimate is a one-off guess, so it
+// only joins the library when the user says so, under a label they can tidy up
+// first (the label becomes the entry's name — the library is keyed on it).
+// Skipping still logs the entry, just kept out of the library.
+function SaveToLibraryPrompt({
+  initialLabel,
+  calories,
+  protein,
+  alreadyIn,
+  saving,
+  onSave,
+  onSkip,
+  onCancel,
+}: {
+  initialLabel: string;
+  calories: number;
+  protein: number;
+  alreadyIn: (label: string) => boolean;
+  saving: boolean;
+  onSave: (label: string) => void;
+  onSkip: () => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState(initialLabel);
+  const trimmed = label.trim();
+  const exists = trimmed.length > 0 && alreadyIn(trimmed);
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-end justify-center bg-black/70 p-2 sm:items-center"
+      onClick={saving ? undefined : onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-to-library-title"
+        className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-surface p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-2">
+          <Library className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+          <div className="min-w-0 flex-1">
+            <h2 id="save-to-library-title" className="font-medium text-text">
+              Save this estimate to your library?
+            </h2>
+            <p className="text-sm text-muted">
+              {calories} kcal · {formatProtein(protein)} g protein — one tap to log next time.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            aria-label="Back to the form"
+            className="-mr-2 -mt-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:text-text"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <Field label="Library label">
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Name it in your library"
+            enterKeyHint="done"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && trimmed && !saving) onSave(trimmed);
+            }}
+          />
+        </Field>
+        {exists && (
+          <p className="-mt-2 text-xs text-muted">
+            Already in your library — saving updates it to these macros.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={() => onSave(trimmed)}
+            disabled={!trimmed || saving}
+          >
+            <Check className="mr-2 h-5 w-5" /> {saving ? "Saving…" : "Save to library & log"}
+          </Button>
+          <Button variant="ghost" size="lg" className="w-full" onClick={onSkip} disabled={saving}>
+            Just log it
+          </Button>
         </div>
       </div>
     </div>
