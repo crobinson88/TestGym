@@ -680,6 +680,28 @@ export interface EmailReviewRow {
   deleted_at: string | null;
 }
 
+// One Trello card created from a to-do task by "Push to Trello". Written by the
+// server once the card exists; read here to warn before a task is pushed twice.
+export interface TdlTrelloCardRow {
+  id: string;
+  // Roll-forward chain root (rootItemId), so a task carried day to day reads
+  // as already pushed on every one of its rows.
+  thread_id: string;
+  item_id: string;
+  board_id: string;
+  board_name: string | null;
+  list_id: string;
+  list_name: string | null;
+  card_id: string;
+  card_url: string;
+  card_name: string;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -912,6 +934,15 @@ export type Database = {
           reviewed_at?: string;
         };
         Update: Partial<EmailReviewRow>;
+      };
+      tdl_trello_cards: {
+        Row: TdlTrelloCardRow;
+        Insert: Omit<TdlTrelloCardRow, "created_at" | "updated_at" | "user_id"> & {
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<TdlTrelloCardRow>;
       };
     };
   };
