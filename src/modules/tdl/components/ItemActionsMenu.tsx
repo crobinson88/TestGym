@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import {
   Archive,
   BellOff,
@@ -13,6 +13,7 @@ import {
   Pencil,
   Play,
   StickyNote,
+  Send,
   ThumbsDown,
   Trash2,
   X,
@@ -33,6 +34,12 @@ import {
 import { completeItems } from "../completions";
 import { isSnoozed } from "../snooze";
 import { WorkstreamMenuItems } from "./WorkstreamMenuItems";
+
+// Loaded on first open: it pulls in the Supabase client and the Trello calls,
+// which every row and card would otherwise carry for a rarely-used action.
+const PushToTrelloDialog = lazy(() =>
+  import("./PushToTrelloDialog").then((m) => ({ default: m.PushToTrelloDialog })),
+);
 
 // The per-item "More" menu, shared by the list rows and the board cards so both
 // surfaces offer exactly the same actions. The host owns rename, the detail
@@ -74,6 +81,9 @@ export function ItemActionsMenu({
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [grouping, setGrouping] = useState(false);
+  // The ids are captured when the dialog opens, so clearing the selection
+  // behind it can't change which tasks are being pushed.
+  const [trelloIds, setTrelloIds] = useState<string[] | null>(null);
 
   function setOpen(next: boolean) {
     setMenu(next);
@@ -225,6 +235,16 @@ export function ItemActionsMenu({
               <Clock className="h-4 w-4" /> Snooze
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              setTrelloIds(targetIds);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface2"
+          >
+            <Send className="h-4 w-4" /> Push to Trello
+          </button>
           {!item.is_recurring && (
             <button
               type="button"
@@ -291,6 +311,18 @@ export function ItemActionsMenu({
             <Trash2 className="h-4 w-4" /> Delete
           </button>
         </div>
+      )}
+      {trelloIds && (
+        <Suspense fallback={null}>
+          <PushToTrelloDialog
+            itemIds={trelloIds}
+            categories={categories}
+            onClose={() => {
+              setTrelloIds(null);
+              afterAction();
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );
