@@ -3,7 +3,7 @@
 // trelloApi.ts so everything here stays testable.
 import type { LocalTdlItem } from "./types";
 
-export type TrelloBoard = { id: string; name: string; url: string; workspace: string | null };
+export type TrelloBoard = { id: string; name: string; url: string };
 export type TrelloList = { id: string; name: string };
 export type TrelloLabel = { id: string; name: string; color: string | null };
 export type TrelloMember = { id: string; fullName: string; username: string };
@@ -137,24 +137,6 @@ export function describePushResults(results: readonly PushResult[]): string {
   if (failed) parts.push(`${failed} failed`);
   if (lostImages) parts.push(`${lostImages} image${lostImages === 1 ? "" : "s"} didn't attach`);
   return parts.join(" · ");
-}
-
-// Boards grouped under their workspace for the picker, in the order given
-// (the server sorts by workspace then name); boards outside any workspace last.
-export function groupBoardsByWorkspace(
-  boards: readonly TrelloBoard[],
-): { workspace: string; boards: TrelloBoard[] }[] {
-  const groups = new Map<string, TrelloBoard[]>();
-  for (const b of boards) {
-    const key = b.workspace ?? "Other boards";
-    const list = groups.get(key);
-    if (list) list.push(b);
-    else groups.set(key, [b]);
-  }
-  const out = [...groups].map(([workspace, bs]) => ({ workspace, boards: bs }));
-  const other = out.findIndex((g) => g.workspace === "Other boards");
-  if (other >= 0) out.push(...out.splice(other, 1));
-  return out;
 }
 
 export function toggleId(ids: readonly string[], id: string): string[] {

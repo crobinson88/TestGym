@@ -18,7 +18,7 @@
 //     window runs to four figures. Same budget reason again: api/ is at
 //     exactly 12 functions.
 //  5. action:"trello-boards" / "trello-board" / "trello-push" — the to-do
-//     list's "Push to Trello": list the user's boards, read one board's lists,
+//     list's "Push to Trello": list the boards in the TGM workspace, read one board's lists,
 //     labels and members, then create cards (images attached from storage) and
 //     log each against its task's chain. Same budget reason.
 import {
@@ -38,7 +38,7 @@ import {
 } from "./_gcal.js";
 import { collectReviewCandidates } from "./_gmail.js";
 import { triageInbox } from "./_workstreams.js";
-import { boardMeta, listBoards, pushCards, type PushBody } from "./_trello.js";
+import { boardMeta, listBoards, pushCards, WORKSPACE, type PushBody } from "./_trello.js";
 
 // Listing is quick; the calendar branch loops a handful of REST calls, and the
 // review branch reads several mailboxes and calls Claude once per mailbox. 60s
@@ -86,7 +86,8 @@ export async function POST(request: Request): Promise<Response> {
     if (body?.action === "workstream-triage") return json(await triageInbox(supabase), 200);
     if (body?.action === "email-review")
       return json(await collectReviewCandidates(supabase, body.cursors ?? {}), 200);
-    if (body?.action === "trello-boards") return json({ boards: await listBoards() }, 200);
+    if (body?.action === "trello-boards")
+      return json({ workspace: WORKSPACE, boards: await listBoards() }, 200);
     if (body?.action === "trello-board") return json(await boardMeta(body.boardId ?? ""), 200);
     if (body?.action === "trello-push") return json({ results: await pushCards(supabase, body) }, 200);
 

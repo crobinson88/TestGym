@@ -5,7 +5,6 @@ import {
   describePushResults,
   draftFromItem,
   dueToIso,
-  groupBoardsByWorkspace,
   labelSwatch,
   labelText,
   latestPushByThread,
@@ -211,14 +210,3 @@ describe("parseTarget", () => {
   });
 });
 
-describe("groupBoardsByWorkspace", () => {
-  it("groups boards under their workspace, boards outside any workspace last", () => {
-    const b = (id: string, workspace: string | null) => ({ id, name: id, url: "", workspace });
-    const groups = groupBoardsByWorkspace([b("loose", null), b("ops", "TGM"), b("crm", "TGM"), b("home", "Personal")]);
-    expect(groups.map((g) => [g.workspace, g.boards.map((x) => x.id)])).toEqual([
-      ["TGM", ["ops", "crm"]],
-      ["Personal", ["home"]],
-      ["Other boards", ["loose"]],
-    ]);
-  });
-});

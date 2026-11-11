@@ -23,10 +23,13 @@ vi.mock("../storage", () => ({
 const pushToTrello = vi.fn();
 let pushedRows: PushedCard[] = [];
 vi.mock("../trelloApi", () => ({
-  fetchTrelloBoards: async () => [
-    { id: "board-1", name: "Ops", url: "https://trello.com/b/1", workspace: "TGM" },
-    { id: "board-2", name: "Personal", url: "https://trello.com/b/2", workspace: null },
-  ],
+  fetchTrelloBoards: async () => ({
+    workspace: "TGM",
+    boards: [
+      { id: "board-1", name: "Ops", url: "https://trello.com/b/1" },
+      { id: "board-2", name: "Personal", url: "https://trello.com/b/2" },
+    ],
+  }),
   fetchTrelloBoard: async (_t: string, id: string) => ({
     id,
     name: id === "board-1" ? "Ops" : "Personal",
@@ -91,6 +94,7 @@ beforeEach(() => {
 });
 
 async function pickBoard(name = "Board") {
+  expect(await screen.findByText("Board · TGM workspace")).toBeInTheDocument();
   await screen.findByRole("option", { name: "Ops" });
   fireEvent.change(screen.getByLabelText(name), { target: { value: "board-1" } });
   await screen.findByRole("option", { name: "To do" });

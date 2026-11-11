@@ -30,9 +30,15 @@ async function call<T>(token: string, body: Record<string, unknown>): Promise<T>
   return parsed;
 }
 
-export async function fetchTrelloBoards(token: string): Promise<TrelloBoard[]> {
-  const r = await call<{ boards?: TrelloBoard[] }>(token, { action: "trello-boards" });
-  return r.boards ?? [];
+// The boards in the push workspace (TGM) — the server filters, so a board in
+// any other workspace never reaches the picker.
+export async function fetchTrelloBoards(
+  token: string,
+): Promise<{ workspace: string; boards: TrelloBoard[] }> {
+  const r = await call<{ workspace?: string; boards?: TrelloBoard[] }>(token, {
+    action: "trello-boards",
+  });
+  return { workspace: r.workspace ?? "TGM", boards: r.boards ?? [] };
 }
 
 export async function fetchTrelloBoard(token: string, boardId: string): Promise<TrelloBoardMeta> {

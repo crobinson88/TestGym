@@ -22,7 +22,6 @@ import { tdlSignedUrlMap, uploadTdlImages } from "../storage";
 import {
   describePushResults,
   draftFromItem,
-  groupBoardsByWorkspace,
   labelSwatch,
   labelText,
   latestPushByThread,
@@ -71,6 +70,7 @@ export function PushToTrelloDialog({
 
   const remembered = useRef(loadTrelloTarget());
   const [boards, setBoards] = useState<TrelloBoard[] | null>(null);
+  const [workspace, setWorkspace] = useState("TGM");
   const [boardId, setBoardId] = useState<string | null>(null);
   const [meta, setMeta] = useState<TrelloBoardMeta | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
@@ -129,8 +129,9 @@ export function PushToTrelloDialog({
     let active = true;
     setLoadError(null);
     fetchTrelloBoards(token)
-      .then((b) => {
+      .then(({ workspace: ws, boards: b }) => {
         if (!active) return;
+        setWorkspace(ws);
         setBoards(b);
         const want = remembered.current.boardId;
         setBoardId(want && b.some((x) => x.id === want) ? want : null);
@@ -289,25 +290,26 @@ export function PushToTrelloDialog({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className={fieldLabel}>Board</span>
+                <span className={fieldLabel}>Board · {workspace} workspace</span>
                 <select
                   value={boardId ?? ""}
                   onChange={(e) => setBoardId(e.target.value || null)}
-                  disabled={!boards}
+                  disabled={!boards || boards.length === 0}
                   aria-label="Board"
                   className={selectClass}
                 >
-                  <option value="">{boards ? "Choose a board…" : "Loading boards…"}</option>
-                  {boards &&
-                    groupBoardsByWorkspace(boards).map((g) => (
-                      <optgroup key={g.workspace} label={g.workspace}>
-                        {g.boards.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
+                  <option value="">
+                    {!boards
+                      ? "Loading boards…"
+                      : boards.length === 0
+                        ? `No open boards in ${workspace}`
+                        : "Choose a board…"}
+                  </option>
+                  {boards?.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="block">

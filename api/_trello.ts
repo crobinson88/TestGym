@@ -16,10 +16,20 @@ const BUCKET = "share-images";
 const ATTACHABLE_PREFIX = "tdl/";
 const MAX_CARDS = 25;
 const MAX_IMAGES_PER_CARD = 10;
+// Pushes only ever go to boards in this one Trello workspace, matched on its
+// display name or its short name, case-insensitively. TRELLO_WORKSPACE
+// overrides it without a code change.
+export const WORKSPACE = process.env.TRELLO_WORKSPACE?.trim() || "TGM";
 
-// `workspace` is the Trello workspace (organization) name; null for a board
-// that sits outside any workspace.
-export type TrelloBoard = { id: string; name: string; url: string; workspace: string | null };
+type Org = { name?: string; displayName?: string } | null | undefined;
+
+export function inWorkspace(org: Org, workspace = WORKSPACE): boolean {
+  if (!org) return false;
+  const want = workspace.toLowerCase();
+  return org.displayName?.trim().toLowerCase() === want || org.name?.trim().toLowerCase() === want;
+}
+
+export type TrelloBoard = { id: string; name: string; url: string };
 export type TrelloList = { id: string; name: string };
 export type TrelloLabel = { id: string; name: string; color: string | null };
 export type TrelloMember = { id: string; fullName: string; username: string };
@@ -75,19 +85,15 @@ async function trello<T>(path: string, init: RequestInit = {}): Promise<T> {
 const isId = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{24}$/i.test(v);
 
 export async function listBoards(): Promise<TrelloBoard[]> {
-  // Every open board the token's account can see, across all its workspaces.
-  const boards = await trello<
-    { id: string; name: string; url: string; organization?: { displayName?: string } | null }[]
-  >(`/members/me/boards?filter=open&fields=name,url,idOrganization&organization=true&organization_fields=displayName`);
-  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
+  // The open boards in the push workspace; boards in any other workspace (or
+  // none) are never offered.
+  const boards = await trello<{ id: string; name: string; url: string; organization?: Org }[]>(
+    `/members/me/boards?filter=open&fields=name,url,idOrganization&organization=true&organization_fields=name,displayName`,
+  );
   return boards
-    .map((b) => ({
-      id: b.id,
-      name: b.name,
-      url: b.url,
-      workspace: b.organization?.displayName?.trim() || null,
-    }))
-    .sort((a, b) => byName(a.workspace ?? "\uffff", b.workspace ?? "\uffff") || byName(a.name, b.name));
+    .filter((b) => inWorkspace(b.organization))
+    .map((b) => ({ id: b.id, name: b.name, url: b.url }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
 export async function boardMeta(boardId: string): Promise<TrelloBoardMeta> {
@@ -101,14 +107,18 @@ export async function boardMeta(boardId: string): Promise<TrelloBoardMeta> {
     "labels_limit=1000",
     "members=all",
     "member_fields=fullName,username",
+    "organization=true",
+    "organization_fields=name,displayName",
   ].join("&");
   const b = await trello<{
     id: string;
     name: string;
+    organization?: Org;
     lists?: (TrelloList & { pos?: number })[];
     labels?: TrelloLabel[];
     members?: TrelloMember[];
   }>(`/boards/${boardId}?${query}`);
+  if (!inWorkspace(b.organization)) throw new Error(`board is not in the ${WORKSPACE} workspace`);
   return {
     id: b.id,
     name: b.name,
@@ -144,8 +154,14 @@ export async function pushCards(supabase: Db, body: PushBody): Promise<PushResul
   const cards = (body.cards ?? []).filter((c) => c.itemId && c.name?.trim());
   if (cards.length === 0) throw new Error("no cards");
   if (cards.length > MAX_CARDS) throw new Error(`at most ${MAX_CARDS} cards per push`);
-  const labelIds = (body.labelIds ?? []).filter(isId);
-  const memberIds = (body.memberIds ?? []).filter(isId);
+  // Re-checked here rather than trusted from the dialog: the board must be in
+  // the push workspace and the list, labels and people must belong to it.
+  const board = await boardMeta(boardId);
+  if (!board.lists.some((l) => l.id === listId)) throw new Error("that list isn't on this board");
+  const boardLabels = new Set(board.labels.map((l) => l.id));
+  const boardMembers = new Set(board.members.map((m) => m.id));
+  const labelIds = (body.labelIds ?? []).filter((id) => boardLabels.has(id));
+  const memberIds = (body.memberIds ?? []).filter((id) => boardMembers.has(id));
 
   const results: PushResult[] = [];
   for (const c of cards) {

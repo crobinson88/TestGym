@@ -14,6 +14,18 @@ function respond(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
+const TGM = { name: "tgm123", displayName: "TGM" };
+function boardBody(organization: unknown = TGM) {
+  return {
+    id: BOARD,
+    name: "Ops",
+    organization,
+    lists: [{ id: LIST, name: "To do", pos: 1 }],
+    labels: [{ id: LABEL, name: "Urgent", color: "red" }],
+    members: [{ id: MEMBER, fullName: "Sam", username: "sam" }],
+  };
+}
+
 function fakeDb() {
   const inserts: unknown[] = [];
   const downloads: string[] = [];
@@ -44,6 +56,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
       calls.push({ url, init });
+      if (url.includes("/boards/")) return respond(boardBody());
       if (url.endsWith("/cards")) return respond({ id: "card1", shortUrl: "https://trello.com/c/x" });
       if (url.includes("/attachments")) return respond({ id: "att" });
       return respond({});
@@ -63,7 +76,8 @@ describe("pushCards", () => {
       boardName: "Ops",
       listId: LIST,
       listName: "To do",
-      labelIds: [LABEL, "not-an-id"],
+      // The second label isn't on the board, so it's dropped.
+      labelIds: [LABEL, "e".repeat(24)],
       memberIds: [MEMBER],
       cards: [
         {
@@ -114,6 +128,7 @@ describe("pushCards", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
+        if (url.includes("/boards/")) return respond(boardBody());
         if (url.endsWith("/cards") && n++ === 0) return new Response("invalid list", { status: 400 });
         return respond({ id: "card2", url: "https://trello.com/c/y" });
       }),
@@ -130,6 +145,19 @@ describe("pushCards", () => {
     expect(results[0]).toMatchObject({ itemId: "a", ok: false });
     expect(results[0].error).toContain("400");
     expect(results[1]).toMatchObject({ itemId: "b", ok: true, url: "https://trello.com/c/y" });
+  });
+
+  it("refuses a board outside the TGM workspace, or a list not on the board", async () => {
+    const { db } = fakeDb();
+    vi.stubGlobal("fetch", vi.fn(async () => respond(boardBody({ name: "ddc", displayName: "DDC" }))));
+    await expect(
+      pushCards(db, { boardId: BOARD, listId: LIST, cards: [{ itemId: "a", name: "x" }] }),
+    ).rejects.toThrow("not in the TGM workspace");
+
+    vi.stubGlobal("fetch", vi.fn(async () => respond(boardBody())));
+    await expect(
+      pushCards(db, { boardId: BOARD, listId: "f".repeat(24), cards: [{ itemId: "a", name: "x" }] }),
+    ).rejects.toThrow("isn't on this board");
   });
 
   it("refuses a push with no target or no named cards", async () => {
@@ -151,6 +179,7 @@ describe("boardMeta", () => {
         respond({
           id: BOARD,
           name: "Ops",
+          organization: TGM,
           lists: [
             { id: "l2", name: "Doing", pos: 200 },
             { id: "l1", name: "To do", pos: 100 },
@@ -172,22 +201,21 @@ describe("boardMeta", () => {
 });
 
 describe("listBoards", () => {
-  it("returns every board with its workspace, sorted by workspace then name", async () => {
+  it("offers only the TGM workspace's boards, sorted by name", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
         respond([
-          { id: "1", name: "Zeta", url: "u1", organization: { displayName: "TGM" } },
-          { id: "2", name: "Alpha", url: "u2", organization: null },
-          { id: "3", name: "Beta", url: "u3", organization: { displayName: "TGM" } },
+          { id: "1", name: "TGM Spec", url: "u1", organization: { name: "x", displayName: "TGM" } },
+          { id: "2", name: "Loose", url: "u2", organization: null },
+          { id: "3", name: "Areej Testing", url: "u3", organization: { name: "tgm", displayName: "Renamed" } },
+          { id: "4", name: "DDC board", url: "u4", organization: { name: "ddc", displayName: "DDC" } },
+          { id: "5", name: "Guest", url: "u5", organization: { name: "creatif", displayName: "Creatif" } },
         ]),
       ),
     );
     const boards = await listBoards();
-    expect(boards.map((b) => [b.workspace, b.name])).toEqual([
-      ["TGM", "Beta"],
-      ["TGM", "Zeta"],
-      [null, "Alpha"],
-    ]);
+    // Matched on display name or short name, case-insensitively.
+    expect(boards.map((b) => b.name)).toEqual(["Areej Testing", "TGM Spec"]);
   });
 });
