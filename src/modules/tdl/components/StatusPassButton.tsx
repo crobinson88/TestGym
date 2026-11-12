@@ -367,6 +367,58 @@ export function StatusPassButton({
                 </div>
               </header>
 
+              {view !== "shortlist" && view !== "summary" && card && (
+                <div className="shrink-0 border-b border-line px-4 pt-4 pb-3">
+                  <div className="rounded-xl border border-line bg-surface2 p-4">
+                    <h3 className="break-words text-lg font-semibold leading-snug">
+                      {card.item.title}
+                    </h3>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
+                        {labelBySection.get(card.item.section) ??
+                          card.item.section}
+                      </span>
+                      <StatusPill
+                        status={card.item.status}
+                        section={card.item.section}
+                        compact
+                      />
+                      {currentRank != null && (
+                        <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                          P{currentRank}
+                        </span>
+                      )}
+                      {card.item.is_recurring && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
+                          <Repeat className="h-3 w-3 shrink-0" />
+                          Daily
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        {staleText(card)}
+                      </span>
+                      {card.item.due_date && (
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarClock className="h-3 w-3 shrink-0" />
+                          due {prettyDate(card.item.due_date)}
+                        </span>
+                      )}
+                      {card.item.time_estimate_min != null && (
+                        <span>{card.item.time_estimate_min}m</span>
+                      )}
+                    </div>
+                    {card.item.notes && (
+                      <p className="mt-3 max-h-[25vh] overflow-y-auto overscroll-contain whitespace-pre-wrap break-words border-t border-line pt-3 text-sm text-muted">
+                        {card.item.notes}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                 {view === "shortlist" ? (
                   <PriorityShortlistStep
@@ -385,7 +437,9 @@ export function StatusPassButton({
                   <div className="py-6 text-center">
                     <Check className="mx-auto h-10 w-10 text-success" />
                     <p className="mt-3 text-base font-semibold">
-                      {queue.length === 0 ? "Nothing to update" : "Pass complete"}
+                      {queue.length === 0
+                        ? "Nothing to update"
+                        : "Pass complete"}
                     </p>
                     <p className="mt-1 text-sm text-muted">
                       {describeStatusPass(decisions)}
@@ -398,55 +452,7 @@ export function StatusPassButton({
                   </div>
                 ) : card ? (
                   <>
-                    <div className="rounded-xl border border-line bg-surface2 p-4">
-                      <h3 className="text-lg font-semibold leading-snug">
-                        {card.item.title}
-                      </h3>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
-                          {labelBySection.get(card.item.section) ??
-                            card.item.section}
-                        </span>
-                        <StatusPill
-                          status={card.item.status}
-                          section={card.item.section}
-                          compact
-                        />
-                        {currentRank != null && (
-                          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
-                            P{currentRank}
-                          </span>
-                        )}
-                        {card.item.is_recurring && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">
-                            <Repeat className="h-3 w-3 shrink-0" />
-                            Daily
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="h-3 w-3 shrink-0" />
-                          {staleText(card)}
-                        </span>
-                        {card.item.due_date && (
-                          <span className="inline-flex items-center gap-1">
-                            <CalendarClock className="h-3 w-3 shrink-0" />
-                            due {prettyDate(card.item.due_date)}
-                          </span>
-                        )}
-                        {card.item.time_estimate_min != null && (
-                          <span>{card.item.time_estimate_min}m</span>
-                        )}
-                      </div>
-                      {card.item.notes && (
-                        <p className="mt-3 whitespace-pre-wrap border-t border-line pt-3 text-sm text-muted">
-                          {card.item.notes}
-                        </p>
-                      )}
-                    </div>
-
-                    <p className="mt-4 text-xs uppercase tracking-wider text-muted">
+                    <p className="text-xs uppercase tracking-wider text-muted">
                       Priority
                     </p>
                     <button
@@ -462,9 +468,14 @@ export function StatusPassButton({
                       )}
                     >
                       <Star
-                        className={cn("h-4 w-4 shrink-0", tagged && "fill-current")}
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          tagged && "fill-current",
+                        )}
                       />
-                      {tagged ? "Tagged a potential priority" : "Tag as potential priority"}
+                      {tagged
+                        ? "Tagged a potential priority"
+                        : "Tag as potential priority"}
                       <span className="ml-auto text-[11px] font-normal tabular-nums opacity-80">
                         {shortlist.nominated.length} tagged
                         {cutCount > 0 && " · sorted at the end"}
