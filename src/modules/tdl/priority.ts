@@ -53,3 +53,28 @@ export function reorderedRankAssignments<T extends { id: string; priority_rank: 
   }
   return out;
 }
+
+// The day's ten priority slots, 1 → 10, each holding the task on that rank or
+// null when it is free. `override` lets a caller show a rank it has just set
+// before the store catches up: that task is moved to its new slot (or out of
+// the list when the rank is null), displacing whoever held it.
+export function prioritySlots<T extends { id: string; priority_rank: number | null }>(
+  items: readonly T[],
+  override?: { id: string; rank: number | null },
+): { rank: number; item: T | null }[] {
+  const byRank = new Map<number, T>();
+  let moved: T | undefined;
+  for (const i of items) {
+    if (override && i.id === override.id) {
+      moved = i;
+      continue;
+    }
+    if (i.priority_rank != null && i.priority_rank >= 1 && i.priority_rank <= MAX_PRIORITY_RANK)
+      byRank.set(i.priority_rank, i);
+  }
+  if (moved && override?.rank != null) byRank.set(override.rank, moved);
+  return Array.from({ length: MAX_PRIORITY_RANK }, (_, n) => ({
+    rank: n + 1,
+    item: byRank.get(n + 1) ?? null,
+  }));
+}
