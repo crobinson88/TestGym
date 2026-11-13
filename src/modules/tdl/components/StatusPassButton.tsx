@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { cn, prettyDate } from "@/lib/utils";
 import { useCategories } from "../categories";
-import { MAX_PRIORITY_RANK, usedRanks } from "../priority";
+import { MAX_PRIORITY_RANK, prioritySlots, usedRanks } from "../priority";
 import {
   SHORTLIST_LIMIT,
   cutIds,
@@ -288,6 +288,10 @@ export function StatusPassButton({
   const currentRank =
     rank !== undefined ? rank : (card?.item.priority_rank ?? null);
   const tagged = card ? isNominated(shortlist, card.item.id) : false;
+  const slots = card
+    ? prioritySlots(items, { id: card.item.id, rank: currentRank })
+    : [];
+  const filledSlots = slots.filter((s) => s.item).length;
   const pickedCount = pickedIds(shortlist).length;
   const cutCount = cutIds(shortlist).length;
 
@@ -518,6 +522,74 @@ export function StatusPassButton({
                           </option>
                         ))}
                       </select>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-line">
+                      <div className="flex items-center justify-between px-3 pt-2 text-[11px] text-muted">
+                        <span className="uppercase tracking-wider">
+                          Today's priorities
+                        </span>
+                        <span className="tabular-nums">
+                          {filledSlots}/{MAX_PRIORITY_RANK}
+                        </span>
+                      </div>
+                      <ol
+                        aria-label="Today's priorities"
+                        className="divide-y divide-line px-1 pb-1 pt-1"
+                      >
+                        {slots.map(({ rank: n, item: holder }) => {
+                          const isThis = holder?.id === card.item.id;
+                          const free = holder == null;
+                          return (
+                            <li key={n}>
+                              <button
+                                type="button"
+                                disabled={busy || (!free && !isThis)}
+                                onClick={() =>
+                                  void changeRank(isThis ? null : n)
+                                }
+                                aria-label={
+                                  free
+                                    ? `Make this priority ${n}`
+                                    : isThis
+                                      ? `Remove this from priority ${n}`
+                                      : `Priority ${n}: ${holder.title}`
+                                }
+                                className={cn(
+                                  "flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition disabled:cursor-default",
+                                  isThis && "bg-accent/15 text-accent",
+                                  free && "text-muted active:bg-surface2",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "w-7 shrink-0 text-xs font-semibold tabular-nums",
+                                    free ? "text-muted" : "text-warn",
+                                  )}
+                                >
+                                  P{n}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "min-w-0 flex-1 truncate",
+                                    free && "italic",
+                                  )}
+                                >
+                                  {free ? "Open — tap to put this task here" : holder.title}
+                                </span>
+                                {isThis && (
+                                  <span className="shrink-0 text-[11px] font-semibold">
+                                    This task
+                                  </span>
+                                )}
+                                {!free && !isThis && holder.status === "done" && (
+                                  <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+                                )}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ol>
                     </div>
 
                     <p className="mt-4 text-xs uppercase tracking-wider text-muted">

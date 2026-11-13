@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { SectionConfig } from "../sections";
 import type { LocalTdlItem } from "../types";
 import { StatusPassButton } from "./StatusPassButton";
@@ -81,6 +81,12 @@ beforeEach(() => {
   }
 });
 
+// The card's own title, as opposed to the same task listed in today's
+// priorities underneath it.
+function cardTitle(): string | null {
+  return screen.queryByRole("heading", { level: 3 })?.textContent ?? null;
+}
+
 function openFlow(items: LocalTdlItem[]) {
   render(<StatusPassButton snapshot_date={DAY} items={items} />);
   fireEvent.click(screen.getByRole("button", { name: /Statuses · / }));
@@ -104,7 +110,7 @@ describe("StatusPassButton", () => {
       item({ id: "plain", title: "Plain task" }),
       item({ id: "p1", title: "Top task", priority_rank: 1, position: 1 }),
     ]);
-    expect(screen.getByText("Top task")).toBeTruthy();
+    expect(cardTitle()).toBe("Top task");
     expect(screen.queryByText("Plain task")).toBeNull();
     expect(screen.getByText("1 of 2")).toBeTruthy();
   });
@@ -256,9 +262,58 @@ describe("StatusPassButton", () => {
       target: { value: "2" },
     });
     await waitFor(() => expect(setPriorityRank).toHaveBeenCalledWith("a", 2));
-    expect(screen.getByText("First")).toBeTruthy();
+    expect(cardTitle()).toBe("First");
     expect(screen.getByText("1 of 2")).toBeTruthy();
-    expect(screen.getByText("P2")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Remove this from priority 2" }),
+    ).toBeTruthy();
+  });
+
+  it("lists today's ten priority slots under the Priority section", () => {
+    openFlow([
+      item({ id: "a", title: "Current card" }),
+      item({ id: "p1", title: "Ship invoice", priority_rank: 1, position: 1 }),
+      item({ id: "p4", title: "Call bank", priority_rank: 4, position: 2 }),
+    ]);
+    const list = screen.getByRole("list", { name: "Today's priorities" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(10);
+    expect(rows[0].textContent).toContain("Ship invoice");
+    expect(rows[3].textContent).toContain("Call bank");
+    expect(rows[1].textContent).toContain("Open");
+    expect(screen.getByText("2/10")).toBeTruthy();
+  });
+
+  it("moves the card to a free slot from the list, and takes it off again", async () => {
+    // Ranked tasks lead the queue, so the P1 task is the card on show.
+    openFlow([
+      item({ id: "p1", title: "Ship invoice", priority_rank: 1 }),
+      item({ id: "p4", title: "Call bank", priority_rank: 4, position: 1 }),
+    ]);
+    expect(
+      screen.getByRole("button", { name: "Remove this from priority 1" }),
+    ).toBeTruthy();
+    // A slot another task holds can't be tapped.
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Priority 4: Call bank",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Make this priority 3" }));
+    await waitFor(() => expect(setPriorityRank).toHaveBeenCalledWith("p1", 3));
+    // The slot it left is free again.
+    expect(
+      screen.getByRole("button", { name: "Make this priority 1" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Remove this from priority 3" }),
+    );
+    await waitFor(() =>
+      expect(setPriorityRank).toHaveBeenCalledWith("p1", null),
+    );
+    expect(cardTitle()).toBe("Ship invoice");
   });
 
   it("disables ranks another task on the day already holds", () => {
@@ -373,7 +428,7 @@ describe("StatusPassButton", () => {
     for (let i = 0; i < 10; i++) {
       fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
       // eslint-disable-next-line no-await-in-loop
-      await waitFor(() => expect(screen.queryByText(`Ranked ${i}`)).toBeNull());
+      await waitFor(() => expect(cardTitle()).not.toBe(`Ranked ${i}`));
     }
     await waitFor(() => expect(screen.getByText("Newcomer")).toBeTruthy());
     fireEvent.click(
@@ -406,7 +461,7 @@ describe("StatusPassButton", () => {
     for (let i = 0; i < 10; i++) {
       fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
       // eslint-disable-next-line no-await-in-loop
-      await waitFor(() => expect(screen.queryByText(`Ranked ${i}`)).toBeNull());
+      await waitFor(() => expect(cardTitle()).not.toBe(`Ranked ${i}`));
     }
     await waitFor(() => expect(screen.getByText("Newcomer")).toBeTruthy());
     fireEvent.click(
@@ -452,7 +507,7 @@ describe("StatusPassButton", () => {
     for (let i = 0; i < 10; i++) {
       fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
       // eslint-disable-next-line no-await-in-loop
-      await waitFor(() => expect(screen.queryByText(`Ranked ${i}`)).toBeNull());
+      await waitFor(() => expect(cardTitle()).not.toBe(`Ranked ${i}`));
     }
 
     for (const title of ["Newcomer", "Another"]) {

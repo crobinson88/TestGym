@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampRank,
+  prioritySlots,
   reorderedRankAssignments,
   selectPriorityItems,
   usedRanks,
@@ -88,5 +89,38 @@ describe("reorderedRankAssignments", () => {
       { id: "b", rank: 1 },
       { id: "a", rank: 2 },
     ]);
+  });
+});
+
+describe("prioritySlots", () => {
+  const items = [
+    { id: "a", priority_rank: 3 },
+    { id: "b", priority_rank: null },
+    { id: "c", priority_rank: 1 },
+  ];
+
+  it("lists all ten slots, filled or free", () => {
+    const slots = prioritySlots(items);
+    expect(slots.map((s) => s.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(slots.map((s) => s.item?.id ?? null)).toEqual([
+      "c", null, "a", null, null, null, null, null, null, null,
+    ]);
+  });
+
+  it("moves an overridden task to its new slot, displacing the holder", () => {
+    const slots = prioritySlots(items, { id: "a", rank: 1 });
+    expect(slots[0].item?.id).toBe("a");
+    expect(slots[2].item).toBeNull();
+    expect(slots.filter((s) => s.item?.id === "c")).toEqual([]);
+  });
+
+  it("drops an overridden task whose rank was cleared", () => {
+    const slots = prioritySlots(items, { id: "c", rank: null });
+    expect(slots.some((s) => s.item?.id === "c")).toBe(false);
+    expect(slots[2].item?.id).toBe("a");
+  });
+
+  it("places an unranked task given a rank", () => {
+    expect(prioritySlots(items, { id: "b", rank: 2 })[1].item?.id).toBe("b");
   });
 });
