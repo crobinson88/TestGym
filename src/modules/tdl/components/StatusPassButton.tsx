@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Eraser,
   Flag,
   Repeat,
   SkipForward,
@@ -37,6 +38,7 @@ import {
 import {
   applyPriorityShortlist,
   archiveItem,
+  clearPriorityRanks,
   setPriorityRank,
   updateItem,
 } from "../repo";
@@ -115,6 +117,9 @@ export function StatusPassButton({
   // priorities were never mentioned would still end on a cut screen.
   const [touched, setTouched] = useState(false);
   const [cutMade, setCutMade] = useState(false);
+  // Clearing the priority list is a bulk write with no undo, so it takes two
+  // taps: the first arms it, the second (within a few seconds) fires it.
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const pending = useMemo(
     () => collectStatusQueue(items, snapshot_date),
@@ -153,6 +158,7 @@ export function StatusPassButton({
     setShortlist(seedFromRanked(items));
     setTouched(false);
     setCutMade(false);
+    setConfirmClear(false);
     setNote(null);
     setOpen(true);
   }
@@ -167,6 +173,18 @@ export function StatusPassButton({
   }
 
   const card: StatusCard | undefined = queue[index];
+  // The queue is a snapshot, but ranks move under it (a pick displaces a
+  // sibling, a clear wipes the lot), so rank and the undo snapshot read the
+  // live row.
+  const liveCardItem = card ? (itemById.get(card.item.id) ?? card.item) : undefined;
+
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  useEffect(() => setConfirmClear(false), [index]);
   const atEnd = index >= queue.length;
   // The cut: shown once, when the queue runs out. However many were tagged,
   // the list is sorted here and nowhere else.
@@ -181,7 +199,7 @@ export function StatusPassButton({
     if (!card || busy) return;
     setBusy(true);
     try {
-      const { item } = card;
+      const item = liveCardItem ?? card.item;
       const before = snapshotOf(item);
       if (action === "archive") await archiveItem(item.id);
       else if (!isNoOp(item, action))
@@ -219,6 +237,28 @@ export function StatusPassButton({
       setRank(next);
       setShortlist((s) => (next == null ? denominate(s, id) : nominate(s, id)));
       setTouched(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Reset the day's priority list mid-pass: every rank on the day is cleared
+  // and the shortlist emptied, so the ten can be rebuilt from scratch as the
+  // walk continues. Nothing is left to cut, so the end-of-pass sort only comes
+  // back if something is tagged or ranked afterwards.
+  async function clearPriorities() {
+    if (busy) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      await clearPriorityRanks(snapshot_date);
+      setShortlist(emptyShortlist());
+      setRank(undefined);
+      setTouched(false);
+      setConfirmClear(false);
     } finally {
       setBusy(false);
     }
@@ -286,7 +326,7 @@ export function StatusPassButton({
   const tally = summariseStatusPass(decisions);
   const options: TdlStatus[] = card ? statusOptionsFor(card.item.section) : [];
   const currentRank =
-    rank !== undefined ? rank : (card?.item.priority_rank ?? null);
+    rank !== undefined ? rank : (liveCardItem?.priority_rank ?? null);
   const tagged = card ? isNominated(shortlist, card.item.id) : false;
   const slots = card
     ? prioritySlots(items, { id: card.item.id, rank: currentRank })
@@ -294,6 +334,7 @@ export function StatusPassButton({
   const filledSlots = slots.filter((s) => s.item).length;
   const pickedCount = pickedIds(shortlist).length;
   const cutCount = cutIds(shortlist).length;
+  const canClear = shortlist.nominated.length > 0 || takenRanks.size > 0;
 
   return (
     <>
@@ -459,32 +500,57 @@ export function StatusPassButton({
                     <p className="text-xs uppercase tracking-wider text-muted">
                       Priority
                     </p>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={toggleTag}
-                      aria-pressed={tagged}
-                      className={cn(
-                        "mt-2 flex h-12 w-full items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition active:scale-[0.99] disabled:opacity-50",
-                        tagged
-                          ? "border-warn/50 bg-warn/15 text-warn"
-                          : "border-line bg-surface2 text-muted",
-                      )}
-                    >
-                      <Star
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={toggleTag}
+                        aria-pressed={tagged}
                         className={cn(
-                          "h-4 w-4 shrink-0",
-                          tagged && "fill-current",
+                          "flex h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition active:scale-[0.99] disabled:opacity-50",
+                          tagged
+                            ? "border-warn/50 bg-warn/15 text-warn"
+                            : "border-line bg-surface2 text-muted",
                         )}
-                      />
-                      {tagged
-                        ? "Tagged a potential priority"
-                        : "Tag as potential priority"}
-                      <span className="ml-auto text-[11px] font-normal tabular-nums opacity-80">
-                        {shortlist.nominated.length} tagged
-                        {cutCount > 0 && " · sorted at the end"}
-                      </span>
-                    </button>
+                      >
+                        <Star
+                          className={cn(
+                            "h-4 w-4 shrink-0",
+                            tagged && "fill-current",
+                          )}
+                        />
+                        <span className="flex min-w-0 flex-col items-start text-left leading-tight">
+                          <span className="max-w-full truncate">
+                            {tagged
+                              ? "Tagged a potential priority"
+                              : "Tag as potential priority"}
+                          </span>
+                          <span className="max-w-full truncate text-[11px] font-normal tabular-nums opacity-80">
+                            {shortlist.nominated.length} tagged
+                            {cutCount > 0 && " · sorted at the end"}
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !canClear}
+                        onClick={() => void clearPriorities()}
+                        aria-label={
+                          confirmClear
+                            ? "Confirm clearing today's priorities"
+                            : "Clear today's priorities"
+                        }
+                        className={cn(
+                          "flex h-12 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-40",
+                          confirmClear
+                            ? "border-danger/50 bg-danger/15 text-danger"
+                            : "border-line bg-surface2 text-muted",
+                        )}
+                      >
+                        <Eraser className="h-4 w-4 shrink-0" />
+                        {confirmClear ? "Clear all?" : "Clear"}
+                      </button>
+                    </div>
                     <div className="relative mt-2">
                       <Flag
                         className={cn(
