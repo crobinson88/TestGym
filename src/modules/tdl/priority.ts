@@ -78,3 +78,12 @@ export function prioritySlots<T extends { id: string; priority_rank: number | nu
     item: byRank.get(n + 1) ?? null,
   }));
 }
+
+// The most important rank nobody holds yet — where a task added "as a
+// priority" lands. null when all ten are taken, which is the composer's cue to
+// ask which priority the new task replaces.
+export function firstFreeRank(items: ReadonlyArray<{ priority_rank: number | null }>): number | null {
+  const used = usedRanks(items);
+  for (let r = 1; r <= MAX_PRIORITY_RANK; r++) if (!used.has(r)) return r;
+  return null;
+}
