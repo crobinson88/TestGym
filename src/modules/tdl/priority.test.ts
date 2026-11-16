@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampRank,
+  firstFreeRank,
   prioritySlots,
   reorderedRankAssignments,
   selectPriorityItems,
@@ -122,5 +123,24 @@ describe("prioritySlots", () => {
 
   it("places an unranked task given a rank", () => {
     expect(prioritySlots(items, { id: "b", rank: 2 })[1].item?.id).toBe("b");
+  });
+});
+
+describe("firstFreeRank", () => {
+  const ranked = (...ranks: (number | null)[]) => ranks.map((priority_rank) => ({ priority_rank }));
+
+  it("is 1 on a day with no priorities", () => {
+    expect(firstFreeRank([])).toBe(1);
+    expect(firstFreeRank(ranked(null, null))).toBe(1);
+  });
+
+  it("fills the lowest gap first", () => {
+    expect(firstFreeRank(ranked(1, 2, 4))).toBe(3);
+    expect(firstFreeRank(ranked(2, 3))).toBe(1);
+  });
+
+  it("is null once all ten ranks are taken", () => {
+    const full = ranked(...Array.from({ length: MAX_PRIORITY_RANK }, (_, i) => i + 1), null);
+    expect(firstFreeRank(full)).toBeNull();
   });
 });

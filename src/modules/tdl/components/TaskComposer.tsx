@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { Star } from "lucide-react";
+import { db } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -6,15 +9,20 @@ import type { SectionConfig } from "../sections";
 import { QUADRANTS } from "../quadrant";
 import type { TdlQuadrant } from "@/lib/database.types";
 import { validateDraft } from "../composer";
-import { createItem } from "../repo";
+import { createItem, setPriorityRank } from "../repo";
+import { firstFreeRank, prioritySlots } from "../priority";
+import { isSnoozed } from "../snooze";
 import { useWorkstreams } from "../workstreams";
 import { NO_WORKSTREAM_LABEL } from "../workstreamGroups";
 import { ImageEditor } from "./ImageEditor";
+import { ReplacePriorityDialog, type ReplaceSlot } from "./ReplacePriorityDialog";
 
 // The new-task form. Used twice: at the foot of a category column (the section
 // is fixed) and in the quick-add bar at the top of the day (the category is
 // picked here). Same fields either way — title, minutes when the category asks
-// for them, Eisenhower quadrant, and optional notes + images.
+// for them, Eisenhower quadrant, optional notes + images, and an "Add as
+// priority" toggle that takes the day's first free rank — or, when all ten are
+// taken, asks which priority the new task replaces.
 export function TaskComposer({
   snapshot_date,
   categories,
@@ -62,6 +70,12 @@ export function TaskComposer({
   const [showDetails, setShowDetails] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [workstreamId, setWorkstreamId] = useState<string | null>(defaultWorkstreamId ?? null);
+  const [asPriority, setAsPriority] = useState(false);
+  // Set while the replace-a-priority dialog is up: the validated task waiting
+  // on the user's pick.
+  const [pendingReplace, setPendingReplace] = useState<{ title: string; estimate: number | null } | null>(
+    null,
+  );
   const [errors, setErrors] = useState({
     title: false,
     estimate: false,
@@ -93,6 +107,19 @@ export function TaskComposer({
 
   const requiresEstimate = cfg?.hasTimeEstimate ?? false;
 
+  // The tasks holding the day's priority slots — the same set the Priorities
+  // column shows. A rank held only by an archived/snoozed task reads as free;
+  // setPriorityRank displaces it if the new task takes it.
+  const rankedItems = useLiveQuery(
+    async () =>
+      (await db.tdl_items.where("snapshot_date").equals(snapshot_date).toArray()).filter(
+        (r) => r.priority_rank != null && !r.deleted_at && !r.is_archived && !isSnoozed(r),
+      ),
+    [snapshot_date],
+  );
+  const nextRank = rankedItems ? firstFreeRank(rankedItems) : null;
+  const priorityFull = rankedItems != null && nextRank == null;
+
   function clearFields() {
     setDraft("");
     setEstimate("");
@@ -100,6 +127,8 @@ export function TaskComposer({
     setNotes("");
     setImages([]);
     setShowDetails(false);
+    setAsPriority(false);
+    setPendingReplace(null);
     setErrors({ title: false, estimate: false, quadrant: false, section: false });
   }
 
@@ -126,18 +155,35 @@ export function TaskComposer({
       setErrors(v.errors);
       return;
     }
-    await createItem({
+    if (asPriority) {
+      const free = firstFreeRank(rankedItems ?? []);
+      if (free == null) {
+        setPendingReplace({ title: v.title, estimate: v.estimate });
+        return;
+      }
+      await save(v.title, v.estimate, free);
+      return;
+    }
+    await save(v.title, v.estimate, null);
+  }
+
+  // Ranked through setPriorityRank rather than createItem so per-day
+  // uniqueness holds: taking a full list's rank displaces its holder to
+  // unranked, exactly as picking that rank from a row's dropdown would.
+  async function save(title: string, estimateMin: number | null, rank: number | null) {
+    const item = await createItem({
       snapshot_date,
       section: cfg!.key,
-      title: v.title,
-      time_estimate_min: v.estimate,
+      title,
+      time_estimate_min: estimateMin,
       eisenhower_quadrant: quadrant,
       notes: notes.trim() ? notes.trim() : null,
       images,
       board_list_id: boardListId ?? null,
       workstream_id: effectiveWorkstreamId,
     });
-    onCreated?.(v.title, cfg!);
+    if (rank != null) await setPriorityRank(item.id, rank);
+    onCreated?.(title, cfg!);
     // Keep the composer open for the next quick add, collapsing details again.
     clearFields();
   }
@@ -279,6 +325,28 @@ export function TaskComposer({
           </div>
         )}
       </div>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setAsPriority((v) => !v)}
+        aria-pressed={asPriority}
+        className={cn(
+          "flex min-h-[44px] w-full items-center gap-2 rounded-lg border px-3 py-1 text-left transition",
+          asPriority
+            ? "border-accent bg-accent/15 text-text"
+            : "border-line text-muted hover:bg-surface2",
+        )}
+      >
+        <Star className={cn("h-4 w-4 shrink-0", asPriority && "fill-current text-accent")} />
+        <span className="text-xs font-semibold">Add as priority</span>
+        <span className="ml-auto text-[11px] text-muted">
+          {rankedItems == null
+            ? ""
+            : priorityFull
+              ? "List full — pick one to replace"
+              : `Next free: P${nextRank}`}
+        </span>
+      </button>
       {showDetails ? (
         <>
           <textarea
@@ -309,6 +377,27 @@ export function TaskComposer({
           Cancel
         </Button>
       </div>
+      {pendingReplace && (
+        <ReplacePriorityDialog
+          newTitle={pendingReplace.title}
+          slots={replaceSlots(rankedItems ?? [], categories, fixedSection)}
+          onPick={(rank) => void save(pendingReplace.title, pendingReplace.estimate, rank)}
+          onAddUnranked={() => void save(pendingReplace.title, pendingReplace.estimate, null)}
+          onCancel={() => setPendingReplace(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function replaceSlots(
+  rankedItems: readonly { id: string; title: string; section: string; priority_rank: number | null }[],
+  categories: SectionConfig[],
+  fixedSection: SectionConfig | undefined,
+): ReplaceSlot[] {
+  const labelOf = (key: string) =>
+    categories.find((c) => c.key === key)?.label ?? (fixedSection?.key === key ? fixedSection.label : null);
+  return prioritySlots(rankedItems).flatMap(({ rank, item }) =>
+    item ? [{ rank, title: item.title, categoryLabel: labelOf(item.section) }] : [],
   );
 }
