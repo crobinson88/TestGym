@@ -8,11 +8,13 @@ const updateItem = vi.fn();
 const archiveItem = vi.fn();
 const setPriorityRank = vi.fn();
 const applyPriorityShortlist = vi.fn();
+const clearPriorityRanks = vi.fn();
 vi.mock("../repo", () => ({
   updateItem: (...a: unknown[]) => updateItem(...a),
   archiveItem: (...a: unknown[]) => archiveItem(...a),
   setPriorityRank: (...a: unknown[]) => setPriorityRank(...a),
   applyPriorityShortlist: (...a: unknown[]) => applyPriorityShortlist(...a),
+  clearPriorityRanks: (...a: unknown[]) => clearPriorityRanks(...a),
 }));
 
 const CATEGORIES: SectionConfig[] = [
@@ -75,6 +77,7 @@ beforeEach(() => {
     archiveItem,
     setPriorityRank,
     applyPriorityShortlist,
+    clearPriorityRanks,
   ]) {
     fn.mockReset();
     fn.mockResolvedValue(null);
@@ -575,5 +578,46 @@ describe("StatusPassButton", () => {
     );
     expect(screen.getByText("2 of 2")).toBeTruthy();
     expect(screen.getByText("Second")).toBeTruthy();
+  });
+
+  it("clears the day's priority list on a second tap, without advancing", async () => {
+    const items = [
+      item({ id: "a", title: "First", priority_rank: 6 }),
+      item({ id: "b", title: "Second", priority_rank: 1, position: 1 }),
+    ];
+    const { rerender } = render(
+      <StatusPassButton snapshot_date={DAY} items={items} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Statuses · 2/ }));
+    expect(screen.getByText(/2 tagged/)).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear today's priorities" }),
+    );
+    expect(clearPriorityRanks).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Confirm clearing today's priorities",
+      }),
+    );
+    await waitFor(() => expect(clearPriorityRanks).toHaveBeenCalledWith(DAY));
+
+    // The store catches up: nothing ranked any more.
+    rerender(
+      <StatusPassButton
+        snapshot_date={DAY}
+        items={items.map((i) => ({ ...i, priority_rank: null }))}
+      />,
+    );
+    expect(cardTitle()).toBe("Second");
+    expect(screen.getByText(/0 tagged/)).toBeTruthy();
+    expect(screen.queryByText(/^P\d+$/, { selector: "span.rounded-full" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Clear today's priorities" }),
+    ).toBeDisabled();
+
+    // Nothing left to sort, so the pass ends without a cut screen.
+    fireEvent.click(screen.getByRole("button", { name: /^Finish/ }));
+    expect(applyPriorityShortlist).not.toHaveBeenCalled();
   });
 });

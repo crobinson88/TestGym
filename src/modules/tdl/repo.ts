@@ -226,6 +226,32 @@ export async function reorderPriorities(
   pokeOutbox();
 }
 
+// Wipe the day's priority list: every live item on the day loses its rank.
+// One transaction so the Priorities column empties in a single repaint.
+// Returns how many items were cleared.
+export async function clearPriorityRanks(snapshot_date: string): Promise<number> {
+  const ts = nowIso();
+  let cleared = 0;
+  await db.transaction("rw", db.tdl_items, async () => {
+    const rows = await db.tdl_items
+      .where("snapshot_date")
+      .equals(snapshot_date)
+      .toArray();
+    for (const row of rows) {
+      if (row.deleted_at || row.priority_rank == null) continue;
+      await db.tdl_items.put({
+        ...row,
+        priority_rank: null,
+        updated_at: ts,
+        sync_status: "pending",
+      });
+      cleared++;
+    }
+  });
+  if (cleared > 0) pokeOutbox();
+  return cleared;
+}
+
 // Settle a status-pass priority shortlist in one go: the picks take ranks 1…n
 // in the order given, and the ones that didn't make the cut are pushed to the
 // red "Do First" quadrant with their rank cleared.
