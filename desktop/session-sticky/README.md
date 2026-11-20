@@ -36,20 +36,27 @@ This is a standalone Electron app. It is **not part of the Gym Tracker PWA**: Vi
 
 Polled every 8 s. No sign-in: the note reads the hook's own config file, `~/.claude/workstream.env`. The service-role key never leaves the laptop, the same as with the hook.
 
-## Setup
+## Install (one time)
 
-1. Install the hook if you haven't. See the header of `scripts/workstream-hook.sh`; it creates `~/.claude/workstream.env`.
-2. Run it:
+You need Node.js 18+ (`node -v`). From the TestGym repo root:
 
-   ```bash
-   cd desktop/session-sticky
-   npm install
-   npm start
-   ```
+```bash
+cd desktop/session-sticky && npm install && npm run install-app
+```
 
-3. Tick **Open at login** in the tray menu to have it start with your computer.
+That builds the app for your computer, installs it, and opens it:
 
-Without `workstream.env` the note runs local-only: it still shows your Claude Code sessions, but not web chats or hook statuses. The footer says which mode it's in.
+- **macOS:** `Session Sticky.app` goes into `/Applications`, or `~/Applications` if that isn't writable.
+  - Open it from Spotlight or Launchpad like any app.
+  - It's built on your own machine, so there's no "unidentified developer" prompt.
+- **Windows:** a one-click installer adds Start menu and desktop shortcuts, then launches the app.
+- **Linux:** the AppImage is copied to `~/Applications`.
+
+The installed app turns on **Open at login** the first time it runs, so after this you never launch it by hand. Untick it in the tray menu if you'd rather not. To update after pulling new code, run `npm run install-app` again.
+
+For hacking on it, `npm start` runs it straight from source. "Open at login" is greyed out in that mode, because it would start a bare Electron window rather than the note.
+
+Optional: install the hook (see the header of `scripts/workstream-hook.sh`; it creates `~/.claude/workstream.env`) to get web chats and "needs you" alerts. Without it the note runs local-only and the footer says so.
 
 ## Overrides (optional env vars)
 
@@ -64,6 +71,7 @@ Without `workstream.env` the note runs local-only: it still shows your Claude Co
 - `main.js`: window, tray, shortcut, polling, notifications, IPC
 - `preload.js`: the small `window.sticky` bridge (context isolation on, sandboxed renderer)
 - `sources.js`: Supabase + transcript readers and the pure merge/sort/visibility logic
-- `icon.js`: draws the tray dot at runtime, so the repo has no binary assets
+- `icon.js`: draws the tray dot and the app icon at runtime, so the repo has no binary assets
+- `scripts/install-app.js`: `npm run install-app` (build → install → launch for this OS); `scripts/make-icon.js` writes `build/icon.png` for the packager
 - `renderer/`: the note UI (vanilla JS, no build step)
 - `test/sources.js`: `npm test` (`node:test`, no extra deps)

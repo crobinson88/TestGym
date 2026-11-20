@@ -153,12 +153,15 @@ function refreshTrayMenu() {
       { label: win && win.isVisible() ? "Hide note" : "Show note", accelerator: TOGGLE_SHORTCUT, click: toggleVisible },
       { label: "Refresh now", click: () => poll() },
       { type: "separator" },
-      {
-        label: "Open at login",
-        type: "checkbox",
-        checked: login,
-        click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
-      },
+      // Under `npm start` a login item would launch bare Electron, not this app.
+      app.isPackaged
+        ? {
+            label: "Open at login",
+            type: "checkbox",
+            checked: login,
+            click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+          }
+        : { label: "Open at login (installed app only)", enabled: false },
       { label: "Quit", click: () => app.quit() },
     ]),
   );
@@ -307,6 +310,13 @@ app.on("second-instance", () => setVisible(true));
 app.whenReady().then(() => {
   state = loadState();
   if (process.platform === "darwin" && app.dock) app.dock.hide();
+  // First run of the installed app: start at login so it never needs launching
+  // again. Only once — unticking it in the tray menu sticks.
+  if (app.isPackaged && !state.loginItemSet) {
+    app.setLoginItemSettings({ openAtLogin: true });
+    state.loginItemSet = true;
+    saveState();
+  }
   registerIpc();
   createWindow();
   createTray();

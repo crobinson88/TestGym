@@ -1,14 +1,59 @@
 {
   "name": "session-sticky",
+  "productName": "Session Sticky",
   "version": "0.1.0",
   "private": true,
   "description": "Always-on-top sticky note listing your active Claude Code and Cowork/web sessions.",
+  "author": "Session Sticky",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/sources.js"
+    "test": "node --test test/sources.js",
+    "icon": "node scripts/make-icon.js",
+    "dist": "npm run icon && electron-builder",
+    "install-app": "node scripts/install-app.js"
   },
   "devDependencies": {
-    "electron": "^45.4.1"
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.1"
+  },
+  "build": {
+    "appId": "local.session-sticky",
+    "publish": null,
+    "productName": "Session Sticky",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "sources.js",
+      "icon.js",
+      "renderer/**",
+      "package.json"
+    ],
+    "icon": "build/icon.png",
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    }
   }
 }
