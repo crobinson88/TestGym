@@ -1,0 +1,14 @@
+{
+  "name": "session-sticky",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Always-on-top sticky note listing your active Claude Code and Cowork/web sessions.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/sources.js"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1"
+  }
+}

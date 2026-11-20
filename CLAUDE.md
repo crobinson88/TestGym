@@ -113,8 +113,12 @@ Session persists indefinitely (`persistSession: true`). Sign in once per device.
 │   ├── components/       # shadcn-derived primitives + app components
 │   ├── routes/           # Today, AddSet, History, Dashboard
 │   └── App.tsx
+├── desktop/
+│   └── session-sticky/   # standalone Electron sticky note — NOT part of the PWA
 └── public/               # PWA icons, robots.txt (Disallow: /)
 ```
+
+`desktop/session-sticky/` is a separate always-on-top desktop app (own `package.json`, `npm start` / `npm test`) that lists live Claude Code + web/Cowork sessions. It reads the same `workstreams` rows as the Command Center (service-role key from the hook's `~/.claude/workstream.env`) merged with local `~/.claude/projects/*.jsonl` transcripts. Vite, the root tsconfig/vitest and Vercel never touch it; don't import from `src/` into it or vice versa. See its README.
 
 ## Conventions
 

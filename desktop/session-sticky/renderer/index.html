@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <title>Claude sessions</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="note">
+      <header class="bar">
+        <button class="summary" id="summary" title="Collapse / expand">
+          <span class="pip" id="pip"></span>
+          <span id="summary-text">Loading…</span>
+        </button>
+        <div class="actions">
+          <button class="icon" id="add" title="Add a web / Cowork chat" aria-label="Add a web or Cowork chat">+</button>
+          <button class="icon" id="refresh" title="Refresh" aria-label="Refresh">↻</button>
+          <button class="icon" id="hide" title="Hide (Ctrl/⌘+Alt+J)" aria-label="Hide">×</button>
+        </div>
+      </header>
+
+      <form class="add" id="add-form" hidden>
+        <input id="add-title" placeholder="What's the chat about?" maxlength="120" required />
+        <input id="add-url" placeholder="Link (claude.ai/…) — optional" maxlength="500" />
+        <div class="add-row">
+          <span class="add-error" id="add-error"></span>
+          <button type="button" class="ghost" id="add-cancel">Cancel</button>
+          <button type="submit" class="primary">Add</button>
+        </div>
+      </form>
+
+      <ul class="list" id="list"></ul>
+      <p class="empty" id="empty" hidden>No active sessions.</p>
+
+      <footer class="foot" id="foot"></footer>
+      <div class="toast" id="toast" hidden></div>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
