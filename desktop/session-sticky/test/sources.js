@@ -217,12 +217,12 @@ test("fetchWorkstreams sends the service key and filters to sessions", async () 
     seen = { url, init };
     return { ok: true, json: async () => [row()] };
   };
-  const cfg = { configured: true, supabaseUrl: "https://x.supabase.co", serviceKey: "k" };
+  const cfg = { configured: true, mode: "service", supabaseUrl: "https://x.supabase.co", serviceKey: "eyJsvc.a.b" };
   const rows = await src.fetchWorkstreams(cfg, fake);
   assert.equal(rows.length, 1);
   assert.match(seen.url, /type=in\.%28code_cli%2Cweb_chat%29/);
   assert.match(seen.url, /deleted_at=is\.null/);
-  assert.equal(seen.init.headers.Authorization, "Bearer k");
+  assert.equal(seen.init.headers.Authorization, "Bearer eyJsvc.a.b");
   assert.deepEqual(await src.fetchWorkstreams({ configured: false }, fake), []);
 });
 
@@ -232,11 +232,68 @@ test("addWebSession inserts a web_chat row with a client-side id", async () => {
     body = JSON.parse(init.body);
     return { ok: true };
   };
-  const id = await src.addWebSession({ configured: true, supabaseUrl: "https://x", serviceKey: "k" }, { title: " Deck review ", url: "claude.ai/chat/9" }, fake);
+  const id = await src.addWebSession({ configured: true, mode: "service", supabaseUrl: "https://x", serviceKey: "k" }, { title: " Deck review ", url: "claude.ai/chat/9" }, fake);
   assert.equal(body.id, id);
   assert.equal(body.client_id, id);
   assert.equal(body.type, "web_chat");
   assert.equal(body.title, "Deck review");
   assert.equal(body.source_id, null);
   assert.deepEqual(body.metadata, { url: "https://claude.ai/chat/9" });
+});
+
+test("loadConfig: a token switches to token mode with the project defaults", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sticky-"));
+  const file = path.join(dir, "workstream.env");
+  fs.writeFileSync(file, "WORKSTREAM_TOKEN=tok\n");
+  const cfg = await src.loadConfig({ WORKSTREAM_ENV_FILE: file }, dir);
+  assert.equal(cfg.mode, "token");
+  assert.equal(cfg.supabaseUrl, src.DEFAULT_SUPABASE_URL);
+  assert.equal(cfg.anonKey, src.DEFAULT_ANON_KEY);
+  fs.writeFileSync(file, "SUPABASE_URL=https://x.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=svc\nWORKSTREAM_TOKEN=tok\n");
+  assert.equal((await src.loadConfig({ WORKSTREAM_ENV_FILE: file }, dir)).mode, "token");
+  fs.writeFileSync(file, "SUPABASE_URL=https://x.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=svc\n");
+  assert.equal((await src.loadConfig({ WORKSTREAM_ENV_FILE: file }, dir)).mode, "service");
+});
+
+test("token mode reads, dismisses and adds through the scoped RPCs", async () => {
+  const calls = [];
+  const fake = async (url, init) => {
+    calls.push({ url, headers: init.headers, body: init.body ? JSON.parse(init.body) : null });
+    return { ok: true, json: async () => [row()] };
+  };
+  const cfg = { configured: true, mode: "token", supabaseUrl: "https://x", token: "tok", anonKey: src.DEFAULT_ANON_KEY };
+  assert.equal((await src.fetchWorkstreams(cfg, fake)).length, 1);
+  await src.dismissWorkstream(cfg, "row-9", fake);
+  const id = await src.addWebSession(cfg, { title: " Cowork ", url: "claude.ai/x" }, fake);
+  assert.deepEqual(calls.map((c) => c.url), [
+    "https://x/rest/v1/rpc/workstream_feed",
+    "https://x/rest/v1/rpc/workstream_dismiss",
+    "https://x/rest/v1/rpc/workstream_add_web",
+  ]);
+  assert.deepEqual(calls[0].body, { p_token: "tok" });
+  assert.deepEqual(calls[1].body, { p_token: "tok", p_id: "row-9" });
+  assert.deepEqual(calls[2].body, { p_token: "tok", p_id: id, p_title: "Cowork", p_url: "https://claude.ai/x" });
+  assert.equal(calls[0].headers.apikey, src.DEFAULT_ANON_KEY);
+  assert.equal(calls[0].headers.Authorization, `Bearer ${src.DEFAULT_ANON_KEY}`);
+  await src.fetchWorkstreams({ ...cfg, anonKey: "sb_publishable_x" }, fake);
+  assert.equal(calls[3].headers.Authorization, undefined);
+});
+
+test("an unregistered token reads as a setup step, not a raw error", async () => {
+  const fake = async () => ({ ok: false, status: 400, text: async () => '{"message":"invalid workstream token"}' });
+  const cfg = { configured: true, mode: "token", supabaseUrl: "https://x", token: "tok", anonKey: "a" };
+  await assert.rejects(src.fetchWorkstreams(cfg, fake), /send Claude the hash/);
+});
+
+test("cloud rows open their claude.ai page and never offer a resume command", () => {
+  const [s] = src.mergeSessions([row({ metadata: { remote: true, url: "https://claude.ai/code/session_1", cwd: "/home/user/TestGym" } })], []);
+  assert.equal(s.remote, true);
+  assert.equal(s.url, "https://claude.ai/code/session_1");
+  assert.equal(src.resumeCommand(s, "win32"), null);
+});
+
+test("the note and the hook share the same Supabase defaults", async () => {
+  const hook = await import("../hook/workstream-hook.mjs");
+  assert.equal(hook.DEFAULT_SUPABASE_URL, src.DEFAULT_SUPABASE_URL);
+  assert.equal(hook.DEFAULT_ANON_KEY, src.DEFAULT_ANON_KEY);
 });

@@ -27,6 +27,11 @@ const LOCAL_WINDOW_MS = 2 * 60 * 60 * 1000;
 const LOCAL_NEWER_SLACK_MS = 2000;
 const TAIL_BYTES = 64 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
+// Same defaults as hook/workstream-hook.mjs (a test keeps them in step). The
+// anon key is publishable by design — it ships in the PWA bundle.
+const DEFAULT_SUPABASE_URL = "https://rgslyxzeyjiypzilpxpf.supabase.co";
+const DEFAULT_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnc2x5eHpleWppeXB6aWxweHBmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNzA0MDQsImV4cCI6MjA5NDY0NjQwNH0.LxCjHC0xTvm8jPZvsUy6SyEJvqs2Vziyd5qPCYKRDkg";
 
 function parseEnvFile(text) {
   const out = {};
@@ -52,24 +57,30 @@ async function loadConfig(env = process.env, home = os.homedir()) {
   } catch {
     // No file = local-only mode.
   }
-  const supabaseUrl = (env.SUPABASE_URL || fileVars.SUPABASE_URL || "").replace(/\/+$/, "");
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || fileVars.SUPABASE_SERVICE_ROLE_KEY || "";
+  const pick = (k) => env[k] || fileVars[k] || "";
+  const token = pick("WORKSTREAM_TOKEN");
+  const serviceKey = pick("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = (pick("SUPABASE_URL") || (token ? DEFAULT_SUPABASE_URL : "")).replace(/\/+$/, "");
+  // The token wins when both are present: it's the narrower credential.
+  const mode = supabaseUrl && token ? "token" : supabaseUrl && serviceKey ? "service" : "off";
   return {
     configFile,
     supabaseUrl,
     serviceKey,
-    configured: Boolean(supabaseUrl && serviceKey),
+    token,
+    anonKey: pick("SUPABASE_ANON_KEY") || DEFAULT_ANON_KEY,
+    mode,
+    configured: mode !== "off",
     projectsDir: env.CLAUDE_PROJECTS_DIR || path.join(home, ".claude", "projects"),
   };
 }
 
 function headers(cfg, extra = {}) {
-  return {
-    apikey: cfg.serviceKey,
-    Authorization: `Bearer ${cfg.serviceKey}`,
-    "Content-Type": "application/json",
-    ...extra,
-  };
+  const key = cfg.mode === "token" ? cfg.anonKey : cfg.serviceKey;
+  const out = { apikey: key, "Content-Type": "application/json", ...extra };
+  // Legacy JWT keys go in Authorization too; sb_publishable_ keys must not.
+  if (/^eyJ/.test(key)) out.Authorization = `Bearer ${key}`;
+  return out;
 }
 
 async function request(cfg, urlPath, init, fetchImpl) {
@@ -80,14 +91,22 @@ async function request(cfg, urlPath, init, fetchImpl) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    if (body.includes("invalid workstream token")) {
+      throw new Error("token not switched on yet — send Claude the hash from npm run setup");
+    }
     throw new Error(`Supabase ${res.status}${body ? `: ${body.slice(0, 160)}` : ""}`);
   }
   return res;
 }
 
 // Email tasks live on the Command Center too, but they aren't sessions.
+function rpc(cfg, name, args, fetchImpl) {
+  return request(cfg, `/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify({ p_token: cfg.token, ...args }) }, fetchImpl);
+}
+
 async function fetchWorkstreams(cfg, fetchImpl = fetch) {
   if (!cfg.configured) return [];
+  if (cfg.mode === "token") return (await rpc(cfg, "workstream_feed", {}, fetchImpl)).json();
   const q = new URLSearchParams({
     select: "id,title,type,status,source_id,last_action,metadata,updated_at,created_at",
     deleted_at: "is.null",
@@ -100,6 +119,10 @@ async function fetchWorkstreams(cfg, fetchImpl = fetch) {
 }
 
 async function dismissWorkstream(cfg, id, fetchImpl = fetch) {
+  if (cfg.mode === "token") {
+    await rpc(cfg, "workstream_dismiss", { p_id: id }, fetchImpl);
+    return;
+  }
   const ts = new Date().toISOString();
   await request(
     cfg,
@@ -114,6 +137,10 @@ async function dismissWorkstream(cfg, id, fetchImpl = fetch) {
 async function addWebSession(cfg, { title, url }, fetchImpl = fetch) {
   const id = crypto.randomUUID();
   const cleanUrl = normaliseUrl(url);
+  if (cfg.mode === "token") {
+    await rpc(cfg, "workstream_add_web", { p_id: id, p_title: String(title).trim(), p_url: cleanUrl }, fetchImpl);
+    return id;
+  }
   await request(
     cfg,
     "/rest/v1/workstreams",
@@ -291,6 +318,7 @@ function mergeSessions(rows, locals) {
       updatedAt: Math.max(rowMs || 0, local ? local.mtimeMs : 0),
       cwd: meta.cwd || (local && local.cwd) || null,
       url: typeof meta.url === "string" ? meta.url : null,
+      remote: meta.remote === true,
       source: local ? "both" : "cloud",
     });
   }
@@ -311,6 +339,7 @@ function mergeSessions(rows, locals) {
       updatedAt: local.mtimeMs,
       cwd: local.cwd,
       url: null,
+      remote: false,
       source: "local",
     });
   }
@@ -386,7 +415,9 @@ function psQuote(s) {
 // Pasted into whatever shell the user runs claude from: PowerShell on Windows
 // (5.1 has no `&&`), a POSIX shell elsewhere.
 function resumeCommand(session, platform = process.platform) {
-  if (!session.sessionId) return null;
+  // A cloud session can't be resumed from a local terminal; its row opens the
+  // session's claude.ai page instead.
+  if (!session.sessionId || session.remote) return null;
   const resume = `claude --resume ${session.sessionId}`;
   if (!session.cwd) return resume;
   return platform === "win32"
@@ -405,6 +436,8 @@ function relativeTime(ms, now) {
 }
 
 module.exports = {
+  DEFAULT_SUPABASE_URL,
+  DEFAULT_ANON_KEY,
   STALE_AFTER_MS,
   DONE_VISIBLE_MS,
   ACTIVE_VISIBLE_MS,

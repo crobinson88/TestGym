@@ -8,10 +8,12 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/sources.js",
+    "test": "node --test test/sources.js test/hook.mjs test/setup.mjs",
     "icon": "node scripts/make-icon.js",
     "dist": "npm run icon && electron-builder",
-    "install-app": "node scripts/install-app.js"
+    "install-app": "node scripts/install-app.js",
+    "setup": "node scripts/setup.js",
+    "cloud-script": "node scripts/cloud-script.js"
   },
   "devDependencies": {
     "electron": "^45.4.1",

@@ -42,7 +42,7 @@ function renderRow(s) {
   if (s.status === "completed") li.classList.add("done");
   li.tabIndex = 0;
 
-  const hint = s.url ? "Click to open the chat" : s.resume ? `Click to copy: ${s.resume}` : "";
+  const hint = s.url ? (s.remote ? "Click to open this session in Claude" : "Click to open the chat") : s.resume ? `Click to copy: ${s.resume}` : "";
   li.title = [s.prompt ? `Last prompt: ${s.prompt}` : null, hint].filter(Boolean).join("\n");
 
   li.append(el("span", "dot"));
@@ -56,7 +56,8 @@ function renderRow(s) {
   li.append(main);
 
   const side = el("div", "side");
-  if (s.type === "web_chat") side.append(el("span", "kind", "web"));
+  if (s.remote) side.append(el("span", "kind cloud", "cloud"));
+  else if (s.type === "web_chat") side.append(el("span", "kind", "web"));
   side.append(el("span", "ago", s.ago));
   const dismiss = el("button", "dismiss", "×");
   dismiss.title = "Dismiss";
@@ -89,7 +90,7 @@ function renderFoot({ cloud, local }) {
   const foot = $("foot");
   foot.replaceChildren();
   let cloudText;
-  if (!cloud.configured) cloudText = "Cloud off (no workstream.env)";
+  if (!cloud.configured) cloudText = "Cloud off · run npm run setup";
   else if (cloud.error) cloudText = `Cloud error: ${cloud.error}`;
   else cloudText = "Cloud ✓";
   const c = el("span", cloud.error ? "err" : "", cloudText);

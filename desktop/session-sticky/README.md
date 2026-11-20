@@ -34,7 +34,21 @@ This is a standalone Electron app. It is **not part of the Gym Tracker PWA**: Vi
    - The note can tell a session is working again after a Stop, which the hook alone can't (it has no prompt event).
    - Matched to the cloud row by session id.
 
-Polled every 8 s. No sign-in: the note reads the hook's own config file, `~/.claude/workstream.env`. The service-role key never leaves the laptop, the same as with the hook.
+Polled every 8 s. No sign-in: the note reads `~/.claude/workstream.env`.
+
+**What reports where:**
+
+| Sessions | How they reach the note |
+| --- | --- |
+| Claude Code on this computer (terminal or desktop-app Code tab) | Local transcripts straight away; live status once `npm run setup` wires the hook in |
+| Claude Code in the cloud (claude.ai/code, the app) | The cloud environment's setup script installs the same hook (see below). Rows are tagged **cloud**, and clicking one opens that session on claude.ai |
+| Cowork, regular claude.ai chats | No feed exists, so add them with **+** |
+
+**Credentials:** the note and the hooks use a **workstream token**, not the Supabase service-role key.
+- A token can only read and write `workstreams`, through the `workstream_*` database functions.
+- Only its SHA-256 is stored, in `workstream_tokens`.
+- Revoke one by setting `revoked_at` on its row.
+- An older Mac setup that has `SUPABASE_SERVICE_ROLE_KEY` in the env file still works; when both are present, the token wins.
 
 ## Install (one time)
 
@@ -103,13 +117,39 @@ The installed app turns on **Open at login** the first time it runs, so after th
 
 For hacking on it, `npm start` runs it straight from source. "Open at login" is greyed out in that mode, because it would start a bare Electron window rather than the note.
 
-Optional: install the hook (see the header of `scripts/workstream-hook.sh`; it creates `~/.claude/workstream.env`) to get web chats and "needs you" alerts. Without it the note runs local-only and the footer says so.
+## Connect it (one time per computer, plus once for the cloud)
+
+Run this from this folder:
+
+```bash
+npm run setup
+```
+
+It:
+- puts a new workstream token in `~/.claude/workstream.env`. An existing one is kept; `npm run setup -- --force` replaces it.
+- copies `hook/workstream-hook.mjs` to `~/.claude`.
+- wires the hook into `~/.claude/settings.json` on SessionStart / Notification / Stop / SessionEnd. The file is backed up first and nothing is duplicated.
+- writes and opens `~/.claude/session-sticky-cloud-setup.txt`.
+
+Then:
+1. **Switch the token on.** Send Claude the hash printed at the end. It's safe to share. Claude adds it to `workstream_tokens`; until then the footer says the token isn't switched on.
+2. **Cloud sessions.** In the cloud environment's settings (environment menu in a session's title bar → Edit), follow STEP 2 of that file:
+   - add `WORKSTREAM_TOKEN` as an environment variable
+   - allow `rgslyxzeyjiypzilpxpf.supabase.co` under Network access
+   - paste the setup script (`cloud/setup-script.sh`) into Setup script
+3. **Restart the note** so it picks up the token: tray menu → Quit, then open Session Sticky.
+
+The hook is plain Node, with no bash, `jq` or `curl`, so it runs on Windows too. It never blocks or fails a Claude turn: 4 s timeout, errors swallowed, always exits 0.
+
+After changing `hook/`, run `npm run cloud-script` to regenerate `cloud/setup-script.sh`. A test fails if the two drift apart.
 
 ## Overrides (optional env vars)
 
 | Var | Default |
 | --- | --- |
 | `WORKSTREAM_ENV_FILE` | `~/.claude/workstream.env` |
+| `WORKSTREAM_TOKEN` | read from the env file |
+| `SUPABASE_ANON_KEY` | the project's publishable anon key |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | read from the env file |
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` |
 
@@ -117,8 +157,10 @@ Optional: install the hook (see the header of `scripts/workstream-hook.sh`; it c
 
 - `main.js`: window, tray, shortcut, polling, notifications, IPC
 - `preload.js`: the small `window.sticky` bridge (context isolation on, sandboxed renderer)
-- `sources.js`: Supabase + transcript readers and the pure merge/sort/visibility logic
+- `sources.js`: Supabase (token or service key) + transcript readers and the pure merge/sort/visibility logic
+- `hook/workstream-hook.mjs`: the cross-platform Claude Code hook; `hook/install-hook.mjs` wires it into `settings.json`
+- `scripts/setup.js`: `npm run setup`; `scripts/cloud-script.js` generates `cloud/setup-script.sh`
 - `icon.js`: draws the tray dot and the app icon at runtime, so the repo has no binary assets
 - `scripts/install-app.js`: `npm run install-app` (build → install → launch for this OS); `scripts/make-icon.js` writes `build/icon.png` for the packager
 - `renderer/`: the note UI (vanilla JS, no build step)
-- `test/sources.js`: `npm test` (`node:test`, no extra deps)
+- `test/`: `npm test` (`node:test`, no extra deps): data layer, hook, installer, setup and the generated cloud script

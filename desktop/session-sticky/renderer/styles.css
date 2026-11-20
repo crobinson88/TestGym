@@ -307,6 +307,11 @@ body.collapsed #refresh {
   font-size: 10px;
 }
 
+.kind.cloud {
+  border-color: rgb(var(--c-accent) / 0.5);
+  color: rgb(var(--c-accent));
+}
+
 .dismiss {
   width: 22px;
   height: 22px;

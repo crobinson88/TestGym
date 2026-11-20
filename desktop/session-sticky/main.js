@@ -194,7 +194,7 @@ function notifyWaiting(sessions) {
 async function collect() {
   config = await src.loadConfig();
   const now = Date.now();
-  const cloud = { configured: config.configured, error: null };
+  const cloud = { configured: config.configured, mode: config.mode, error: null };
   const [rows, locals] = await Promise.all([
     src.fetchWorkstreams(config).catch((err) => {
       cloud.error = err.name === "TimeoutError" ? "Supabase timed out" : err.message;
