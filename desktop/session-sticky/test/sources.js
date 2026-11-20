@@ -185,10 +185,17 @@ test("newlyWaiting fires on the transition only, never on first load", () => {
   assert.deepEqual(src.newlyWaiting(src.statusMap(list), list), []);
 });
 
-test("resumeCommand quotes the cwd", () => {
-  assert.equal(src.resumeCommand({ sessionId: "s1", cwd: "/a b/it's" }), `cd '/a b/it'\\''s' && claude --resume s1`);
-  assert.equal(src.resumeCommand({ sessionId: "s1", cwd: null }), "claude --resume s1");
-  assert.equal(src.resumeCommand({ sessionId: null }), null);
+test("resumeCommand quotes the cwd for a POSIX shell", () => {
+  assert.equal(src.resumeCommand({ sessionId: "s1", cwd: "/a b/it's" }, "darwin"), `cd '/a b/it'\\''s' && claude --resume s1`);
+  assert.equal(src.resumeCommand({ sessionId: "s1", cwd: null }, "linux"), "claude --resume s1");
+  assert.equal(src.resumeCommand({ sessionId: null }, "darwin"), null);
+});
+
+test("resumeCommand on Windows is PowerShell 5.1-safe (no &&)", () => {
+  const cmd = src.resumeCommand({ sessionId: "s1", cwd: "C:\\Users\\carob\\it's dir" }, "win32");
+  assert.equal(cmd, "Set-Location -LiteralPath 'C:\\Users\\carob\\it''s dir'; claude --resume s1");
+  assert.ok(!cmd.includes("&&"));
+  assert.equal(src.resumeCommand({ sessionId: "s1", cwd: null }, "win32"), "claude --resume s1");
 });
 
 test("normaliseUrl accepts bare hosts, rejects non-web schemes", () => {

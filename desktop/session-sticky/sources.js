@@ -379,10 +379,19 @@ function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-function resumeCommand(session) {
+function psQuote(s) {
+  return `'${String(s).replace(/'/g, "''")}'`;
+}
+
+// Pasted into whatever shell the user runs claude from: PowerShell on Windows
+// (5.1 has no `&&`), a POSIX shell elsewhere.
+function resumeCommand(session, platform = process.platform) {
   if (!session.sessionId) return null;
   const resume = `claude --resume ${session.sessionId}`;
-  return session.cwd ? `cd ${shellQuote(session.cwd)} && ${resume}` : resume;
+  if (!session.cwd) return resume;
+  return platform === "win32"
+    ? `Set-Location -LiteralPath ${psQuote(session.cwd)}; ${resume}`
+    : `cd ${shellQuote(session.cwd)} && ${resume}`;
 }
 
 function relativeTime(ms, now) {

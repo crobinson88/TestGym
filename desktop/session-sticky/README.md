@@ -16,7 +16,7 @@ This is a standalone Electron app. It is **not part of the Gym Tracker PWA**: Vi
   - grey = stale (no update for 30 min, probably a dead terminal)
   - dim = finished (hidden after 2 h)
 - **Click a row:**
-  - Claude Code session: copies `cd '<dir>' && claude --resume <session-id>` to the clipboard
+  - Claude Code session: copies a resume command to the clipboard (`cd '<dir>' && claude --resume <id>`, or the PowerShell form on Windows)
   - web chat: opens its link
 - **× on a row:** dismisses it. Soft-deletes the `workstreams` row, the same as the Command Center does.
 - **+ in the header:** adds a web or Cowork chat (title + optional link). Claude.ai has no public API for live chats, so these are added by hand.
@@ -38,21 +38,68 @@ Polled every 8 s. No sign-in: the note reads the hook's own config file, `~/.cla
 
 ## Install (one time)
 
-You need Node.js 18+ (`node -v`). From the TestGym repo root:
+You need Node.js 18+ and git. Check with `node -v` and `git --version`.
+
+### macOS (Terminal)
+
+From the TestGym repo root:
 
 ```bash
-cd desktop/session-sticky && npm install && npm run install-app
+cd desktop/session-sticky
 ```
 
-That builds the app for your computer, installs it, and opens it:
+```bash
+npm install
+```
 
-- **macOS:** `Session Sticky.app` goes into `/Applications`, or `~/Applications` if that isn't writable.
-  - Open it from Spotlight or Launchpad like any app.
-  - It's built on your own machine, so there's no "unidentified developer" prompt.
-- **Windows:** a one-click installer adds Start menu and desktop shortcuts, then launches the app.
-- **Linux:** the AppImage is copied to `~/Applications`.
+```bash
+npm run install-app
+```
 
-The installed app turns on **Open at login** the first time it runs, so after this you never launch it by hand. Untick it in the tray menu if you'd rather not. To update after pulling new code, run `npm run install-app` again.
+- `Session Sticky.app` goes into `/Applications`, or `~/Applications` if that isn't writable.
+- Open it from Spotlight or Launchpad like any app.
+- It's built on your own machine, so there's no "unidentified developer" prompt.
+
+### Windows (PowerShell)
+
+Run one line at a time; PowerShell 5.1 can't chain commands with `&&`.
+
+If `node -v` fails, install Node, then close and reopen PowerShell:
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+```
+
+Clone the repo. It's private, so a GitHub sign-in window pops up the first time:
+
+```powershell
+cd $HOME
+git clone -b claude/upbeat-ritchie-r66r3k https://github.com/crobinson88/TestGym.git
+```
+
+Build and install:
+
+```powershell
+cd $HOME\TestGym\desktop\session-sticky
+npm install
+npm run install-app
+```
+
+- The one-click installer adds Start menu and desktop shortcuts, then launches the app.
+- If `npm` says "running scripts is disabled on this system", use `npm.cmd` in place of `npm`, or allow local scripts once:
+
+  ```powershell
+  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+  ```
+
+- Clicking a Claude Code row copies a PowerShell-ready command: `Set-Location -LiteralPath '<dir>'; claude --resume <id>`.
+- The optional hook (`scripts/workstream-hook.sh`) is a bash script, so on Windows it needs Git Bash and `jq`. Without it the note still lists your Claude Code sessions from local transcripts.
+
+### Linux
+
+Same three commands as macOS. The AppImage is copied to `~/Applications`.
+
+The installed app turns on **Open at login** the first time it runs, so after this you never launch it by hand. Untick it in the tray menu if you'd rather not. To update, run `git pull` in the repo, then `npm run install-app` again from this folder.
 
 For hacking on it, `npm start` runs it straight from source. "Open at login" is greyed out in that mode, because it would start a bare Electron window rather than the note.
 
