@@ -345,3 +345,37 @@ describe("mutations.setCigaretteCount", () => {
     expect(live).toHaveLength(0);
   });
 });
+
+describe("mutations.addPLog / updatePLog / deletePLog", () => {
+  it("adds one pending row per instance with its minutes", async () => {
+    db = await newTestDb();
+    const m = createMutations({ db });
+
+    const a = await m.addPLog("2026-11-25", 12.4);
+    const b = await m.addPLog("2026-11-25", null);
+    expect(a.minutes).toBe(12);
+    expect(b.minutes).toBeNull();
+    expect(a.sync_status).toBe("pending");
+    expect(a.client_id).toBe(a.id);
+
+    const live = (await db.p_logs.toArray()).filter((r) => !r.deleted_at);
+    expect(live).toHaveLength(2);
+  });
+
+  it("edits an instance's minutes and soft-deletes it", async () => {
+    db = await newTestDb();
+    let t = 1_700_000_000_000;
+    const m = createMutations({ db, now: () => new Date(++t).toISOString() });
+
+    const row = await m.addPLog("2026-11-25", 5);
+    const edited = await m.updatePLog(row.id, 20);
+    expect(edited?.minutes).toBe(20);
+    expect(edited!.updated_at > row.updated_at).toBe(true);
+
+    await m.deletePLog(row.id);
+    const after = await db.p_logs.get(row.id);
+    expect(after?.deleted_at).not.toBeNull();
+    expect(after?.sync_status).toBe("pending");
+    expect(await m.updatePLog(row.id, 30)).toBeNull();
+  });
+});

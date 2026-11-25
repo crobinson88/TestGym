@@ -593,6 +593,20 @@ export interface SmokingLogRow {
   deleted_at: string | null;
 }
 
+// One counted instance of the Stats page's "P" tracker, with how long it took.
+// A day's count is its live rows; its time is the sum of `minutes` (null =
+// not timed). Same sync / RLS / soft-delete rules as `sets`.
+export interface PLogRow {
+  id: string;
+  log_date: string;
+  minutes: number | null;
+  client_id: string | null;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 // One food logged on a given day: its name plus the calories and grams of
 // protein it contributed. Same sync / RLS / soft-delete rules as `sets`.
 // One day's hand-marked habits, behind the Stats page's daily-habit grid. Only
@@ -892,6 +906,14 @@ export type Database = {
           user_id?: string | null;
         };
         Update: Partial<SmokingLogRow>;
+      };
+      p_logs: {
+        Row: PLogRow;
+        Insert: Omit<PLogRow, "created_at" | "user_id"> & {
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: Partial<PLogRow>;
       };
       daily_habits: {
         Row: DailyHabitRow;
