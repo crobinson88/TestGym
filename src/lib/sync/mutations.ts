@@ -16,6 +16,7 @@ import type {
   LocalSet,
   LocalShareTrade,
   LocalSmokingLog,
+  LocalPLog,
   LocalStock,
   LocalTip,
 } from "../db";
@@ -44,6 +45,7 @@ import type {
   SetRow,
   ShareTradeRow,
   SmokingLogRow,
+  PLogRow,
   StockRow,
   TipRow,
   TipStatus,
@@ -256,6 +258,10 @@ function pendingMarketNote(row: MarketNoteRow): LocalMarketNote {
 }
 
 function pendingSmokingLog(row: SmokingLogRow): LocalSmokingLog {
+  return { ...row, sync_status: "pending" };
+}
+
+function pendingPLog(row: PLogRow): LocalPLog {
   return { ...row, sync_status: "pending" };
 }
 
@@ -947,6 +953,52 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     return writeSmoking(date, n > 0, n, live[0]);
   }
 
+  // A logged minutes value: whole, non-negative, or null when not timed.
+  function cleanMinutes(minutes: number | null | undefined): number | null {
+    if (minutes == null || !Number.isFinite(minutes)) return null;
+    return Math.max(0, Math.round(minutes));
+  }
+
+  // The Stats "P" tracker: one row per counted instance, with its minutes.
+  async function addPLog(date: string, minutes: number | null): Promise<LocalPLog> {
+    const id = uuid();
+    const ts = now();
+    const row: PLogRow = {
+      id,
+      log_date: date,
+      minutes: cleanMinutes(minutes),
+      client_id: id,
+      user_id: null,
+      ...baseRowDefaults(ts),
+    };
+    const local = pendingPLog(row);
+    await db.p_logs.put(local);
+    notify();
+    return local;
+  }
+
+  async function updatePLog(id: string, minutes: number | null): Promise<LocalPLog | null> {
+    const existing = await db.p_logs.get(id);
+    if (!existing || existing.deleted_at) return null;
+    const updated: LocalPLog = {
+      ...existing,
+      minutes: cleanMinutes(minutes),
+      updated_at: now(),
+      sync_status: "pending",
+    };
+    await db.p_logs.put(updated);
+    notify();
+    return updated;
+  }
+
+  async function deletePLog(id: string): Promise<void> {
+    const existing = await db.p_logs.get(id);
+    if (!existing || existing.deleted_at) return;
+    const ts = now();
+    await db.p_logs.put({ ...existing, deleted_at: ts, updated_at: ts, sync_status: "pending" });
+    notify();
+  }
+
   async function liveHabitRows(date: string): Promise<LocalDailyHabit[]> {
     const all = await db.daily_habits.toArray();
     return all
@@ -1237,6 +1289,9 @@ export function createMutations({ db, now = nowIso, onChange }: MutationDeps) {
     addMarketNoteResearch,
     setSmoked,
     setCigaretteCount,
+    addPLog,
+    updatePLog,
+    deletePLog,
     setDailyHabit,
     setDayOff,
     addFoodEntry,

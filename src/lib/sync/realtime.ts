@@ -16,6 +16,7 @@ import type {
   SetRow,
   ShareTradeRow,
   SmokingLogRow,
+  PLogRow,
   StockRow,
   TipRow,
   TdlCategoryRow,
@@ -47,6 +48,7 @@ type AnyRow =
   | TipRow
   | MarketNoteRow
   | SmokingLogRow
+  | PLogRow
   | DailyHabitRow
   | FoodEntryRow
   | FoodGoalRow;

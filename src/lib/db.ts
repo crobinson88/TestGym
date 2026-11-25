@@ -17,6 +17,7 @@ import type {
   SetRow,
   ShareTradeRow,
   SmokingLogRow,
+  PLogRow,
   StockRow,
   TipRow,
   TdlCategoryRow,
@@ -160,6 +161,10 @@ export interface LocalSmokingLog extends SmokingLogRow {
   sync_status: SyncStatus;
 }
 
+export interface LocalPLog extends PLogRow {
+  sync_status: SyncStatus;
+}
+
 export interface LocalDailyHabit extends DailyHabitRow {
   sync_status: SyncStatus;
 }
@@ -199,6 +204,7 @@ export class GymDB extends Dexie {
   tips!: Table<LocalTip, string>;
   market_notes!: Table<LocalMarketNote, string>;
   smoking_logs!: Table<LocalSmokingLog, string>;
+  p_logs!: Table<LocalPLog, string>;
   daily_habits!: Table<LocalDailyHabit, string>;
   food_entries!: Table<LocalFoodEntry, string>;
   food_goals!: Table<LocalFoodGoal, string>;
@@ -458,6 +464,9 @@ export class GymDB extends Dexie {
         .modify((row: LocalFoodEntry) => {
           if (row.in_library === undefined) row.in_library = true;
         });
+    });
+    this.version(35).stores({
+      p_logs: "id, log_date, updated_at, sync_status, deleted_at",
     });
   }
 }

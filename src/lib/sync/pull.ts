@@ -16,6 +16,7 @@ import type {
   SetRow,
   ShareTradeRow,
   SmokingLogRow,
+  PLogRow,
   StockRow,
   TipRow,
   TdlCategoryRow,
@@ -398,6 +399,18 @@ async function mergeSmokingLogs(db: GymDB, rows: SmokingLogRow[]) {
   });
 }
 
+async function mergePLogs(db: GymDB, rows: PLogRow[]) {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.p_logs, async () => {
+    for (const remote of rows) {
+      const local = await db.p_logs.get(remote.id);
+      if (!local || remote.updated_at > local.updated_at) {
+        await db.p_logs.put({ ...remote, sync_status: "synced" });
+      }
+    }
+  });
+}
+
 async function mergeDailyHabits(db: GymDB, rows: DailyHabitRow[]) {
   if (rows.length === 0) return;
   await db.transaction("rw", db.daily_habits, async () => {
@@ -481,6 +494,7 @@ const META_KEYS: Record<SyncTable, string> = {
   tips: "last_pull_tips",
   market_notes: "last_pull_market_notes",
   smoking_logs: "last_pull_smoking_logs",
+  p_logs: "last_pull_p_logs",
   daily_habits: "last_pull_daily_habits",
   food_entries: "last_pull_food_entries",
   food_goals: "last_pull_food_goals",
@@ -522,6 +536,7 @@ export function createPull({ client, db, log }: PullDeps) {
       tips: 0,
       market_notes: 0,
       smoking_logs: 0,
+      p_logs: 0,
       daily_habits: 0,
       food_entries: 0,
       food_goals: 0,
@@ -680,6 +695,13 @@ export function createPull({ client, db, log }: PullDeps) {
           fetched.smoking_logs = rows.length;
           if (rows.length > 0) {
             await writeMark("smoking_logs", rows[rows.length - 1].updated_at);
+          }
+        } else if (table === "p_logs") {
+          const rows = await fetchSince<PLogRow>(client, "p_logs", since);
+          await mergePLogs(db, rows);
+          fetched.p_logs = rows.length;
+          if (rows.length > 0) {
+            await writeMark("p_logs", rows[rows.length - 1].updated_at);
           }
         } else if (table === "daily_habits") {
           const rows = await fetchSince<DailyHabitRow>(client, "daily_habits", since);

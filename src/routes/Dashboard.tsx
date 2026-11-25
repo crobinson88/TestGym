@@ -33,6 +33,7 @@ import { useTimeDashboardStats } from "@/lib/timeHooks";
 import { formatHours, type HoursPoint, type WeekHoursPoint } from "@/lib/time";
 import { addDays, cn, formatFull, formatVolume, prettyDate, todayIsoDate } from "@/lib/utils";
 import { HabitGrid } from "@/modules/habits";
+import { PCalendar, usePLogDays } from "@/modules/p_log";
 import { StreakBoard } from "@/modules/streaks";
 import {
   useFrenchWeeklyAccuracy,
@@ -125,6 +126,7 @@ export default function Dashboard() {
   const [rollingOffset, setRollingOffset] = useState(0);
   const stats = useDashboardStats(volumeOffset);
   const smokingLogs = useSmokingLogMap();
+  const pLogDays = usePLogDays();
   const timeStats = useTimeDashboardStats({
     daily: dailyOffset,
     weekly: weeklyHoursOffset,
@@ -341,6 +343,15 @@ export default function Dashboard() {
           <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">Smoking</h2>
           <div className="rounded-2xl border border-line bg-surface p-3">
             <SmokingCalendar logs={smokingLogs} />
+          </div>
+        </section>
+      )}
+
+      {pLogDays && (
+        <section>
+          <h2 className="mb-2 px-1 text-xs uppercase tracking-wider text-muted">P</h2>
+          <div className="rounded-2xl border border-line bg-surface p-3">
+            <PCalendar days={pLogDays} />
           </div>
         </section>
       )}
